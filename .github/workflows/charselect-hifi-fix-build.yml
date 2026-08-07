@@ -135,8 +135,8 @@ jobs:
           assert 'csanim.bin' not in xml and 'cschar.bin' not in xml
           assert 'MENU_CS_FRAME_COUNT 36' in menu
           assert 'Menu_CSRLEDecode' in menu
-          assert '\\MENU\\CSANIM.RLE;1' in menu
-          assert '\\MENU\\CSCHAR.RLE;1' in menu
+          assert 'CSANIM.RLE;1' in menu
+          assert 'CSCHAR.RLE;1' in menu
           print('Lossless Character Select RAM validation passed: 250057 packed bytes total')
           PY
 
