@@ -1,0 +1,129 @@
+diff --git a/Makefile b/Makefile
+index 03f02ef..d2f1acf 100644
+--- a/Makefile
++++ b/Makefile
+@@ -23,6 +23,7 @@ SRCS = src/main.c \
+        src/stage/week3.c \
+        src/stage/week4.c \
+        src/stage/week7.c \
++       src/stage/weekend1.c \
+        src/animation.c \
+        src/character.c \
+        src/character/bf.c \
+@@ -32,6 +33,11 @@ SRCS = src/main.c \
+        src/character/dad.c \
+        src/character/spook.c \
+        src/character/pico.c \
++       src/character/picoplayer.c \
++       src/character/nene.c \
++       src/character/darnell.c \
++       src/character/picoblazin.c \
++       src/character/darnellblazin.c \
+        src/character/mom.c \
+        src/character/senpai.c \
+        src/character/tank.c \
+diff --git a/funkin.xml b/funkin.xml
+index baef2e7..9586ca7 100644
+--- a/funkin.xml
++++ b/funkin.xml
+@@ -174,44 +174,26 @@
+ 				<file name = "7.3h.cht" type = "data" source = "iso/chart/7.3h.cht"/>
+ 			</dir>
+ 			
+-			<!-- Kapi assets -->
+-			<dir name = "kapi">
+-				<!-- Wocky charts -->
+-				<file name = "kapi.1e.cht" type = "data" source = "iso/chart/kapi.1e.cht"/>
+-				<file name = "kapi.1n.cht" type = "data" source = "iso/chart/kapi.1n.cht"/>
+-				<file name = "kapi.1h.cht" type = "data" source = "iso/chart/kapi.1h.cht"/>
+-				<!-- Beathoven charts -->
+-				<file name = "kapi.2e.cht" type = "data" source = "iso/chart/kapi.2e.cht"/>
+-				<file name = "kapi.2n.cht" type = "data" source = "iso/chart/kapi.2n.cht"/>
+-				<file name = "kapi.2h.cht" type = "data" source = "iso/chart/kapi.2h.cht"/>
+-				<!-- Hairball charts -->
+-				<file name = "kapi.3e.cht" type = "data" source = "iso/chart/kapi.3e.cht"/>
+-				<file name = "kapi.3n.cht" type = "data" source = "iso/chart/kapi.3n.cht"/>
+-				<file name = "kapi.3h.cht" type = "data" source = "iso/chart/kapi.3h.cht"/>
+-				<!-- Nyaw charts -->
+-				<file name = "kapi.4e.cht" type = "data" source = "iso/chart/kapi.4e.cht"/>
+-				<file name = "kapi.4n.cht" type = "data" source = "iso/chart/kapi.4n.cht"/>
+-				<file name = "kapi.4h.cht" type = "data" source = "iso/chart/kapi.4h.cht"/>
++			<!-- Weekend 1 assets -->
++			<dir name = "week8">
++				<file name = "back.arc" type = "data" source = "iso/week8/back.arc"/>
++				<file name = "blazin.arc" type = "data" source = "iso/week8/blazin.arc"/>
++				<file name = "8.1e.cht" type = "data" source = "iso/chart/8.1e.cht"/>
++				<file name = "8.1n.cht" type = "data" source = "iso/chart/8.1n.cht"/>
++				<file name = "8.1h.cht" type = "data" source = "iso/chart/8.1h.cht"/>
++				<file name = "8.1r.cht" type = "data" source = "iso/chart/8.1r.cht"/>
++				<file name = "8.1m.cht" type = "data" source = "iso/chart/8.1m.cht"/>
++				<file name = "8.2e.cht" type = "data" source = "iso/chart/8.2e.cht"/>
++				<file name = "8.2n.cht" type = "data" source = "iso/chart/8.2n.cht"/>
++				<file name = "8.2h.cht" type = "data" source = "iso/chart/8.2h.cht"/>
++				<file name = "8.3e.cht" type = "data" source = "iso/chart/8.3e.cht"/>
++				<file name = "8.3n.cht" type = "data" source = "iso/chart/8.3n.cht"/>
++				<file name = "8.3h.cht" type = "data" source = "iso/chart/8.3h.cht"/>
++				<file name = "8.4e.cht" type = "data" source = "iso/chart/8.4e.cht"/>
++				<file name = "8.4n.cht" type = "data" source = "iso/chart/8.4n.cht"/>
++				<file name = "8.4h.cht" type = "data" source = "iso/chart/8.4h.cht"/>
+ 			</dir>
+-			
+-			<!-- Tricky assets -->
+-			<dir name = "clwn">
+-				<!-- Improbable Outset charts -->
+-				<file name = "clwn.1e.cht" type = "data" source = "iso/chart/clwn.1e.cht"/>
+-				<file name = "clwn.1n.cht" type = "data" source = "iso/chart/clwn.1n.cht"/>
+-				<file name = "clwn.1h.cht" type = "data" source = "iso/chart/clwn.1h.cht"/>
+-				<!-- Madness charts -->
+-				<file name = "clwn.2e.cht" type = "data" source = "iso/chart/clwn.2e.cht"/>
+-				<file name = "clwn.2n.cht" type = "data" source = "iso/chart/clwn.2n.cht"/>
+-				<file name = "clwn.2h.cht" type = "data" source = "iso/chart/clwn.2h.cht"/>
+-				<!-- Hellclown charts -->
+-				<file name = "clwn.3e.cht" type = "data" source = "iso/chart/clwn.3e.cht"/>
+-				<file name = "clwn.3n.cht" type = "data" source = "iso/chart/clwn.3n.cht"/>
+-				<file name = "clwn.3h.cht" type = "data" source = "iso/chart/clwn.3h.cht"/>
+-				<!-- Expurgation charts -->
+-				<file name = "clwn.4h.cht" type = "data" source = "iso/chart/clwn.4h.cht"/>
+-			</dir>
+-			
++
+ 			<!-- Character assets -->
+ 			<dir name = "char">
+ 				<!-- Boyfriend assets -->
+@@ -231,6 +213,11 @@
+ 				
+ 				<!-- Pico assets -->
+ 				<file name = "pico.arc" type = "data" source = "iso/pico/main.arc"/>
++				<file name = "picoplay.arc" type = "data" source = "iso/picoplay.arc"/>
++				<file name = "nene.arc" type = "data" source = "iso/nene.arc"/>
++				<file name = "darnell.arc" type = "data" source = "iso/darnell.arc"/>
++				<file name = "picobl.arc" type = "data" source = "iso/picobl.arc"/>
++				<file name = "darnbl.arc" type = "data" source = "iso/darnbl.arc"/>
+ 				
+ 				<!-- Mom assets -->
+ 				<file name = "mom.arc" type = "data" source = "iso/mom/main.arc"/>
+@@ -277,16 +264,17 @@
+ 				<dummy sectors="128"/>
+ 				<file name = "week7b.xa" type = "xa" source = "iso/music/week7b.xa"/>
+ 				<dummy sectors="128"/>
+-				<file name = "kapia.xa" type = "xa" source = "iso/music/kapia.xa"/>
+-				<dummy sectors="128"/>
+-				<file name = "kapib.xa" type = "xa" source = "iso/music/kapib.xa"/>
+-				<dummy sectors="128"/>
+-				<file name = "clwna.xa" type = "xa" source = "iso/music/clwna.xa"/>
+-				<dummy sectors="128"/>
+-				<file name = "clwnb.xa" type = "xa" source = "iso/music/clwnb.xa"/>
++				<file name = "week8.xa" type = "xa" source = "iso/music/week8.xa"/>
+ 				<dummy sectors="128"/>
+ 			</dir>
+ 			
++			<!-- Weekend 1 FMV cutscenes -->
++			<dir name = "movie">
++				<file name = "darnell.str" type = "xa" source = "iso/movie/darnell.str"/>
++				<file name = "2hot.str" type = "xa" source = "iso/movie/2hot.str"/>
++				<file name = "blazin.str" type = "xa" source = "iso/movie/blazin.str"/>
++			</dir>
++
+ 			<!-- Dummy sectors -->
+ 			<dummy sectors="1024"/>
+ 		</directory_tree>
