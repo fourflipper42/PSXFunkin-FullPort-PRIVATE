@@ -1,0 +1,163 @@
+name: PSXFunkin Erect Audio Checkpoint
+
+on:
+  push:
+    branches: [ erect-audio-checkpoint ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ps1-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host and MIPS build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git curl unzip cmake ninja-build pkg-config meson \
+            gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu \
+            ffmpeg libavformat-dev libavfilter-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev libtinyxml2-dev
+
+      - name: Fetch exact clean cuckydev t0.12 source
+        run: |
+          git clone https://github.com/cuckydev/PSXFunkin.git upstream
+          git -C upstream checkout 850e0207479d8fb658bdc7637f6bfbc28a2b4066
+          test "$(git -C upstream rev-parse HEAD)" = "850e0207479d8fb658bdc7637f6bfbc28a2b4066"
+
+      - name: Apply Erect and Nightmare chart support
+        run: |
+          git -C upstream apply ../patches/0001-current-difficulties.patch
+          git -C upstream diff --check
+
+      - name: Download official v0.8.4 chart and audio assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p official-assets official-v084
+          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets \
+            --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip' \
+            --pattern 'Sounds.and.Songs.zip'
+          echo 'd02d2ea24f9d5b032012a69ab533f724ee5cd364093e693f21d17bd3abfccc37  official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip' | sha256sum -c -
+          echo '042d0ecd29a5356b4c17e750118a52485ee69466e8f1da02fed057c4abd98dc7  official-assets/Sounds.and.Songs.zip' | sha256sum -c -
+          unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
+          unzip -qo official-assets/Sounds.and.Songs.zip -d official-v084
+          test -d official-v084/data/songs
+          for song in bopeebo fresh dadbattle spookeez south pico philly-nice blammed satin-panties high cocoa eggnog senpai roses thorns ugh; do
+            test -s "official-v084/songs/${song}/Inst-erect.ogg"
+          done
+
+      - name: Generate official v0.8.4 charts
+        run: |
+          mkdir -p build
+          python3 scripts/build_v084_legacy_charts.py \
+            --data-root official-v084 \
+            --iso-root upstream/iso \
+            --manifest build/v084_charts.json
+          python3 scripts/add_v084_chart_entries.py upstream/funkin.xml
+          test "$(find upstream/iso/chart -name '*.cht' | wc -l)" -ge 98
+          test -s upstream/iso/chart/1.1r.cht
+          test -s upstream/iso/chart/1.1m.cht
+
+      - name: Build psxavenc
+        run: |
+          git clone https://github.com/WonderfulToolchain/psxavenc.git psxavenc
+          meson setup psxavenc/build psxavenc --buildtype=release
+          meson compile -C psxavenc/build
+          test -x psxavenc/build/psxavenc
+
+      - name: Generate official Erect XA groups
+        run: |
+          python3 scripts/build_erect_audio.py \
+            --root official-v084 \
+            --out upstream/iso/music \
+            --psxavenc psxavenc/build/psxavenc \
+            --header upstream/src/erect_audio_generated.h \
+            --report build/erect_audio.json
+          for f in erecta.xa erectb.xa erectc.xa erectd.xa; do
+            test -s "upstream/iso/music/${f}"
+            test "$(( $(stat -c%s "upstream/iso/music/${f}") % 2336 ))" -eq 0
+          done
+          test -s upstream/src/erect_audio_generated.h
+
+      - name: Apply Erect and Nightmare audio routing
+        run: |
+          python3 scripts/apply_erect_audio_routing.py upstream
+          git -C upstream diff --check
+          grep -q 'Stage_SelectMusic' upstream/src/stage.c
+          grep -q 'StageDiff_Nightmare' upstream/src/stage.c
+          grep -q 'stage.music_channel' upstream/src/stage.c
+          grep -q 'ERECT_BOPEEBO_SECTORS' upstream/src/audio.c
+          grep -q 'ERECT_UGH_SECTORS' upstream/src/audio.c
+          grep -q 'erecta.xa' upstream/funkin.xml
+          grep -q 'erectd.xa' upstream/funkin.xml
+
+      - name: Acquire converted PsyQ compatibility libraries for build only
+        run: |
+          rm -rf /tmp/psyq-extract upstream/mips/psyq
+          mkdir -p /tmp/psyq-extract upstream/mips/psyq
+          curl -fL --retry 3 --retry-delay 2 http://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip -o /tmp/psyq.zip
+          unzip -q /tmp/psyq.zip -d /tmp/psyq-extract
+          INC="$(find /tmp/psyq-extract -type d -name include -print -quit)"
+          LIB="$(find /tmp/psyq-extract -type d -name lib -print -quit)"
+          test -n "$INC"; test -n "$LIB"
+          cp -a "$INC" upstream/mips/psyq/include
+          cp -a "$LIB" upstream/mips/psyq/lib
+          test -f upstream/mips/psyq/include/libetc.h
+          rm -rf /tmp/psyq.zip /tmp/psyq-extract
+
+      - name: Build mkpsxiso
+        run: |
+          git clone --recursive https://github.com/CookiePLMonster/mkpsxiso.git mkpsxiso
+          cmake -S mkpsxiso -B mkpsxiso/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+          cmake --build mkpsxiso/build
+          cmake --install mkpsxiso/build
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Compile PSXFunkin executable
+        working-directory: upstream
+        run: |
+          make clean || true
+          make -j2
+          test -s funkin.ps-exe
+          sha256sum funkin.ps-exe
+
+      - name: Build MODE2 BIN CUE
+        working-directory: upstream
+        run: |
+          sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
+          "$HOME/.local/bin/mkpsxiso" -y funkin.xml
+          test -s funkin.bin
+          test -s funkin.cue
+          test "$(( $(stat -c%s funkin.bin) % 2352 ))" -eq 0
+          sectors=$(( $(stat -c%s funkin.bin) / 2352 ))
+          echo "Raw disc sectors: $sectors"
+          test "$sectors" -le 360000
+
+      - name: Package corrected Erect audio checkpoint
+        run: |
+          mkdir -p build/release
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Erect_Audio_Fix.bin
+          cat > build/release/PSXFunkin_v084_Erect_Audio_Fix.cue <<'EOF'
+          FILE "PSXFunkin_v084_Erect_Audio_Fix.bin" BINARY
+            TRACK 01 MODE2/2352
+              INDEX 01 00:00:00
+          EOF
+          cp upstream/funkin.ps-exe build/release/funkin.ps-exe
+          cp upstream/src/erect_audio_generated.h build/release/erect_audio_generated.h
+          cp build/v084_charts.json build/erect_audio.json build/release/
+          grep -Fx 'FILE "PSXFunkin_v084_Erect_Audio_Fix.bin" BINARY' build/release/PSXFunkin_v084_Erect_Audio_Fix.cue
+          test "$(( $(stat -c%s build/release/PSXFunkin_v084_Erect_Audio_Fix.bin) % 2352 ))" -eq 0
+          (cd build/release && sha256sum PSXFunkin_v084_Erect_Audio_Fix.bin PSXFunkin_v084_Erect_Audio_Fix.cue funkin.ps-exe erect_audio_generated.h v084_charts.json erect_audio.json > SHA256SUMS.txt)
+
+      - name: Upload DuckStation-ready Erect audio checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: psxfunkin-v084-erect-audio-fix
+          compression-level: 0
+          path: build/release/
