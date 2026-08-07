@@ -17,7 +17,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p official-assets official-v084
+          mkdir -p official-assets official-v084 dj-source
           gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip'
           unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
       - name: Print atlas structure and DJ entries
@@ -28,16 +28,16 @@ jobs:
           p=Path('official-v084/images/freeplay/freeplay-boyfriend/spritemap1.json')
           data=json.loads(p.read_text())
           print('ROOT KEYS', list(data.keys()))
-          print(json.dumps(data, indent=2)[:5000])
           wanted={str(x) for x in list(range(223,276))+list(range(447,456))+list(range(545,557))}
-          print('\n===== MATCHES =====')
-          def walk(o):
-              if isinstance(o,dict):
-                  name=o.get('name') or o.get('N') or o.get('n')
-                  if str(name) in wanted:
-                      print(json.dumps(o,sort_keys=True))
-                  for v in o.values(): walk(v)
-              elif isinstance(o,list):
-                  for v in o: walk(v)
-          walk(data)
+          for entry in data['ATLAS']['SPRITES']:
+              s=entry['SPRITE']
+              if s['name'] in wanted:
+                  print(json.dumps(s,sort_keys=True))
           PY
+          cp official-v084/images/freeplay/freeplay-boyfriend/Animation.json dj-source/
+          cp official-v084/images/freeplay/freeplay-boyfriend/spritemap1.json dj-source/
+          cp official-v084/images/freeplay/freeplay-boyfriend/spritemap1.png dj-source/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: official-v084-boyfriend-dj-source
+          path: dj-source/
