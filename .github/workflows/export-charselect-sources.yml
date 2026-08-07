@@ -1,0 +1,28 @@
+name: Export Character Select Sources
+
+on:
+  push:
+    branches: [ charselect-full-checkpoint ]
+    paths: [ '.github/workflows/export-charselect-sources.yml' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Expand Character Select implementation
+        run: |
+          mkdir -p build/export
+          gzip -dc ci/charselect/build_v084_charselect_full.py.gz > build/export/build_v084_charselect_full.py
+          gzip -dc ci/charselect/apply_v084_charselect_full.py.gz > build/export/apply_v084_charselect_full.py
+          cp scripts/fix_charselect_intro_extraction.py build/export/ 2>/dev/null || true
+          sha256sum build/export/*
+      - name: Upload expanded sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: charselect-expanded-sources
+          path: build/export/
