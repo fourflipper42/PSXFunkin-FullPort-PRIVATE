@@ -119,6 +119,17 @@ jobs:
           print('HiFi Character Select validation passed')
           PY
 
+      - name: Upload generated Character Select runtime source
+        uses: actions/upload-artifact@v4
+        with:
+          name: charselect-generated-runtime
+          path: |
+            upstream/src/menu.c
+            upstream/src/menu.h
+            upstream/src/io.c
+            upstream/src/io.h
+            upstream/funkin.xml
+
       - name: Acquire PsyQ compatibility libraries
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
