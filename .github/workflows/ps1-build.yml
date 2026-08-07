@@ -1,0 +1,124 @@
+name: PSXFunkin Full Port CI
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  asset-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download official v0.8.4 asset archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p official-assets
+          gh release download assets-v084 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir official-assets \
+            --pattern '*.zip'
+          sha256sum official-assets/*.zip | tee official-assets/SHA256SUMS.txt
+
+      - name: Inventory official assets
+        run: |
+          python3 scripts/inventory_assets.py official-assets build/audit
+
+      - name: Upload asset inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: fnf-v084-asset-inventory
+          path: build/audit/
+
+  baseline-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host and MIPS build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git curl unzip cmake ninja-build pkg-config \
+            gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu \
+            ffmpeg libavformat-dev libavfilter-dev libavcodec-dev libavutil-dev \
+            libswscale-dev libswresample-dev libtinyxml2-dev
+
+      - name: Fetch exact clean cuckydev t0.12 source
+        run: |
+          git clone https://github.com/cuckydev/PSXFunkin.git upstream
+          git -C upstream checkout 850e0207479d8fb658bdc7637f6bfbc28a2b4066
+          test "$(git -C upstream rev-parse HEAD)" = "850e0207479d8fb658bdc7637f6bfbc28a2b4066"
+
+      - name: Apply full-port source overlay
+        run: |
+          if [ -d overlay ]; then
+            cp -a overlay/. upstream/
+          fi
+          if compgen -G 'patches/*.patch' > /dev/null; then
+            for p in patches/*.patch; do
+              git -C upstream apply "../$p"
+            done
+          fi
+
+      - name: Acquire converted PsyQ compatibility libraries for build only
+        run: |
+          mkdir -p upstream/mips/psyq
+          curl -fL --retry 3 --retry-delay 2 \
+            http://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip \
+            -o /tmp/psyq.zip
+          unzip -q /tmp/psyq.zip -d upstream/mips/psyq
+          test -d upstream/mips/psyq/include
+          test -d upstream/mips/psyq/lib
+          rm -f /tmp/psyq.zip
+
+      - name: Build mkpsxiso
+        run: |
+          git clone --recursive https://github.com/CookiePLMonster/mkpsxiso.git mkpsxiso
+          cmake -S mkpsxiso -B mkpsxiso/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+          cmake --build mkpsxiso/build
+          cmake --install mkpsxiso/build
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Compile clean PSXFunkin executable
+        working-directory: upstream
+        run: |
+          make clean || true
+          make -j2
+          test -s funkin.ps-exe
+          sha256sum funkin.ps-exe
+
+      - name: Build DuckStation BIN/CUE
+        working-directory: upstream
+        run: |
+          # The SDK license file is deliberately not stored in this repository.
+          # Remove the XML reference so CI can create an image; DuckStation testing
+          # uses the user's local BIOS and the final mastering pass can restore the
+          # licensed system area from the clean baseline disc.
+          sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
+          "$HOME/.local/bin/mkpsxiso" -y funkin.xml
+          test -s funkin.bin
+          test -s funkin.cue
+          sha256sum funkin.bin funkin.cue | tee SHA256SUMS.txt
+
+      - name: Package baseline build
+        run: |
+          mkdir -p build/baseline
+          cp upstream/funkin.bin build/baseline/PSXFunkin_FullPort_Baseline.bin
+          cp upstream/funkin.cue build/baseline/PSXFunkin_FullPort_Baseline.cue
+          cp upstream/funkin.ps-exe build/baseline/funkin.ps-exe
+          cp upstream/SHA256SUMS.txt build/baseline/SHA256SUMS.txt
+
+      - name: Upload baseline BIN/CUE
+        uses: actions/upload-artifact@v4
+        with:
+          name: psxfunkin-clean-t012-baseline
+          compression-level: 0
+          path: build/baseline/
