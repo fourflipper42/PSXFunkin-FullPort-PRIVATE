@@ -2,13 +2,15 @@
 """Apply runtime corrections from the first v0.8.4 menu visual test.
 
 Keeps the already-confirmed navigation/state behavior unchanged:
-- official Boyfriend DJ samples animate in Freeplay;
+- official Boyfriend DJ animates in Freeplay;
 - difficulty art is submitted before song names so it stays foreground;
 - Character Select becomes a clean black official-icon selector.
 """
 from __future__ import annotations
 
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -155,6 +157,10 @@ def main() -> None:
         raise SystemExit("old Character Select BF art still used in Freeplay")
     if "\\t\\tcase MenuPage_CharacterSelect:" in text:
         raise SystemExit("literal \\t escapes leaked into generated menu.c")
+
+    # Replace the compatibility four-sample loop with all 14 official frames.
+    helper = Path(__file__).with_name("enable_freeplay_dj_stream.py")
+    subprocess.run([sys.executable, str(helper), str(args.root)], check=True)
 
 
 if __name__ == "__main__":
