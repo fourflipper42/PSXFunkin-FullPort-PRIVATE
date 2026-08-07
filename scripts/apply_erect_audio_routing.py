@@ -115,6 +115,24 @@ def main() -> None:
     )
 
     replace_once(
+        audio_c,
+        "void Audio_ChannelXA(u8 channel)\n"
+        "{\n"
+        "\t//Change CD filter\n"
+        "\tXA_SetFilter(channel);\n"
+        "}",
+        "void Audio_ChannelXA(u8 channel)\n"
+        "{\n"
+        "\t//Do not submit a redundant CD filter command while the XA stream is\n"
+        "\t//already playing on the requested channel. The first opponent note\n"
+        "\t//otherwise re-filters the Erect stream to its already-active channel.\n"
+        "\tif ((xa_state & XA_STATE_PLAYING) && xa_channel == channel)\n"
+        "\t\treturn;\n"
+        "\tXA_SetFilter(channel);\n"
+        "}",
+    )
+
+    replace_once(
         stage_h,
         "\t//Music file\n\tCdlFILE music_file;",
         "\t//Music file\n\tCdlFILE music_file;\n\tu8 music_channel; //Effective channel; differs for Erect/Nightmare remixes",
@@ -181,6 +199,20 @@ static void Stage_SelectMusic(XA_Track *track, u8 *channel)
     )
 
     replace_once(
+        stage_c,
+        "\t\t\t\t\tAudio_PlayXA_File(&stage.music_file, 0x40, stage.music_channel, 0);\n"
+        "\t\t\t\t\t\n"
+        "\t\t\t\t\t//Wait until first sector has played",
+        "\t\t\t\t\tAudio_PlayXA_File(&stage.music_file, 0x40, stage.music_channel, 0);\n"
+        "\t\t\t\t\t//Playback starts on the full/vocal channel. Keep the stage\n"
+        "\t\t\t\t\t//flag synchronized so the first opponent note does not send\n"
+        "\t\t\t\t\t//a redundant CdlSetfilter command.\n"
+        "\t\t\t\t\tstage.flag |= STAGE_FLAG_VOCAL_ACTIVE;\n"
+        "\t\t\t\t\t\n"
+        "\t\t\t\t\t//Wait until first sector has played",
+    )
+
+    replace_once(
         xml,
         '\t\t\t\t<file name = "clwnb.xa" type = "xa" source = "iso/music/clwnb.xa"/>\n'
         '\t\t\t\t<dummy sectors="128"/>\n\t\t\t</dir>',
@@ -198,9 +230,9 @@ static void Stage_SelectMusic(XA_Track *track, u8 *channel)
 
     checks = {
         audio_h: ["XA_ErectA", "XA_Erect_Ugh"],
-        audio_c: ["ERECT_BOPEEBO_SECTORS", "\\\\MUSIC\\\\ERECTD.XA;1"],
+        audio_c: ["ERECT_BOPEEBO_SECTORS", "\\\\MUSIC\\\\ERECTD.XA;1", "xa_channel == channel"],
         stage_h: ["u8 music_channel"],
-        stage_c: ["Stage_SelectMusic", "StageDiff_Nightmare", "stage.music_channel"],
+        stage_c: ["Stage_SelectMusic", "StageDiff_Nightmare", "stage.music_channel", "stage.flag |= STAGE_FLAG_VOCAL_ACTIVE;"],
         xml: ["erecta.xa", "erectd.xa"],
     }
     for path, needles in checks.items():
@@ -209,7 +241,7 @@ static void Stage_SelectMusic(XA_Track *track, u8 *channel)
             if needle not in text:
                 raise SystemExit(f"{path}: missing expected result {needle!r}")
 
-    print("Applied Erect/Nightmare audio routing source changes successfully")
+    print("Applied Erect/Nightmare audio routing and first-opponent-note freeze fix successfully")
 
 
 if __name__ == "__main__":
