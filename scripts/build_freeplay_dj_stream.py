@@ -142,16 +142,20 @@ def main() -> None:
         raise SystemExit(f"DJ stream size mismatch: {stream.stat().st_size} != {expected_stream}")
 
     report = json.loads(args.report.read_text())
+    # Preserve the old sample_frames field so the existing visual-check workflow
+    # can distinguish this lineage while the runtime now consumes all 14 frames.
     report["outputs"]["fpchar.tim"] = {
         "template": "title",
         "size": [256, 256],
         "bytes": fpchar.stat().st_size,
         "sha256": base.sha256(fpchar),
         "content": "official Boyfriend DJ frame 0 using the shared 14-frame stream palette",
+        "sample_frames": [0, 4, 8, 12],
         "frame_size": [FRAME_W, FRAME_H],
         "frame_count": FRAME_COUNT,
     }
-    report["outputs"]["fpdj.bin"] = {
+    report["dj_stream"] = {
+        "file": "fpdj.bin",
         "bytes": stream.stat().st_size,
         "sha256": base.sha256(stream),
         "content": "14 official Boyfriend DJ flattened frames; shared 4bpp palette; RAM-resident stream",
