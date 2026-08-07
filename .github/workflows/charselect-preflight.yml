@@ -23,27 +23,35 @@ jobs:
             --pattern 'Sounds.and.Songs.zip'
           unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
           unzip -qo official-assets/Sounds.and.Songs.zip -d official-v084
-      - name: Emit exact Character Select inventory
+      - name: Probe Character Select Animate parser
         run: |
+          gzip -dc ci/charselect/build_v084_charselect_full.py.gz > scripts/build_v084_charselect_full.py
           python3 - <<'PY'
+          import json, sys, traceback
           from pathlib import Path
+          sys.path.insert(0, 'scripts')
+          import build_v084_charselect_full as b
           root=Path('official-v084/images/charSelect')
-          dirs=sorted(p.name for p in root.iterdir() if p.is_dir())
-          expected=['crowd','charSelectStage','barThing','bfChill','gfChill','lockedChill','charSelectSpeakers']
-          details=[]
-          for name in dirs:
-              p=root/name
-              if (p/'Animation.json').is_file():
-                  maps=sorted(x.name for x in p.glob('spritemap*.json'))
-                  details.append(f'{name}:ANIMATE:{",".join(maps)}')
-          static=sorted(p.name for p in root.iterdir() if p.is_file())
-          audio=[]
-          for p in Path('official-v084').rglob('*'):
-              if p.is_file() and any(k.lower() in p.stem.lower() for k in ['stayfunky','cs_select','cs_locked','cs_lights','cs_confirm']):
-                  audio.append(str(p))
+          names=['crowd','charSelectStage','barThing','bfChill','gfChill','lockedChill','charSelectSpeakers']
+          lines=[]
+          for name in names:
+              folder=root/name
+              try:
+                  a=b.load_animate(folder)
+                  lines.append(f'{name}:OK root={a.root_symbol!r} symbols={len(a.symbols)} sprites={len(a.sprites)} labels={b._labels(a.symbols[a.root_symbol])[:12]!r}')
+              except Exception as e:
+                  lines.append(f'{name}:FAIL {type(e).__name__}: {e}')
+                  lines.append(traceback.format_exc(limit=8))
+          for name in ['bfChill','crowd']:
+              p=root/name/'Animation.json'
+              d=json.loads(p.read_text())
+              lines.append(f'{name}.AN.type={type(d.get("AN")).__name__} value={repr(d.get("AN"))[:1200]}')
+              lines.append(f'{name}.SD.type={type(d.get("SD")).__name__} keys={list(d.get("SD",{}).keys()) if isinstance(d.get("SD"),dict) else "NA"}')
+              sm=json.loads((root/name/'spritemap1.json').read_text())
+              lines.append(f'{name}.ATLAS.keys={list(sm.keys())} atlas_type={type(sm.get("ATLAS")).__name__} atlas_preview={repr(sm.get("ATLAS"))[:1800]}')
           def esc(s):
               return s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
-          msg='DIRS='+'|'.join(dirs)+'\nANIMATE='+'|'.join(details)+'\nSTATIC='+'|'.join(static)+'\nAUDIO='+'|'.join(audio)+'\nEXPECTED='+'|'.join(f'{x}:{(root/x/"Animation.json").is_file()}' for x in expected)
-          print('::error title=Character Select source inventory::'+esc(msg))
+          msg='\n'.join(lines)
+          print('::error title=Character Select parser probe::'+esc(msg[:12000]))
           raise SystemExit(1)
           PY
