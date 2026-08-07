@@ -34,12 +34,18 @@ jobs:
       - name: Apply full-port source patches
         run: |
           if [ -d overlay ]; then cp -a overlay/. upstream/; fi
-          if compgen -G 'patches/*.patch' > /dev/null; then
-            for p in patches/*.patch; do
-              echo "Applying $p"
-              git -C upstream apply "../$p"
-            done
-          fi
+          for p in patches/*.patch; do
+            case "$p" in
+              *0002c-weekend1-stage-runtime.patch) continue ;;
+            esac
+            echo "Applying $p"
+            git -C upstream apply "../$p"
+          done
+          cat patches/chunks/0002c.*.b64 | base64 -d > /tmp/0002c-weekend1-stage-runtime.patch
+          echo "3c35dce44773fdbc771ceb694a83cc40f72e053b06a5e2889858a3ce702d94b6  /tmp/0002c-weekend1-stage-runtime.patch" | sha256sum -c -
+          test "$(stat -c%s /tmp/0002c-weekend1-stage-runtime.patch)" -eq 11471
+          git -C upstream apply /tmp/0002c-weekend1-stage-runtime.patch
+          git -C upstream diff --check
 
       - name: Download and merge official v0.8.4 assets
         env:
