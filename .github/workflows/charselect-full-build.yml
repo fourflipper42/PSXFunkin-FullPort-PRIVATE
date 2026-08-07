@@ -162,8 +162,8 @@ jobs:
           expected={'fpbg.tim','fpchar.tim','fpui.tim','fpextra.tim','csbg.tim','cslayer.tim','cschar.tim','csui.tim'}
           assert set(r['outputs']) == expected
           for name in expected:
-              p=Path('upstream/iso/menu')/name
-              assert p.is_file() and p.stat().st_size > 1000
+            p=Path('upstream/iso/menu')/name
+            assert p.is_file() and p.stat().st_size > 1000
           PY
 
       - name: Apply existing Freeplay visual parity and 14-frame DJ
@@ -200,29 +200,32 @@ jobs:
           if [ "$APPLY_RC" -ne 0 ]; then exit "$APPLY_RC"; fi
           set -e
           git -C upstream diff --check
-          test -s upstream/iso/menu/csanim.bin
-          test "$(stat -c%s upstream/iso/menu/csanim.bin)" -eq 520128
-          test -s upstream/iso/menu/cssfx.bin
-          test -s upstream/src/charselect_sfx_generated.h
-          test -s upstream/iso/music/charsel.xa
-          test "$(( $(stat -c%s upstream/iso/music/charsel.xa) % 2336 ))" -eq 0
-          grep -q 'MENU_CS_FRAME_COUNT 54' upstream/src/menu.c
-          grep -q 'MENU_CS_INTRO_TICKS' upstream/src/menu.c
-          grep -q 'Menu_CSGridIndex' upstream/src/menu.c
-          grep -q 'Menu_CSDrawGrid' upstream/src/menu.c
-          grep -q 'MENU_CS_SFX_SELECT_OFFSET' upstream/src/menu.c
-          grep -q 'MENU_CS_SFX_LOCKED_OFFSET' upstream/src/menu.c
-          grep -q 'MENU_CS_SFX_LIGHTS_OFFSET' upstream/src/menu.c
-          grep -q 'MENU_CS_SFX_CONFIRM_OFFSET' upstream/src/menu.c
-          grep -q '\\MUSIC\\CHARSEL.XA;1' upstream/src/menu.c
-          grep -q 'csanim.bin' upstream/funkin.xml
-          grep -q 'cssfx.bin' upstream/funkin.xml
-          grep -q 'charsel.xa' upstream/funkin.xml
-          ! grep -q 'RECT black = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT}' upstream/src/menu.c
-          ! grep -q 'PICO - LOCKED' upstream/src/menu.c
-          ! grep -q 'StageId_8_' upstream/src/menu.c
-          ! grep -q 'WEEKEND' upstream/src/menu.c
-          ! grep -q 'SPAGHETTI' upstream/src/menu.c
+          python3 - <<'PY'
+          from pathlib import Path
+          csanim=Path('upstream/iso/menu/csanim.bin')
+          cssfx=Path('upstream/iso/menu/cssfx.bin')
+          csh=Path('upstream/src/charselect_sfx_generated.h')
+          charsel=Path('upstream/iso/music/charsel.xa')
+          menu=Path('upstream/src/menu.c').read_text()
+          xml=Path('upstream/funkin.xml').read_text()
+          assert csanim.is_file() and csanim.stat().st_size == 520128, ('csanim size', csanim.stat().st_size if csanim.exists() else None)
+          assert cssfx.is_file() and cssfx.stat().st_size > 0, 'cssfx missing'
+          assert csh.is_file() and csh.stat().st_size > 0, 'charselect SFX header missing'
+          assert charsel.is_file() and charsel.stat().st_size > 0 and charsel.stat().st_size % 2336 == 0, ('charsel XA', charsel.stat().st_size if charsel.exists() else None)
+          required_menu=[
+              'MENU_CS_FRAME_COUNT 54','MENU_CS_INTRO_TICKS','Menu_CSGridIndex','Menu_CSDrawGrid',
+              'MENU_CS_SFX_SELECT_OFFSET','MENU_CS_SFX_LOCKED_OFFSET','MENU_CS_SFX_LIGHTS_OFFSET','MENU_CS_SFX_CONFIRM_OFFSET',
+              'CHARSEL.XA;1',
+          ]
+          missing=[x for x in required_menu if x not in menu]
+          assert not missing, f'menu.c missing Character Select markers: {missing}'
+          for x in ('csanim.bin','cssfx.bin','charsel.xa'):
+              assert x in xml, f'funkin.xml missing {x}'
+          forbidden=['RECT black = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT}','PICO - LOCKED','StageId_8_','WEEKEND','SPAGHETTI']
+          leaked=[x for x in forbidden if x in menu]
+          assert not leaked, f'later/fallback content leaked into Character Select checkpoint: {leaked}'
+          print('Character Select generated-file/runtime marker validation passed')
+          PY
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -256,11 +259,11 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           def esc(s):
-              return s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+            return s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
           for label, name in [('builder','charselect_build.log'), ('runtime apply','charselect_apply.log')]:
-              log=Path('build')/name
-              if log.is_file():
-                  print(f'::error title=Character Select {label}::' + esc(log.read_text(errors='replace')[-6000:]))
+            log=Path('build')/name
+            if log.is_file():
+              print(f'::error title=Character Select {label}::' + esc(log.read_text(errors='replace')[-6000:]))
           root=Path('official-v084/images/charSelect')
           dirs=sorted(p.name for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
           print('::warning title=Character Select asset folders::' + esc(' | '.join(dirs)))
@@ -303,7 +306,7 @@ jobs:
           test -s funkin.ps-exe
           sha256sum funkin.ps-exe
 
-      - name: Build MODE2 BIN CUE
+      - name: Build MODE2E BIN CUE OF
         working-directory: upstream
         run: |
           sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
@@ -322,7 +325,7 @@ jobs:
           cat > build/release/PSXFunkin_v084_Full_Character_Select.cue <<'EOF'
           FILE "PSXFunkin_v084_Full_Character_Select.bin" BINARY
             TRACK 01 MODE2/2352
-              INDEX 01 00:00:00
+            INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/funkin.ps-exe
           cp upstream/src/erect_audio_generated.h build/release/erect_audio_generated.h
