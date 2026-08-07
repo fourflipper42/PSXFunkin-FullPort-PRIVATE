@@ -123,12 +123,22 @@ static void Menu_CSDrawHQForeground(const RECT *dst)
 ''',
         'foreground free path',
     )
-    text = once(
-        text,
-        '\tmenu_cs_uploaded_char_frame = 0xFF;\n',
-        '\tmenu_cs_uploaded_char_frame = 0xFF;\n\tmenu_cs_uploaded_fg_frame = 0xFF;\n',
-        'foreground cache reset in free',
+
+    # The v4 generated runtime resets the character cache in both the free and
+    # load functions. Patch only the reset that belongs to Menu_FreeCSFrames;
+    # matching it globally is ambiguous and caused the first v5 CI failure.
+    free_start = text.index(free_anchor)
+    free_end = text.index('\n}\n', free_start) + 3
+    free_body = text[free_start:free_end]
+    reset = '\tmenu_cs_uploaded_char_frame = 0xFF;\n'
+    if free_body.count(reset) != 1:
+        raise SystemExit(f'foreground cache reset in free: expected one local anchor, found {free_body.count(reset)}')
+    free_body = free_body.replace(
+        reset,
+        reset + '\tmenu_cs_uploaded_fg_frame = 0xFF;\n',
+        1,
     )
+    text = text[:free_start] + free_body + text[free_end:]
 
     old_load = r'''static void Menu_LoadCSFrames(void)
 {
