@@ -9,58 +9,60 @@ permissions:
   contents: read
 
 jobs:
-  asset-audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download official v0.8.4 asset archives
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p official-assets
-          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets --pattern '*.zip'
-          sha256sum official-assets/*.zip | tee official-assets/SHA256SUMS.txt
-      - name: Inventory official assets
-        run: python3 scripts/inventory_assets.py official-assets build/audit
-      - name: Upload asset inventory
-        uses: actions/upload-artifact@v4
-        with:
-          name: fnf-v084-asset-inventory
-          path: build/audit/
-
   ps1-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+
       - name: Install host and MIPS build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential git curl unzip cmake ninja-build pkg-config \
+            build-essential git curl unzip cmake ninja-build pkg-config meson \
+            python3-pil \
             gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu \
             ffmpeg libavformat-dev libavfilter-dev libavcodec-dev libavutil-dev \
             libswscale-dev libswresample-dev libtinyxml2-dev
+
       - name: Fetch exact clean cuckydev t0.12 source
         run: |
           git clone https://github.com/cuckydev/PSXFunkin.git upstream
           git -C upstream checkout 850e0207479d8fb658bdc7637f6bfbc28a2b4066
           test "$(git -C upstream rev-parse HEAD)" = "850e0207479d8fb658bdc7637f6bfbc28a2b4066"
-      - name: Apply full-port source overlay
+
+      - name: Apply full-port source patches
         run: |
           if [ -d overlay ]; then cp -a overlay/. upstream/; fi
           if compgen -G 'patches/*.patch' > /dev/null; then
-            for p in patches/*.patch; do git -C upstream apply "../$p"; done
+            for p in patches/*.patch; do
+              echo "Applying $p"
+              git -C upstream apply "../$p"
+            done
           fi
-      - name: Download current official metadata and charts
+
+      - name: Download and merge official v0.8.4 assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p official-assets official-v084
-          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip'
-          unzip -q official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
+          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets --pattern '*.zip'
+          sha256sum official-assets/*.zip | tee build-official-assets.sha256
+          unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
+          unzip -qo official-assets/Sounds.and.Songs.zip -d official-v084
+          unzip -qo official-assets/WEEKS.zip -d official-v084
           test -d official-v084/data/songs
-      - name: Generate official v0.8.4 PS1 charts
+          test -d official-v084/shared/images/characters/pico
+          test -s official-v084/songs/darnell/Inst.ogg
+          test -s official-v084/songs/lit-up/Inst.ogg
+          test -s official-v084/songs/2hot/Inst.ogg
+          test -s official-v084/songs/blazin/Inst.ogg
+          test -s official-v084/videos/videos/darnellCutscene.mp4
+          test -d official-v084/weekend1/images
+
+      - name: Generate current Tutorial and Weeks 1-7 charts
         run: |
+          mkdir -p build
           python3 scripts/build_v084_legacy_charts.py \
             --data-root official-v084 \
             --iso-root upstream/iso \
@@ -69,6 +71,47 @@ jobs:
           test "$(find upstream/iso/chart -name '*.cht' | wc -l)" -ge 98
           test -s upstream/iso/chart/1.1r.cht
           test -s upstream/iso/chart/1.1m.cht
+
+      - name: Generate official Weekend 1 charts and assets
+        run: |
+          python3 scripts/build_weekend1_charts.py \
+            --root official-v084 \
+            --iso-root upstream/iso \
+            --report build/weekend1_charts.json
+          python3 scripts/build_weekend1_assets.py \
+            --root official-v084 \
+            --upstream upstream \
+            --report build/weekend1_assets.json
+          test "$(find upstream/iso/chart -name '8.*.cht' | wc -l)" -eq 14
+          for f in upstream/iso/picoplay.arc upstream/iso/nene.arc upstream/iso/darnell.arc upstream/iso/picobl.arc upstream/iso/darnbl.arc upstream/iso/week8/back.arc upstream/iso/week8/blazin.arc; do test -s "$f"; done
+          for f in upstream/src/character/picoplayer.c upstream/src/character/nene.c upstream/src/character/darnell.c upstream/src/character/picoblazin.c upstream/src/character/darnellblazin.c; do test -s "$f"; done
+
+      - name: Build psxavenc
+        run: |
+          git clone https://github.com/WonderfulToolchain/psxavenc.git psxavenc
+          meson setup psxavenc/build psxavenc --buildtype=release
+          meson compile -C psxavenc/build
+          test -x psxavenc/build/psxavenc
+
+      - name: Encode Weekend 1 XA and STR media
+        run: |
+          mkdir -p upstream/iso/music upstream/iso/movie
+          python3 scripts/build_weekend1_audio.py \
+            --root official-v084 \
+            --out upstream/iso/music \
+            --psxavenc psxavenc/build/psxavenc \
+            --report build/weekend1_audio.json
+          python3 scripts/build_weekend1_movies.py \
+            --root official-v084 \
+            --out upstream/iso/movie \
+            --psxavenc psxavenc/build/psxavenc \
+            --report build/weekend1_movies.json
+          test -s upstream/iso/music/week8.xa
+          test -s upstream/iso/movie/darnell.str
+          test -s upstream/iso/movie/2hot.str
+          test -s upstream/iso/movie/blazin.str
+          test "$(( $(stat -c%s upstream/iso/music/week8.xa) % 2336 ))" -eq 0
+
       - name: Acquire converted PsyQ compatibility libraries for build only
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
@@ -82,6 +125,7 @@ jobs:
           cp -a "$LIB" upstream/mips/psyq/lib
           test -f upstream/mips/psyq/include/libetc.h
           rm -rf /tmp/psyq.zip /tmp/psyq-extract
+
       - name: Build mkpsxiso
         run: |
           git clone --recursive https://github.com/CookiePLMonster/mkpsxiso.git mkpsxiso
@@ -89,6 +133,7 @@ jobs:
           cmake --build mkpsxiso/build
           cmake --install mkpsxiso/build
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Compile PSXFunkin executable
         working-directory: upstream
         run: |
@@ -96,27 +141,34 @@ jobs:
           make -j2
           test -s funkin.ps-exe
           sha256sum funkin.ps-exe
-      - name: Build DuckStation BIN/CUE
+
+      - name: Build DuckStation MODE2 BIN CUE
         working-directory: upstream
         run: |
           sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
           "$HOME/.local/bin/mkpsxiso" -y funkin.xml
-          test -s funkin.bin; test -s funkin.cue
-      - name: Package current build
+          test -s funkin.bin
+          test -s funkin.cue
+          sectors=$(( $(stat -c%s funkin.bin) / 2352 ))
+          echo "Raw disc sectors: $sectors"
+          test "$sectors" -le 360000
+
+      - name: Package Weekend 1 milestone
         run: |
           mkdir -p build/release
-          cp upstream/funkin.bin build/release/PSXFunkin_FullPort_Current.bin
-          cat > build/release/PSXFunkin_FullPort_Current.cue <<'EOF'
-          FILE "PSXFunkin_FullPort_Current.bin" BINARY
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Weekend1.bin
+          cat > build/release/PSXFunkin_v084_Weekend1.cue <<'EOF'
+          FILE "PSXFunkin_v084_Weekend1.bin" BINARY
             TRACK 01 MODE2/2352
               INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/funkin.ps-exe
-          cp build/v084_charts.json build/release/v084_charts.json
-          (cd build/release && sha256sum PSXFunkin_FullPort_Current.bin PSXFunkin_FullPort_Current.cue funkin.ps-exe v084_charts.json > SHA256SUMS.txt)
-      - name: Upload current BIN/CUE
+          cp build/v084_charts.json build/weekend1_charts.json build/weekend1_assets.json build/weekend1_audio.json build/weekend1_movies.json build/release/
+          (cd build/release && sha256sum PSXFunkin_v084_Weekend1.bin PSXFunkin_v084_Weekend1.cue funkin.ps-exe *.json > SHA256SUMS.txt)
+
+      - name: Upload Weekend 1 BIN CUE
         uses: actions/upload-artifact@v4
         with:
-          name: psxfunkin-v084-current-build
+          name: psxfunkin-v084-weekend1
           compression-level: 0
           path: build/release/
