@@ -1,0 +1,51 @@
+name: Inspect official v0.8.4 Boyfriend DJ symbol
+
+on:
+  push:
+    branches: [ menu-visual-parity-checkpoint ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download official shared assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p official-assets official-v084
+          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip'
+          unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
+      - name: Print Boyfriend DJ symbol and direct dependencies
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('official-v084/images/freeplay/freeplay-boyfriend/Animation.json')
+          data=json.loads(p.read_text())
+          syms={s.get('SN'):s for s in data['SD']['S']}
+          wanted=['Boyfriend DJ']
+          seen=set()
+          while wanted:
+              name=wanted.pop(0)
+              if name in seen or name not in syms: continue
+              seen.add(name)
+              s=syms[name]
+              print('\n===== SYMBOL',name,'=====')
+              print(json.dumps(s,indent=2))
+              def walk(o):
+                  if isinstance(o,dict):
+                      si=o.get('SI')
+                      if isinstance(si,dict) and si.get('SN') in syms and si.get('SN') not in seen:
+                          wanted.append(si['SN'])
+                      for v in o.values(): walk(v)
+                  elif isinstance(o,list):
+                      for v in o: walk(v)
+              walk(s)
+          print('\nDEPENDENCY COUNT',len(seen))
+          print(sorted(seen))
+          PY
