@@ -17,17 +17,22 @@ jobs:
         with:
           ref: charselect-full-checkpoint
           fetch-depth: 0
-      - name: Expand sources
+      - name: Expand and patch sources
         run: |
-          mkdir -p debug/charselect
+          mkdir -p debug/charselect /tmp/charselect-v2
           gzip -dc ci/charselect/build_v084_charselect_full.py.gz > debug/charselect/build_v084_charselect_full.py
           gzip -dc ci/charselect/apply_v084_charselect_full.py.gz > debug/charselect/apply_v084_charselect_full.py
           cp scripts/fix_charselect_ram_runtime.py debug/charselect/fix_charselect_ram_runtime.py
+          gzip -dc ci/charselect/build_v084_charselect_full.py.gz > /tmp/charselect-v2/build_v084_charselect_full.py
+          gzip -dc ci/charselect/apply_v084_charselect_full.py.gz > /tmp/charselect-v2/apply_v084_charselect_full.py
+          python3 scripts/fix_charselect_intro_extraction.py /tmp/charselect-v2/build_v084_charselect_full.py
+          cp /tmp/charselect-v2/build_v084_charselect_full.py debug/charselect/v2_build_v084_charselect_full.py
+          cp /tmp/charselect-v2/apply_v084_charselect_full.py debug/charselect/v2_apply_v084_charselect_full.py
           sha256sum debug/charselect/*
       - name: Commit readable debug copies
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add debug/charselect
-          git commit -m 'Expose Character Select generator sources for parity fixes'
+          git commit -m 'Expose patched Character Select sources for parity fixes'
           git push origin HEAD:charselect-full-checkpoint
