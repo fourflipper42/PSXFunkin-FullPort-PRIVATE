@@ -1,4 +1,4 @@
-name: Character Select Asset Preflight
+name: Character Select Parser Fix Promotion
 
 on:
   push:
@@ -9,61 +9,27 @@ permissions:
   contents: write
 
 jobs:
-  inventory:
+  promote:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install parser dependency
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
-      - name: Download official v0.8.4 Character Select source assets
+        with:
+          fetch-depth: 0
+      - name: Promote validated v0.8.4 Animate parser fix
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p official-assets official-v084
-          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets \
-            --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip' \
-            --pattern 'Sounds.and.Songs.zip'
-          unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
-          unzip -qo official-assets/Sounds.and.Songs.zip -d official-v084
-      - name: Probe Character Select Animate parser
-        run: |
-          gzip -dc ci/charselect/build_v084_charselect_full.py.gz > scripts/build_v084_charselect_full.py
-          set +e
-          python3 - <<'PY' > parser-probe.txt 2>&1
-          import json, sys, traceback
-          from pathlib import Path
-          sys.path.insert(0, 'scripts')
-          print('IMPORT_START')
-          import build_v084_charselect_full as b
-          print('IMPORT_OK')
-          root=Path('official-v084/images/charSelect')
-          names=['crowd','charSelectStage','barThing','bfChill','gfChill','lockedChill','charSelectSpeakers']
-          for name in names:
-              folder=root/name
-              try:
-                  a=b.load_animate(folder)
-                  print(f'{name}:OK root={a.root_symbol!r} symbols={len(a.symbols)} sprites={len(a.sprites)} labels={b._labels(a.symbols[a.root_symbol])[:12]!r}')
-              except Exception as e:
-                  print(f'{name}:FAIL {type(e).__name__}: {e}')
-                  traceback.print_exc(limit=10)
-          for name in ['bfChill','crowd']:
-              p=root/name/'Animation.json'
-              d=json.loads(p.read_text())
-              print(f'{name}.AN.type={type(d.get("AN")).__name__} value={repr(d.get("AN"))[:1200]}')
-              print(f'{name}.SD.type={type(d.get("SD")).__name__} keys={list(d.get("SD",{}).keys()) if isinstance(d.get("SD"),dict) else "NA"}')
-              sm=json.loads((root/name/'spritemap1.json').read_text())
-              print(f'{name}.ATLAS.keys={list(sm.keys())} atlas_type={type(sm.get("ATLAS")).__name__} atlas_preview={repr(sm.get("ATLAS"))[:1800]}')
-          PY
-          RC=$?
-          set -e
-          cat parser-probe.txt
-          echo "PROBE_RC=$RC" >> parser-probe.txt
-      - name: Commit parser probe text for inspection
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          CONTENT="$(base64 -w0 parser-probe.txt)"
-          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/ci/charselect/parser-probe.txt" \
-            -f message='Record Character Select parser probe' \
-            -f content="$CONTENT" \
-            -f branch='charselect-full-checkpoint'
+          set -euo pipefail
+          git checkout charselect-full-checkpoint
+          gh api "repos/${GITHUB_REPOSITORY}/git/blobs/ae2a9fe5ada73886efde45e42ca3ad87876b54ec" --jq .content \
+            | tr -d '\n' | base64 -d > ci/charselect/build_v084_charselect_full.py.gz
+          gzip -dc ci/charselect/build_v084_charselect_full.py.gz > /tmp/build_v084_charselect_full.py
+          echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  /tmp/build_v084_charselect_full.py' | sha256sum -c -
+          sed -i -E "s#echo '[0-9a-f]{64}  scripts/build_v084_charselect_full.py'#echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py'#" .github/workflows/charselect-full-build.yml
+          grep -F "aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py" .github/workflows/charselect-full-build.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ci/charselect/build_v084_charselect_full.py.gz .github/workflows/charselect-full-build.yml
+          git diff --cached --check
+          git commit -m 'Fix v0.8.4 Animate atlas parsing'
+          git push origin HEAD:charselect-full-checkpoint
