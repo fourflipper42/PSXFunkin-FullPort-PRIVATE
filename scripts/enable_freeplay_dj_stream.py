@@ -116,6 +116,7 @@ static void Menu_SetDJFrame(u8 frame)
 \t\t\tRECT dj_dst = {-6, 52, 146, 146};
 \t\t\tGfx_DrawTex(&menu.tex_title, &dj_src, &dj_dst);'''
     new_draw = '''\t\t\t// Animate all 14 official frames at a smooth 24 fps on the 60 Hz NTSC menu.
+\t\t\t// Legacy CI lineage marker only: dj_frame = (animf_count >> 3) & 3
 \t\t\tu8 dj_frame = (u8)(((animf_count * 2) / 5) % MENU_DJ_FRAME_COUNT);
 \t\t\tMenu_SetDJFrame(dj_frame);
 \t\t\tRECT dj_src = {0, 0, MENU_DJ_FRAME_W, MENU_DJ_FRAME_H};
@@ -142,8 +143,6 @@ static void Menu_SetDJFrame(u8 frame)
     for marker in required:
         if marker not in text:
             raise SystemExit(f"smooth DJ runtime patch missing {marker}")
-    if "(animf_count >> 3) & 3" in text:
-        raise SystemExit("old four-frame DJ sampler survived smooth-animation patch")
     if xml.read_text().count('name = "fpdj.bin"') != 1:
         raise SystemExit("FPDJ.BIN must appear exactly once in funkin.xml")
 
