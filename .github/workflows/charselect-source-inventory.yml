@@ -1,0 +1,36 @@
+name: Inventory v0.8.4 Character Select Sources
+
+on:
+  push:
+    branches: [ menu-visual-parity-checkpoint ]
+    paths: [ '.github/workflows/charselect-source-inventory.yml' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download official v0.8.4 source asset archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p official-assets official-v084
+          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip' --pattern 'Sounds.and.Songs.zip'
+          echo 'd02d2ea24f9d5b032012a69ab533f724ee5cd364093e693f21d17bd3abfccc37  official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip' | sha256sum -c -
+          echo '042d0ecd29a5356b4c17e750118a52485ee69466e8f1da02fed057c4abd98dc7  official-assets/Sounds.and.Songs.zip' | sha256sum -c -
+          unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
+          unzip -qo official-assets/Sounds.and.Songs.zip -d official-v084
+      - name: Inventory Character Select files
+        run: |
+          echo '=== CHARSELECT FILES ==='
+          find official-v084 -type f | grep -Ei '/charselect/|charselect' | sort
+          echo '=== INTROSELECT FILES ==='
+          find official-v084 -type f | grep -Ei 'introselect' | sort || true
+          echo '=== CHARSELECT SOUNDS ==='
+          find official-v084 -type f | grep -Ei '/(sounds?|music)/.*(CS_|stayFunky|static loop)' | sort || true
+          echo '=== VIDEO-LIKE FILES ==='
+          find official-v084 -type f | grep -Ei '\.(mp4|webm|mov|ogv)$' | sort || true
