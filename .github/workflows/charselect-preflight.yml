@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   promote:
@@ -20,12 +21,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git checkout charselect-full-checkpoint
-          gh api "repos/${GITHUB_REPOSITORY}/git/blobs/ae2a9fe5ada73886efde45e42ca3ad87876b54ec" --jq .content \
-            | tr -d '\n' | base64 -d > ci/charselect/build_v084_charselect_full.py.gz
+          gh api "repos/${GITHUB_REPOSITORY}/git/blobs/ae2a9fe5ada73886efde45e42ca3ad87876b54ec" > /tmp/charselect-builder-blob.json
+          python3 - <<'PY'
+          import base64, json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/charselect-builder-blob.json').read_text())
+          raw=base64.b64decode(d['content'])
+          Path('ci/charselect/build_v084_charselect_full.py.gz').write_bytes(raw)
+          print('builder gzip bytes:', len(raw))
+          PY
           gzip -dc ci/charselect/build_v084_charselect_full.py.gz > /tmp/build_v084_charselect_full.py
           echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  /tmp/build_v084_charselect_full.py' | sha256sum -c -
-          sed -i -E "s#echo '[0-9a-f]{64}  scripts/build_v084_charselect_full.py'#echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py'#" .github/workflows/charselect-full-build.yml
+          python3 -m py_compile /tmp/build_v084_charselect_full.py
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          p=Path('.github/workflows/charselect-full-build.yml')
+          s=p.read_text()
+          pat=r"echo '[0-9a-f]{64}  scripts/build_v084_charselect_full\.py' \| sha256sum -c -"
+          repl="echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py' | sha256sum -c -"
+          s2,n=re.subn(pat,repl,s,count=1)
+          if n != 1:
+              raise SystemExit(f'expected exactly one builder checksum line, replaced {n}')
+          p.write_text(s2)
+          PY
           grep -F "aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py" .github/workflows/charselect-full-build.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -33,3 +52,4 @@ jobs:
           git diff --cached --check
           git commit -m 'Fix v0.8.4 Animate atlas parsing'
           git push origin HEAD:charselect-full-checkpoint
+          gh workflow run charselect-full-build.yml --ref charselect-full-checkpoint
