@@ -22,6 +22,8 @@ jobs:
           echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py' | sha256sum -c -
           echo 'f36376bd0949f1f3d2b2a0ec31a9bebccd8a29df24aff82627c8f4ff5895097e  scripts/apply_v084_charselect_full.py' | sha256sum -c -
           python3 -m py_compile scripts/build_v084_charselect_full.py scripts/apply_v084_charselect_full.py
+          python3 scripts/fix_charselect_intro_extraction.py scripts/build_v084_charselect_full.py
+          python3 -m py_compile scripts/build_v084_charselect_full.py
 
       - name: Install host and MIPS build dependencies
         run: |
@@ -207,7 +209,7 @@ jobs:
           grep -q 'MENU_CS_SFX_LOCKED_OFFSET' upstream/src/menu.c
           grep -q 'MENU_CS_SFX_LIGHTS_OFFSET' upstream/src/menu.c
           grep -q 'MENU_CS_SFX_CONFIRM_OFFSET' upstream/src/menu.c
-          grep -q '\\\\MUSIC\\\\CHARSEL.XA;1' upstream/src/menu.c
+          grep -q '\\MUSIC\\CHARSEL.XA;1' upstream/src/menu.c
           grep -q 'csanim.bin' upstream/funkin.xml
           grep -q 'cssfx.bin' upstream/funkin.xml
           grep -q 'charsel.xa' upstream/funkin.xml
