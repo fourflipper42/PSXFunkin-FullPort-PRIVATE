@@ -48,10 +48,12 @@ jobs:
           unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
           unzip -qo official-assets/Sounds.and.Songs.zip -d official-v084
           test -s official-v084/images/freeplay/freeplayBGweek1-bf.png
+          test -s official-v084/images/freeplay/freeplay-boyfriend/Animation.json
+          test -s official-v084/images/freeplay/freeplay-boyfriend/spritemap1.json
+          test -s official-v084/images/freeplay/freeplay-boyfriend/spritemap1.png
           test -s official-v084/images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png
-          test -s official-v084/images/charSelect/charSelectBG.png
-          test -s official-v084/images/charSelect/bfChill.png
-          test -s official-v084/images/charSelect/picoChill.png
+          test -s official-v084/images/charSelect/bfIcon.png
+          test -s official-v084/images/charSelect/picoIcon.png
 
       - name: Regenerate confirmed official v0.8.4 charts
         run: |
@@ -106,29 +108,43 @@ jobs:
             --assets-root official-v084 \
             --upstream upstream \
             --report build/menu_visual_sources.json
+          python3 scripts/replace_freeplay_bf_with_official_dj.py \
+            --assets-root official-v084 \
+            --upstream upstream \
+            --report build/menu_visual_sources.json
           python3 - <<'PY'
           import json
           from pathlib import Path
           r=json.loads(Path('build/menu_visual_sources.json').read_text())
-          assert r['policy'] == 'official-v0.8.4-existing-files-only; no generated artwork'
-          assert len(r['sources']) >= 15
+          assert 'official-v0.8.4-existing-files-only' in r['policy']
+          assert 'no replacement artwork' in r['policy']
+          assert r['outputs']['fpchar.tim']['sample_frames'] == [0,4,8,12]
+          for rel in [
+              'images/freeplay/freeplay-boyfriend/Animation.json',
+              'images/freeplay/freeplay-boyfriend/spritemap1.json',
+              'images/freeplay/freeplay-boyfriend/spritemap1.png']:
+              assert rel in r['sources']
           expected={'fpbg.tim','fpchar.tim','fpui.tim','fpextra.tim','csbg.tim','cslayer.tim','cschar.tim','csui.tim'}
           assert set(r['outputs']) == expected
           for name in expected:
               p=Path('upstream/iso/menu')/name
               assert p.is_file() and p.stat().st_size > 1000
-          print('Authentic source-only menu texture manifest validated')
+          print('Authentic source-only menu textures and official DJ reconstruction validated')
           PY
 
-      - name: Apply v0.8.4 authentic menu visual parity layer
+      - name: Apply corrected v0.8.4 menu visual parity layer
         run: |
           python3 scripts/apply_v084_menu_visual_parity.py upstream
+          python3 scripts/fix_v084_menu_visual_feedback.py upstream
           git -C upstream diff --check
           grep -q 'Menu_LoadV084Textures' upstream/src/menu.c
           grep -q 'Menu_SyncV084Textures' upstream/src/menu.c
           grep -q 'Menu_V084DifficultyTick' upstream/src/menu.c
+          grep -q 'dj_frame = (animf_count >> 3) & 3' upstream/src/menu.c
+          test "$(grep -c 'Menu_DrawV084Difficulty(244, 24)' upstream/src/menu.c)" -eq 1
+          grep -q 'PICO - LOCKED' upstream/src/menu.c
+          grep -q 'RECT black = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT}' upstream/src/menu.c
           grep -q '\\\\MENU\\\\FPBG.TIM;1' upstream/src/menu.c
-          grep -q '\\\\MENU\\\\CSBG.TIM;1' upstream/src/menu.c
           grep -q 'fpbg.tim' upstream/funkin.xml
           grep -q 'csui.tim' upstream/funkin.xml
           # Functional scope remains frozen: Pico visible/locked, no later songs.
@@ -179,12 +195,12 @@ jobs:
           echo "Raw disc sectors: $sectors"
           test "$sectors" -le 360000
 
-      - name: Package menu visual parity checkpoint
+      - name: Package corrected menu visual parity checkpoint
         run: |
           mkdir -p build/release
-          cp upstream/funkin.bin build/release/PSXFunkin_v084_Menu_Visual_Parity.bin
-          cat > build/release/PSXFunkin_v084_Menu_Visual_Parity.cue <<'EOF'
-          FILE "PSXFunkin_v084_Menu_Visual_Parity.bin" BINARY
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Menu_Visual_Parity_Fix.bin
+          cat > build/release/PSXFunkin_v084_Menu_Visual_Parity_Fix.cue <<'EOF'
+          FILE "PSXFunkin_v084_Menu_Visual_Parity_Fix.bin" BINARY
             TRACK 01 MODE2/2352
               INDEX 01 00:00:00
           EOF
@@ -192,20 +208,22 @@ jobs:
           cp upstream/src/erect_audio_generated.h build/release/erect_audio_generated.h
           cp build/v084_charts.json build/erect_audio.json build/menu_visual_sources.json build/release/
           cat > build/release/MENU_VISUAL_PARITY_SCOPE.txt <<'EOF'
-          PSXFunkin v0.8.4 Menu Visual Parity Checkpoint
-          - Functional baseline: confirmed menu-foundation checkpoint.
-          - Visual raster sources: existing official v0.8.4 Funkin files only.
-          - Technical conversions: crop/resize/atlas/palette/TIM encoding only; no invented artwork.
+          PSXFunkin v0.8.4 Menu Visual Parity Correction
+          - Functional baseline: user-confirmed menu-foundation checkpoint.
+          - Freeplay Boyfriend: official v0.8.4 Boyfriend DJ symbol reconstructed from shipped Animate metadata/atlas; four sampled idle frames.
+          - Difficulty graphic: forced to foreground over song names/capsules.
+          - Character Select: intentionally simplified black selector using official BF/Pico/lock/selector art.
+          - Visual raster sources: existing official v0.8.4 Funkin files only; no replacement/generated artwork.
           - Pico remains intentionally locked pending the Pico Mix checkpoint.
-          - Weekend 1 and SPAGHETTI are not included in this checkpoint.
+          - Weekend 1 and SPAGHETTI are not included.
           EOF
-          grep -Fx 'FILE "PSXFunkin_v084_Menu_Visual_Parity.bin" BINARY' build/release/PSXFunkin_v084_Menu_Visual_Parity.cue
-          test "$(( $(stat -c%s build/release/PSXFunkin_v084_Menu_Visual_Parity.bin) % 2352 ))" -eq 0
-          (cd build/release && sha256sum PSXFunkin_v084_Menu_Visual_Parity.bin PSXFunkin_v084_Menu_Visual_Parity.cue funkin.ps-exe erect_audio_generated.h v084_charts.json erect_audio.json menu_visual_sources.json MENU_VISUAL_PARITY_SCOPE.txt > SHA256SUMS.txt)
+          grep -Fx 'FILE "PSXFunkin_v084_Menu_Visual_Parity_Fix.bin" BINARY' build/release/PSXFunkin_v084_Menu_Visual_Parity_Fix.cue
+          test "$(( $(stat -c%s build/release/PSXFunkin_v084_Menu_Visual_Parity_Fix.bin) % 2352 ))" -eq 0
+          (cd build/release && sha256sum PSXFunkin_v084_Menu_Visual_Parity_Fix.bin PSXFunkin_v084_Menu_Visual_Parity_Fix.cue funkin.ps-exe erect_audio_generated.h v084_charts.json erect_audio.json menu_visual_sources.json MENU_VISUAL_PARITY_SCOPE.txt > SHA256SUMS.txt)
 
-      - name: Upload DuckStation-ready visual parity checkpoint
+      - name: Upload DuckStation-ready corrected visual parity checkpoint
         uses: actions/upload-artifact@v4
         with:
-          name: psxfunkin-v084-menu-visual-parity
+          name: psxfunkin-v084-menu-visual-parity-fix
           compression-level: 0
           path: build/release/
