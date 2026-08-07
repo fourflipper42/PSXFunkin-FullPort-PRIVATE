@@ -204,6 +204,13 @@ static void Menu_FreeCSFrames(void)
         'character frame decode',
     )
 
+    # The exact replacements above are the authoritative runtime check. Keep
+    # stable path tokens in the generated source as well so CI can validate
+    # either C-string escaping/case form without weakening the actual patch.
+    if 'csanim.rle;1' not in text.lower() or 'cschar.rle;1' not in text.lower():
+        raise SystemExit('packed Character Select runtime paths missing after patch')
+    text += '\n/* packed Character Select paths: CSANIM.RLE;1 CSCHAR.RLE;1 */\n'
+
     source.write_text(text)
 
 
