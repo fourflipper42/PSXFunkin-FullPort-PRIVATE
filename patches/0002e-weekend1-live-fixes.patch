@@ -1,0 +1,94 @@
+diff --git a/src/movie.c b/src/movie.c
+index f0fe156..5443fd2 100644
+--- a/src/movie.c
++++ b/src/movie.c
+@@ -7,13 +7,22 @@
+ //Movie interface
+ void Movie_Play(const char *path, unsigned long length)
+ {
++	// Fail distinctly if the file itself is missing. PlayStr returns zero both
++	// for real setup failures and for a user-requested Start skip, so treating
++	// every zero as fatal makes normal cutscene skipping impossible.
++	CdlFILE file;
++	if (CdSearchFile(&file, path) == 0)
++	{
++		sprintf(error_msg, "[Movie_Play] Missing \"%s\"", path);
++		ErrorLock();
++		return;
++	}
++	// Story selection may itself be performed with Start. Wait for that press
++	// to be released so it cannot instantly skip the movie we are about to play.
++	while (PadRead(1) & PADstart)
++		VSync(0);
++
+ 	STRFILE sfile;
+ 	strcpy(sfile.FileName, path);
+ 	sfile.Xres = 320;
+ 	sfile.Yres = 240;
+ 	sfile.NumFrames = length;
+-	if (PlayStr(320, 240, 0, 0, &sfile) == 0)
+-	{
+-		sprintf(error_msg, "[Movie_Play] Failed to play \"%s\"", path);
+-		ErrorLock();
+-	}
++	PlayStr(320, 240, 0, 0, &sfile);
+ }
+diff --git a/src/stage.c b/src/stage.c
+index 035ea24..0d2d8f1 100644
+--- a/src/stage.c
++++ b/src/stage.c
+@@ -44,6 +44,7 @@
+ #include "stage/week4.h"
+ #include "stage/week7.h"
+ #include "stage/weekend1.h"
++#include "weekend1_movies_generated.h"
+ #include "movie.h"
+ 
+ static const StageDef stage_defs[StageId_Max] = {
+@@ -991,9 +992,9 @@ static void Stage_PlayWeekend1Cutscene(StageId id, boolean story)
+ 	Audio_StopXA();
+ 	switch (id)
+ 	{
+-		case StageId_8_1: Movie_Play("\\MOVIE\\DARNELL.STR;1", 1297); break;
+-		case StageId_8_3: Movie_Play("\\MOVIE\\2HOT.STR;1", 428); break;
+-		case StageId_8_4: Movie_Play("\\MOVIE\\BLAZIN.STR;1", 657); break;
++		case StageId_8_1: Movie_Play("\\MOVIE\\DARNELL.STR;1", W1_DARNELL_FRAMES); break;
++		case StageId_8_3: Movie_Play("\\MOVIE\\2HOT.STR;1", W1_2HOT_FRAMES); break;
++		case StageId_8_4: Movie_Play("\\MOVIE\\BLAZIN.STR;1", W1_BLAZIN_FRAMES); break;
+ 		default: return;
+ 	}
+ 	weekend1_last_cutscene = id;
+diff --git a/src/menu.c b/src/menu.c
+index 546d8ca..b8088dc 100644
+--- a/src/menu.c
++++ b/src/menu.c
+@@ -207,6 +207,13 @@ static const void Menu_DrawWeek(const char *week, s32 x, s32 y)
+ 	}
+ 	else
+ 	{
++		// t0.12's Story TIM only contains numeric glyphs 1-7. Keep Week 8
++		// readable using the existing authentic menu font rather than drawing
++		// a blank atlas cell.
++		if (week[0] == '8' && week[1] == '\0')
++		{
++			menu.font_bold.draw(&menu.font_bold, "WEEK EIGHT", x, y + 8, FontAlign_Left);
++			return;
++		}
+ 		//Week
+ 		RECT label_src = {0, 32, 80, 32};
+ 		Gfx_BlitTex(&menu.tex_story, &label_src, x, y);
+@@ -568,7 +575,7 @@ void Menu_Tick(void)
+ 				{"5", StageId_5_1, "RED SNOW", {"COCOA", "EGGNOG", "WINTER HORRORLAND"}},
+ 				{"6", StageId_6_1, "HATING SIMULATOR", {"SENPAI", "ROSES", "THORNS"}},
+ 				{"7", StageId_7_1, "TANKMAN", {"UGH", "GUNS", "STRESS"}},
+-				{"8", StageId_8_1, "DUE DEBTS", {"DARNELL", "LIT UP", "2HOT", "BLAZIN'"}},
++				{"8", StageId_8_1, "DUE DEBTS", {"DARNELL", "LIT UP", "TWO HOT", "BLAZIN'"}},
+ 			};
+@@ -705,7 +712,7 @@ void Menu_Tick(void)
+ 				{StageId_7_3, "STRESS"},
+ 				{StageId_8_1, "DARNELL"},
+ 				{StageId_8_2, "LIT UP"},
+-				{StageId_8_3, "2HOT"},
++				{StageId_8_3, "TWO HOT"},
+ 				{StageId_8_4, "BLAZIN'"},
+ 			};
