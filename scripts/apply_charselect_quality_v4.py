@@ -53,6 +53,13 @@ def main() -> None:
     for old, new, label in replacements:
         text = once(text, old, new, label)
 
+    # The v3 RAM patch deliberately leaves a path-token comment for CI. Remove
+    # the obsolete character-bank token now that live frames use CSCHAR8.RLE.
+    stale_marker = "/* packed Character Select paths: CSANIM.RLE;1 CSCHAR.RLE;1 */"
+    if text.count(stale_marker) != 1:
+        raise SystemExit(f"stale v3 path marker: expected one anchor, found {text.count(stale_marker)}")
+    text = text.replace(stale_marker, "/* compact Character Select intro path: CSANIM.RLE;1 */", 1)
+
     decoder_anchor = "static void Menu_FreeCSFrames(void)\n{"
     decoder = r'''#define MENU_CS_HQ_BG_VRAM_X 448
 #define MENU_CS_HQ_CHAR_VRAM_X 768
@@ -277,7 +284,7 @@ static void Menu_CSDrawHQ16(const RECT *dst)
     for marker in required:
         if marker not in low:
             raise SystemExit(f"quality v4 runtime missing {marker}")
-    if "cschar.rle;1" in low:
+    if 'io_read("\\\\menu\\\\cschar.rle;1")' in low:
         raise SystemExit("obsolete 4bpp live character bank still loaded")
     if "stageid_8_" in low or "spaghetti" in low:
         raise SystemExit("later milestone content leaked into quality v4")
