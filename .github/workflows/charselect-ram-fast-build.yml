@@ -1,0 +1,229 @@
+name: PSXFunkin v0.8.4 Character Select RAM Fix Fast Path
+
+on:
+  push:
+    branches: [ charselect-full-checkpoint ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ps1-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Expand Character Select sources
+        run: |
+          gzip -dc ci/charselect/build_v084_charselect_full.py.gz > scripts/build_v084_charselect_full.py
+          gzip -dc ci/charselect/apply_v084_charselect_full.py.gz > scripts/apply_v084_charselect_full.py
+          echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py' | sha256sum -c -
+          echo 'f36376bd0949f1f3d2b2a0ec31a9bebccd8a29df24aff82627c8f4ff5895097e  scripts/apply_v084_charselect_full.py' | sha256sum -c -
+          python3 scripts/fix_charselect_intro_extraction.py scripts/build_v084_charselect_full.py
+          python3 -m py_compile scripts/build_v084_charselect_full.py scripts/apply_v084_charselect_full.py scripts/fix_charselect_ram_runtime.py
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git curl unzip cmake ninja-build pkg-config meson python3-pil gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu ffmpeg libavformat-dev libavfilter-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev libtinyxml2-dev
+
+      - name: Fetch exact upstream baseline without full clone
+        run: |
+          curl -fL --retry 3 --retry-delay 2 \
+            https://codeload.github.com/cuckydev/PSXFunkin/tar.gz/850e0207479d8fb658bdc7637f6bfbc28a2b4066 \
+            -o /tmp/psxfunkin-upstream.tar.gz
+          mkdir -p /tmp/psxfunkin-upstream
+          tar -xzf /tmp/psxfunkin-upstream.tar.gz -C /tmp/psxfunkin-upstream --strip-components=1
+          mv /tmp/psxfunkin-upstream upstream
+          git -C upstream init
+          git -C upstream config user.name ci
+          git -C upstream config user.email ci@example.invalid
+          git -C upstream add -A
+          git -C upstream commit -q -m 'Exact cuckydev 850e020 baseline'
+          git -C upstream apply ../patches/0001-current-difficulties.patch
+          git -C upstream diff --check
+          test -f upstream/src/menu.c
+          rm -f /tmp/psxfunkin-upstream.tar.gz
+
+      - name: Fetch official v0.8.4 assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p official-assets official-v084 build
+          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets \
+            --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip' \
+            --pattern 'Sounds.and.Songs.zip'
+          echo 'd02d2ea24f9d5b032012a69ab533f724ee5cd364093e693f21d17bd3abfccc37  official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip' | sha256sum -c -
+          echo '042d0ecd29a5356b4c17e750118a52485ee69466e8f1da02fed057c4abd98dc7  official-assets/Sounds.and.Songs.zip' | sha256sum -c -
+          unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
+          unzip -qo official-assets/Sounds.and.Songs.zip -d official-v084
+          curl -fL --retry 3 --retry-delay 3 \
+            https://github.com/FunkinCrew/Funkin/releases/download/v0.8.4/funkin-linux-64bit.zip \
+            -o official-assets/funkin-linux-64bit.zip
+          echo '50eb30c89de03a6ef34431bb75930219b897aebb59e456a169247d8b0a414321  official-assets/funkin-linux-64bit.zip' | sha256sum -c -
+          mkdir -p official-v084/videos
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import shutil, zipfile
+          with zipfile.ZipFile('official-assets/funkin-linux-64bit.zip') as z:
+              names=[n for n in z.namelist() if 'introselect' in PurePosixPath(n).name.lower() and PurePosixPath(n).suffix.lower() in {'.mp4','.webm','.ogv','.mkv'}]
+              if not names: raise SystemExit('introSelect missing from official v0.8.4 release')
+              name=sorted(names,key=lambda n:(len(n),n))[0]
+              out=Path('official-v084/videos')/PurePosixPath(name).name
+              with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
+          PY
+
+      - name: Build PS1 XA encoder
+        run: |
+          git clone --depth=1 https://github.com/WonderfulToolchain/psxavenc.git psxavenc
+          meson setup psxavenc/build psxavenc --buildtype=release
+          meson compile -C psxavenc/build
+          test -x psxavenc/build/psxavenc
+
+      - name: Rebuild confirmed charts and Erect audio
+        run: |
+          python3 scripts/build_v084_legacy_charts.py --data-root official-v084 --iso-root upstream/iso --manifest build/v084_charts.json
+          python3 scripts/add_v084_chart_entries.py upstream/funkin.xml
+          python3 scripts/build_erect_audio.py --root official-v084 --out upstream/iso/music --psxavenc psxavenc/build/psxavenc --header upstream/src/erect_audio_generated.h --report build/erect_audio.json
+          python3 scripts/apply_erect_audio_routing.py upstream
+          git -C upstream diff --check
+
+      - name: Reapply confirmed menu and Freeplay baseline
+        run: |
+          python3 scripts/apply_v084_menu_foundation.py upstream
+          python3 scripts/finalize_v084_menu_foundation.py upstream
+          python3 scripts/build_v084_menu_visual_assets.py --assets-root official-v084 --upstream upstream --report build/menu_visual_sources.json
+          python3 scripts/replace_freeplay_bf_with_official_dj.py --assets-root official-v084 --upstream upstream --report build/menu_visual_sources.json
+          python3 scripts/apply_v084_menu_visual_parity.py upstream
+          python3 scripts/fix_v084_menu_visual_feedback.py upstream
+          grep -q 'MENU_DJ_FRAME_COUNT 14' upstream/src/menu.c
+          git -C upstream diff --check
+
+      - name: Build corrected high-fidelity Character Select
+        run: |
+          INTRO="$(find official-v084/videos -type f -iname 'introSelect*' -print -quit)"
+          test -n "$INTRO"
+          python3 scripts/build_v084_charselect_full.py --assets-root official-v084 --upstream upstream --report build/menu_visual_sources.json --intro-video "$INTRO" --psxavenc psxavenc/build/psxavenc
+          python3 scripts/apply_v084_charselect_full.py upstream
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('upstream/src/menu.c')
+          s=p.read_text()
+          bad='Menu_SetCSFrame(MENU_CS_IDLE_FIRST);'
+          if s.count(bad) != 1:
+              raise SystemExit(f'expected one stale idle symbol, found {s.count(bad)}')
+          s=s.replace(bad, 'Menu_SetCSFrame(MENU_CS_INTRO_FIRST + 24);')
+          p.write_text(s)
+          if 'MENU_CS_IDLE_FIRST' in s:
+              raise SystemExit('stale MENU_CS_IDLE_FIRST remains')
+          PY
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          env=Path('upstream/iso/menu/csanim.bin')
+          chars=Path('upstream/iso/menu/cschar.bin')
+          xa=Path('upstream/iso/music/charsel.xa')
+          xml=Path('upstream/funkin.xml').read_text().lower()
+          menu=Path('upstream/src/menu.c').read_text()
+          assert env.stat().st_size == 520128, env.stat().st_size
+          assert chars.stat().st_size == 738240, chars.stat().st_size
+          assert xa.stat().st_size > 0 and xa.stat().st_size % 2336 == 0
+          assert 'cschar.bin' in xml and 'charsel.xa' in xml
+          assert '256x192' in json.dumps(json.loads(Path('build/menu_visual_sources.json').read_text()))
+          assert 'MENU_CS_IDLE_FIRST' not in menu
+          assert 'StageId_8_' not in menu and 'WEEKEND' not in menu and 'SPAGHETTI' not in menu
+          PY
+          git -C upstream diff --check
+
+      - name: Pack Character Select banks for PS1 RAM without quality loss
+        run: |
+          python3 scripts/fix_charselect_ram_runtime.py upstream
+          git -C upstream diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          env=Path('upstream/iso/menu/csanim.rle')
+          chars=Path('upstream/iso/menu/cschar.rle')
+          menu=Path('upstream/src/menu.c').read_text()
+          low=menu.lower()
+          xml=Path('upstream/funkin.xml').read_text().lower()
+          assert env.stat().st_size == 78892, env.stat().st_size
+          assert chars.stat().st_size == 171165, chars.stat().st_size
+          assert 'csanim.rle' in xml and 'cschar.rle' in xml
+          assert 'csanim.bin' not in xml and 'cschar.bin' not in xml
+          assert '#define menu_cs_frame_count 36' in low
+          assert 'menu_csrledecode' in low
+          assert 'csanim.rle;1' in low and 'cschar.rle;1' in low
+          assert '0xb4800' not in low
+          print('Lossless low-RAM Character Select validation passed')
+          PY
+
+      - name: Acquire PsyQ compatibility libraries
+        run: |
+          rm -rf /tmp/psyq-extract upstream/mips/psyq
+          mkdir -p /tmp/psyq-extract upstream/mips/psyq
+          curl -fL --retry 3 --retry-delay 2 http://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip -o /tmp/psyq.zip
+          unzip -q /tmp/psyq.zip -d /tmp/psyq-extract
+          INC="$(find /tmp/psyq-extract -type d -name include -print -quit)"
+          LIB="$(find /tmp/psyq-extract -type d -name lib -print -quit)"
+          test -n "$INC"; test -n "$LIB"
+          cp -a "$INC" upstream/mips/psyq/include
+          cp -a "$LIB" upstream/mips/psyq/lib
+
+      - name: Build mkpsxiso
+        run: |
+          git clone --depth=1 --recursive https://github.com/CookiePLMonster/mkpsxiso.git mkpsxiso
+          git -C mkpsxiso submodule update --init --recursive --depth=1
+          cmake -S mkpsxiso -B mkpsxiso/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+          cmake --build mkpsxiso/build
+          cmake --install mkpsxiso/build
+
+      - name: Compile PSXFunkin
+        working-directory: upstream
+        run: |
+          make clean || true
+          make -j2
+          test -s funkin.ps-exe
+          sha256sum funkin.ps-exe
+
+      - name: Build MODE2/2352 disc
+        working-directory: upstream
+        run: |
+          sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
+          "$HOME/.local/bin/mkpsxiso" -y funkin.xml
+          test -s funkin.bin && test -s funkin.cue
+          test "$(( $(stat -c%s funkin.bin) % 2352 ))" -eq 0
+          sectors=$(( $(stat -c%s funkin.bin) / 2352 ))
+          echo "Raw disc sectors: $sectors"
+          test "$sectors" -le 360000
+
+      - name: Package correction checkpoint
+        run: |
+          mkdir -p build/release
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Character_Select_RAM_Fix.bin
+          cat > build/release/PSXFunkin_v084_Character_Select_RAM_Fix.cue <<'EOF'
+          FILE "PSXFunkin_v084_Character_Select_RAM_Fix.bin" BINARY
+            TRACK 01 MODE2/2352
+            INDEX 01 00:00:00
+          EOF
+          cp upstream/funkin.ps-exe build/release/
+          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/release/
+          cat > build/release/CHARSELECT_RAM_FIX.txt <<'EOF'
+          Character Select RAM correction
+          - Keeps all 30 256x192 high-resolution authentic Funkin character frames.
+          - Lossless byte-RLE; decoded frame bytes are verified identical to the converted source frames.
+          - Removes the 0xB4800 whole-bank allocation that crashed entering Character Select.
+          - Active environment bank: 78,892 bytes packed.
+          - Character bank: 171,165 bytes packed.
+          - Runtime scratch: 9,632 + 24,608 bytes.
+          - Existing Freeplay 14-frame official Boyfriend DJ and Erect/Nightmare baseline preserved.
+          EOF
+          (cd build/release && sha256sum * > SHA256SUMS.txt)
+
+      - name: Upload DuckStation-ready correction
+        uses: actions/upload-artifact@v4
+        with:
+          name: psxfunkin-v084-charselect-ram-fix-fast
+          compression-level: 0
+          path: build/release/
