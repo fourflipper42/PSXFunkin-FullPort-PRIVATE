@@ -19,7 +19,7 @@ jobs:
         run: |
           gzip -dc ci/charselect/build_v084_charselect_full.py.gz > scripts/build_v084_charselect_full.py
           gzip -dc ci/charselect/apply_v084_charselect_full.py.gz > scripts/apply_v084_charselect_full.py
-          echo '25d291433d3f29b4962139f334113d155d3dd3374084881da4dff10a142dcc1c  scripts/build_v084_charselect_full.py' | sha256sum -c -
+          echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py' | sha256sum -c -
           echo 'f36376bd0949f1f3d2b2a0ec31a9bebccd8a29df24aff82627c8f4ff5895097e  scripts/apply_v084_charselect_full.py' | sha256sum -c -
           python3 -m py_compile scripts/build_v084_charselect_full.py scripts/apply_v084_charselect_full.py
 
@@ -207,7 +207,7 @@ jobs:
           grep -q 'MENU_CS_SFX_LOCKED_OFFSET' upstream/src/menu.c
           grep -q 'MENU_CS_SFX_LIGHTS_OFFSET' upstream/src/menu.c
           grep -q 'MENU_CS_SFX_CONFIRM_OFFSET' upstream/src/menu.c
-          grep -q '\\MUSIC\\CHARSEL.XA;1' upstream/src/menu.c
+          grep -q '\\\\MUSIC\\\\CHARSEL.XA;1' upstream/src/menu.c
           grep -q 'csanim.bin' upstream/funkin.xml
           grep -q 'cssfx.bin' upstream/funkin.xml
           grep -q 'charsel.xa' upstream/funkin.xml
@@ -245,6 +245,17 @@ jobs:
           find official-v084 -type f | grep -Ei '(stayFunky|CS_select|CS_locked|CS_Lights|CS_confirm|introSelect)' | sort > build/charselect-diagnostics/charselect-audio-video-files.txt || true
           cp scripts/build_v084_charselect_full.py build/charselect-diagnostics/
           cp scripts/apply_v084_charselect_full.py build/charselect-diagnostics/
+          python3 - <<'PY'
+          from pathlib import Path
+          def esc(s):
+              return s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+          log=Path('build/charselect_build.log')
+          if log.is_file():
+              print('::error title=Character Select builder::' + esc(log.read_text(errors='replace')[-6000:]))
+          root=Path('official-v084/images/charSelect')
+          dirs=sorted(p.name for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
+          print('::warning title=Character Select asset folders::' + esc(' | '.join(dirs)))
+          PY
 
       - name: Upload Character Select failure diagnostics
         if: failure()
