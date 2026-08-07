@@ -180,12 +180,17 @@ jobs:
         run: |
           INTRO="$(find official-v084/videos -type f -iname 'introSelect*' -print -quit)"
           test -n "$INTRO"
+          set +e
           python3 scripts/build_v084_charselect_full.py \
             --assets-root official-v084 \
             --upstream upstream \
             --report build/menu_visual_sources.json \
             --intro-video "$INTRO" \
-            --psxavenc psxavenc/build/psxavenc
+            --psxavenc psxavenc/build/psxavenc > build/charselect_build.log 2>&1
+          RC=$?
+          cat build/charselect_build.log
+          if [ "$RC" -ne 0 ]; then exit "$RC"; fi
+          set -e
           python3 scripts/apply_v084_charselect_full.py upstream
           git -C upstream diff --check
           test -s upstream/iso/menu/csanim.bin
@@ -230,6 +235,23 @@ jobs:
           assert cs['sfx']['samples']['CONFIRM']['bytes'] > 0
           print(json.dumps(cs, indent=2))
           PY
+
+      - name: Capture Character Select failure diagnostics
+        if: failure()
+        run: |
+          mkdir -p build/charselect-diagnostics
+          cp build/charselect_build.log build/charselect-diagnostics/ 2>/dev/null || true
+          find official-v084/images/charSelect -maxdepth 3 -type f -printf '%P\n' | sort > build/charselect-diagnostics/charselect-files.txt || true
+          find official-v084 -type f | grep -Ei '(stayFunky|CS_select|CS_locked|CS_Lights|CS_confirm|introSelect)' | sort > build/charselect-diagnostics/charselect-audio-video-files.txt || true
+          cp scripts/build_v084_charselect_full.py build/charselect-diagnostics/
+          cp scripts/apply_v084_charselect_full.py build/charselect-diagnostics/
+
+      - name: Upload Character Select failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: charselect-failure-diagnostics
+          path: build/charselect-diagnostics/
 
       - name: Acquire converted PsyQ compatibility libraries for build only
         run: |
