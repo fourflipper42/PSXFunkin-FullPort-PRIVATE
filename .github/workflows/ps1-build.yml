@@ -13,33 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Download official v0.8.4 asset archives
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p official-assets
-          gh release download assets-v084 \
-            --repo "${GITHUB_REPOSITORY}" \
-            --dir official-assets \
-            --pattern '*.zip'
+          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets --pattern '*.zip'
           sha256sum official-assets/*.zip | tee official-assets/SHA256SUMS.txt
-
       - name: Inventory official assets
-        run: |
-          python3 scripts/inventory_assets.py official-assets build/audit
-
+        run: python3 scripts/inventory_assets.py official-assets build/audit
       - name: Upload asset inventory
         uses: actions/upload-artifact@v4
         with:
           name: fnf-v084-asset-inventory
           path: build/audit/
 
-  baseline-build:
+  ps1-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install host and MIPS build dependencies
         run: |
           sudo apt-get update
@@ -48,90 +40,83 @@ jobs:
             gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu \
             ffmpeg libavformat-dev libavfilter-dev libavcodec-dev libavutil-dev \
             libswscale-dev libswresample-dev libtinyxml2-dev
-
       - name: Fetch exact clean cuckydev t0.12 source
         run: |
           git clone https://github.com/cuckydev/PSXFunkin.git upstream
           git -C upstream checkout 850e0207479d8fb658bdc7637f6bfbc28a2b4066
           test "$(git -C upstream rev-parse HEAD)" = "850e0207479d8fb658bdc7637f6bfbc28a2b4066"
-
       - name: Apply full-port source overlay
         run: |
-          if [ -d overlay ]; then
-            cp -a overlay/. upstream/
-          fi
+          if [ -d overlay ]; then cp -a overlay/. upstream/; fi
           if compgen -G 'patches/*.patch' > /dev/null; then
-            for p in patches/*.patch; do
-              git -C upstream apply "../$p"
-            done
+            for p in patches/*.patch; do git -C upstream apply "../$p"; done
           fi
-
+      - name: Download current official metadata and charts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p official-assets official-v084
+          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip'
+          unzip -q official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
+          test -d official-v084/data/songs
+      - name: Generate official v0.8.4 PS1 charts
+        run: |
+          python3 scripts/build_v084_legacy_charts.py \
+            --data-root official-v084 \
+            --iso-root upstream/iso \
+            --manifest build/v084_charts.json
+          python3 scripts/add_v084_chart_entries.py upstream/funkin.xml
+          test "$(find upstream/iso/chart -name '*.cht' | wc -l)" -ge 98
+          test -s upstream/iso/chart/1.1r.cht
+          test -s upstream/iso/chart/1.1m.cht
       - name: Acquire converted PsyQ compatibility libraries for build only
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
           mkdir -p /tmp/psyq-extract upstream/mips/psyq
-          curl -fL --retry 3 --retry-delay 2 \
-            http://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip \
-            -o /tmp/psyq.zip
+          curl -fL --retry 3 --retry-delay 2 http://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip -o /tmp/psyq.zip
           unzip -q /tmp/psyq.zip -d /tmp/psyq-extract
-          echo "Converted PsyQ archive layout:"
-          find /tmp/psyq-extract -maxdepth 3 -type d -print | sort
           INC="$(find /tmp/psyq-extract -type d -name include -print -quit)"
           LIB="$(find /tmp/psyq-extract -type d -name lib -print -quit)"
-          test -n "$INC"
-          test -n "$LIB"
+          test -n "$INC"; test -n "$LIB"
           cp -a "$INC" upstream/mips/psyq/include
           cp -a "$LIB" upstream/mips/psyq/lib
           test -f upstream/mips/psyq/include/libetc.h
-          test -n "$(find upstream/mips/psyq/lib -type f | head -n 1)"
           rm -rf /tmp/psyq.zip /tmp/psyq-extract
-
       - name: Build mkpsxiso
         run: |
           git clone --recursive https://github.com/CookiePLMonster/mkpsxiso.git mkpsxiso
-          cmake -S mkpsxiso -B mkpsxiso/build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$HOME/.local"
+          cmake -S mkpsxiso -B mkpsxiso/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local"
           cmake --build mkpsxiso/build
           cmake --install mkpsxiso/build
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Compile clean PSXFunkin executable
+      - name: Compile PSXFunkin executable
         working-directory: upstream
         run: |
           make clean || true
           make -j2
           test -s funkin.ps-exe
           sha256sum funkin.ps-exe
-
       - name: Build DuckStation BIN/CUE
         working-directory: upstream
         run: |
           sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
           "$HOME/.local/bin/mkpsxiso" -y funkin.xml
-          test -s funkin.bin
-          test -s funkin.cue
-          sha256sum funkin.bin funkin.cue | tee SHA256SUMS.txt
-
-      - name: Package baseline build
+          test -s funkin.bin; test -s funkin.cue
+      - name: Package current build
         run: |
-          mkdir -p build/baseline
-          cp upstream/funkin.bin build/baseline/PSXFunkin_FullPort_Baseline.bin
-          cat > build/baseline/PSXFunkin_FullPort_Baseline.cue <<'EOF'
-          FILE "PSXFunkin_FullPort_Baseline.bin" BINARY
+          mkdir -p build/release
+          cp upstream/funkin.bin build/release/PSXFunkin_FullPort_Current.bin
+          cat > build/release/PSXFunkin_FullPort_Current.cue <<'EOF'
+          FILE "PSXFunkin_FullPort_Current.bin" BINARY
             TRACK 01 MODE2/2352
               INDEX 01 00:00:00
           EOF
-          cp upstream/funkin.ps-exe build/baseline/funkin.ps-exe
-          (
-            cd build/baseline
-            sha256sum PSXFunkin_FullPort_Baseline.bin PSXFunkin_FullPort_Baseline.cue funkin.ps-exe > SHA256SUMS.txt
-          )
-          grep -q 'FILE "PSXFunkin_FullPort_Baseline.bin" BINARY' build/baseline/PSXFunkin_FullPort_Baseline.cue
-
-      - name: Upload baseline BIN/CUE
+          cp upstream/funkin.ps-exe build/release/funkin.ps-exe
+          cp build/v084_charts.json build/release/v084_charts.json
+          (cd build/release && sha256sum PSXFunkin_FullPort_Current.bin PSXFunkin_FullPort_Current.cue funkin.ps-exe v084_charts.json > SHA256SUMS.txt)
+      - name: Upload current BIN/CUE
         uses: actions/upload-artifact@v4
         with:
-          name: psxfunkin-clean-t012-baseline
+          name: psxfunkin-v084-current-build
           compression-level: 0
-          path: build/baseline/
+          path: build/release/
