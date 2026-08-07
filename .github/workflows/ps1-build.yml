@@ -107,10 +107,6 @@ jobs:
       - name: Build DuckStation BIN/CUE
         working-directory: upstream
         run: |
-          # The SDK license file is deliberately not stored in this repository.
-          # Remove the XML reference so CI can create an image; DuckStation testing
-          # uses the user's local BIOS and the final mastering pass can restore the
-          # licensed system area from the clean baseline disc.
           sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
           "$HOME/.local/bin/mkpsxiso" -y funkin.xml
           test -s funkin.bin
@@ -121,9 +117,17 @@ jobs:
         run: |
           mkdir -p build/baseline
           cp upstream/funkin.bin build/baseline/PSXFunkin_FullPort_Baseline.bin
-          cp upstream/funkin.cue build/baseline/PSXFunkin_FullPort_Baseline.cue
+          cat > build/baseline/PSXFunkin_FullPort_Baseline.cue <<'EOF'
+          FILE "PSXFunkin_FullPort_Baseline.bin" BINARY
+            TRACK 01 MODE2/2352
+              INDEX 01 00:00:00
+          EOF
           cp upstream/funkin.ps-exe build/baseline/funkin.ps-exe
-          cp upstream/SHA256SUMS.txt build/baseline/SHA256SUMS.txt
+          (
+            cd build/baseline
+            sha256sum PSXFunkin_FullPort_Baseline.bin PSXFunkin_FullPort_Baseline.cue funkin.ps-exe > SHA256SUMS.txt
+          )
+          grep -q 'FILE "PSXFunkin_FullPort_Baseline.bin" BINARY' build/baseline/PSXFunkin_FullPort_Baseline.cue
 
       - name: Upload baseline BIN/CUE
         uses: actions/upload-artifact@v4
