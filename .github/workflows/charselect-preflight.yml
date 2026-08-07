@@ -1,4 +1,4 @@
-name: Character Select Checksum Promotion
+name: Character Select Intro Extraction Promotion
 
 on:
   push:
@@ -16,35 +16,37 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Promote fixed Character Select builder checksum
+      - name: Enable robust authentic introSelect extraction
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gzip -dc ci/charselect/build_v084_charselect_full.py.gz > /tmp/build_v084_charselect_full.py
-          echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  /tmp/build_v084_charselect_full.py' | sha256sum -c -
-          python3 -m py_compile /tmp/build_v084_charselect_full.py
           python3 - <<'PY'
           from pathlib import Path
           p=Path('.github/workflows/charselect-full-build.yml')
           s=p.read_text()
-          old="25d291433d3f29b4962139f334113d155d3dd3374084881da4dff10a142dcc1c  scripts/build_v084_charselect_full.py"
-          new="aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py"
-          if old not in s:
-              if new in s:
-                  print('checksum already promoted')
-              else:
-                  raise SystemExit('Character Select builder checksum line not found')
+          marker="          python3 -m py_compile scripts/build_v084_charselect_full.py scripts/apply_v084_charselect_full.py\n"
+          addition=(
+              marker
+              + "          python3 scripts/fix_charselect_intro_extraction.py scripts/build_v084_charselect_full.py\n"
+              + "          python3 -m py_compile scripts/build_v084_charselect_full.py\n"
+          )
+          if 'fix_charselect_intro_extraction.py scripts/build_v084_charselect_full.py' in s:
+              print('intro extraction patch step already enabled')
+          elif marker in s:
+              p.write_text(s.replace(marker, addition, 1))
           else:
-              p.write_text(s.replace(old,new,1))
+              raise SystemExit('full Character Select workflow expansion anchor not found')
           PY
-          grep -F "aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py" .github/workflows/charselect-full-build.yml
+          grep -F 'python3 scripts/fix_charselect_intro_extraction.py scripts/build_v084_charselect_full.py' .github/workflows/charselect-full-build.yml
+          python3 -m py_compile scripts/fix_charselect_intro_extraction.py
+          echo '064be5ab2c2403c3f7cb6adc651d789c6b26deee0193837200122553030952b7  scripts/fix_charselect_intro_extraction.py' | sha256sum -c -
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/workflows/charselect-full-build.yml
           git diff --cached --check
           if ! git diff --cached --quiet; then
-            git commit -m 'Use fixed Character Select Animate parser'
+            git commit -m 'Harden authentic introSelect frame extraction'
             git push origin HEAD:charselect-full-checkpoint
           fi
           gh workflow run charselect-full-build.yml --ref charselect-full-checkpoint
