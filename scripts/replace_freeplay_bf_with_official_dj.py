@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Flatten the official v0.8.4 Boyfriend DJ Animate symbol into PS1 frames.
 
-This does not create replacement artwork. It reconstructs four samples of the
-existing 14-frame `Boyfriend DJ` idle symbol from Funkin's shipped
-Animation.json, spritemap1.json, and spritemap1.png, then packs those authentic
-frames into the existing PS1 Freeplay texture page.
+This does not create replacement artwork. It reconstructs four compatibility
+samples of the existing 14-frame `Boyfriend DJ` idle symbol from Funkin's
+shipped Animation.json, spritemap1.json, and spritemap1.png, then hands off to
+the full-frame stream builder so runtime can animate every official frame.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import math
+import subprocess
+import sys
 from pathlib import Path
 
 from PIL import Image
@@ -200,8 +202,16 @@ def main() -> None:
         report["sources"][rel] = {"sha256": base.sha256(path), "bytes": path.stat().st_size}
     report["policy"] = "official-v0.8.4-existing-files-only; DJ frames reconstructed from shipped Animate data; no replacement artwork"
     args.report.write_text(json.dumps(report, indent=2) + "\n")
-    print(f"Replaced Freeplay BF page with official Boyfriend DJ samples {DJ_SAMPLE_FRAMES}")
-    print(f"fpchar.tim sha256={base.sha256(out)}")
+    print(f"Reconstructed compatibility Boyfriend DJ samples {DJ_SAMPLE_FRAMES}")
+
+    # Upgrade that compatibility page into the full authentic 14-frame stream.
+    helper = Path(__file__).with_name("build_freeplay_dj_stream.py")
+    subprocess.run([
+        sys.executable, str(helper),
+        "--assets-root", str(args.assets_root),
+        "--upstream", str(args.upstream),
+        "--report", str(args.report),
+    ], check=True)
 
 
 if __name__ == "__main__":
