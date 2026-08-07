@@ -1,0 +1,87 @@
+name: Inspect v0.8.4 Menu Asset Details
+
+on:
+  push:
+    branches: [ menu-visual-parity-checkpoint ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download official v0.8.4 shared assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p official-assets official-v084 preview
+          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip'
+          unzip -q official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
+      - name: Print style metadata and key image dimensions
+        run: |
+          echo '===== BF FREEPLAY STYLE ====='
+          cat official-v084/data/ui/freeplay/styles/bf.json
+          echo '\n===== PICO FREEPLAY STYLE ====='
+          cat official-v084/data/ui/freeplay/styles/pico.json
+          echo '\n===== KEY DIMENSIONS ====='
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          files = [
+            'images/freeplay/freeplayBGweek1-bf.png',
+            'images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png',
+            'images/freeplay/freeplaySelector/freeplaySelector.png',
+            'images/freeplay/freeplayeasy.png',
+            'images/freeplay/freeplaynormal.png',
+            'images/freeplay/freeplayhard.png',
+            'images/freeplay/freeplayerect.png',
+            'images/freeplay/freeplaynightmare.png',
+            'images/freeplay/freeplay-boyfriend/spritemap1.png',
+            'images/freeplay/albumRoll/volume1.png',
+            'images/charSelect/charSelectBG.png',
+            'images/charSelect/curtains.png',
+            'images/charSelect/charLight.png',
+            'images/charSelect/chooseDipshit.png',
+            'images/charSelect/boyfriendNametag.png',
+            'images/charSelect/lockedNametag.png',
+            'images/charSelect/charSelector.png',
+            'images/charSelect/bfIcon.png',
+            'images/charSelect/picoIcon.png',
+            'images/charSelect/bfChill.png',
+            'images/charSelect/picoChill.png',
+            'images/charSelect/lockedChill/spritemap1.png',
+            'images/charSelect/charSelectStage.png',
+            'images/charSelect/charSelectStage/spritemap1.png',
+            'images/charSelect/crowd/spritemap1.png',
+            'images/charSelect/charSelectSpeakers/spritemap1.png',
+          ]
+          root=Path('official-v084')
+          for rel in files:
+              p=root/rel
+              if not p.exists():
+                  print('MISSING', rel); continue
+              im=Image.open(p)
+              print(f'{rel}: {im.size[0]}x{im.size[1]} mode={im.mode}')
+          PY
+      - name: Gather exact source previews
+        run: |
+          cp official-v084/images/freeplay/freeplayBGweek1-bf.png preview/
+          cp official-v084/images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png preview/
+          cp official-v084/images/freeplay/freeplaySelector/freeplaySelector.png preview/
+          cp official-v084/images/freeplay/freeplay-boyfriend/spritemap1.png preview/freeplay-boyfriend-atlas.png
+          cp official-v084/images/charSelect/charSelectBG.png preview/
+          cp official-v084/images/charSelect/curtains.png preview/
+          cp official-v084/images/charSelect/chooseDipshit.png preview/
+          cp official-v084/images/charSelect/bfChill.png preview/
+          cp official-v084/images/charSelect/picoChill.png preview/
+          cp official-v084/images/charSelect/bfIcon.png preview/
+          cp official-v084/images/charSelect/picoIcon.png preview/
+          cp official-v084/images/charSelect/boyfriendNametag.png preview/
+          cp official-v084/images/charSelect/lockedNametag.png preview/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: official-v084-menu-source-previews
+          path: preview/
