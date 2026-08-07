@@ -111,7 +111,10 @@ jobs:
             --root official-v084 \
             --out upstream/iso/movie \
             --psxavenc psxavenc/build/psxavenc \
-            --report build/weekend1_movies.json
+            --report build/weekend1_movies.json \
+            --header upstream/src/weekend1_movies_generated.h
+          test -s upstream/src/weekend1_movies_generated.h
+          grep -q 'W1_DARNELL_FRAMES' upstream/src/weekend1_movies_generated.h
           test -s upstream/iso/music/week8.xa
           test -s upstream/iso/movie/darnell.str
           test -s upstream/iso/movie/2hot.str
