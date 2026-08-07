@@ -184,7 +184,7 @@ index 5998a4a..035ea24 100644
 -	else
 -	{
 -		//Use standard path convention
--		sprintf(chart_path, "\\WEEK%d\\%d.%d%c.CHT;1", stage.stage_def->week, stage.stage_def->week, stage.stage_def->week_song, "ENHRM"[stage.stage_diff]);
+-		sprintf(chart_path, "\\WEEK%d\\%d.%d%c.CHT;1", stage.stage_def->week, stage.stage_def->week_song, stage.stage_def->week_song, "ENHRM"[stage.stage_diff]);
 -	}
 +	sprintf(chart_path, "\\WEEK%d\\%d.%d%c.CHT;1", stage.stage_def->week, stage.stage_def->week, stage.stage_def->week_song, "ENHRM"[stage.stage_diff]);
  	
