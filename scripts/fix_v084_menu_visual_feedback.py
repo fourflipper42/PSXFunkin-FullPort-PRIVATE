@@ -73,7 +73,9 @@ def main() -> None:
 \t\t\tGfx_DrawTex(&menu.tex_ng, &icon_src, &icon_dst);'''
     replace_once(menu, old_bf, new_bf)
 
-    simple_character_select = r'''\t\tcase MenuPage_CharacterSelect:
+    # Non-raw string is intentional: \t escape sequences below must become
+    # actual tab characters in generated C rather than literal backslash-t.
+    simple_character_select = '''\t\tcase MenuPage_CharacterSelect:
 \t\t{
 \t\t\tif (menu.page_swap)
 \t\t\t{
@@ -151,6 +153,8 @@ def main() -> None:
         raise SystemExit("difficulty should be submitted exactly once")
     if "Authentic BF chill art" in text:
         raise SystemExit("old Character Select BF art still used in Freeplay")
+    if "\\t\\tcase MenuPage_CharacterSelect:" in text:
+        raise SystemExit("literal \\t escapes leaked into generated menu.c")
 
 
 if __name__ == "__main__":
