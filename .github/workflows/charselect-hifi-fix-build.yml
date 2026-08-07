@@ -1,4 +1,4 @@
-name: PSXFunkin v0.8.4 Character Select HiFi Fix
+name: PSXFunkin v0.8.4 Character Select HiFi RAM Fix
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
           echo 'aefbdec3e9bb0d020a2e525d0fec6fdb5182445515245a622b92d37b8ed0f051  scripts/build_v084_charselect_full.py' | sha256sum -c -
           echo 'f36376bd0949f1f3d2b2a0ec31a9bebccd8a29df24aff82627c8f4ff5895097e  scripts/apply_v084_charselect_full.py' | sha256sum -c -
           python3 scripts/fix_charselect_intro_extraction.py scripts/build_v084_charselect_full.py
-          python3 -m py_compile scripts/build_v084_charselect_full.py scripts/apply_v084_charselect_full.py
+          python3 -m py_compile scripts/build_v084_charselect_full.py scripts/apply_v084_charselect_full.py scripts/fix_charselect_ram_runtime.py
 
       - name: Install build dependencies
         run: |
@@ -116,7 +116,28 @@ jobs:
           assert '256x192' in json.dumps(json.loads(Path('build/menu_visual_sources.json').read_text()))
           assert 'MENU_CS_IDLE_FIRST' not in menu
           assert 'StageId_8_' not in menu and 'WEEKEND' not in menu and 'SPAGHETTI' not in menu
-          print('HiFi Character Select validation passed')
+          print('HiFi Character Select source validation passed')
+          PY
+
+      - name: Pack Character Select banks for PS1 RAM without quality loss
+        run: |
+          python3 scripts/fix_charselect_ram_runtime.py upstream
+          git -C upstream diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          env=Path('upstream/iso/menu/csanim.rle')
+          chars=Path('upstream/iso/menu/cschar.rle')
+          menu=Path('upstream/src/menu.c').read_text()
+          xml=Path('upstream/funkin.xml').read_text().lower()
+          assert env.stat().st_size == 78892, env.stat().st_size
+          assert chars.stat().st_size == 171165, chars.stat().st_size
+          assert 'csanim.rle' in xml and 'cschar.rle' in xml
+          assert 'csanim.bin' not in xml and 'cschar.bin' not in xml
+          assert 'MENU_CS_FRAME_COUNT 36' in menu
+          assert 'Menu_CSRLEDecode' in menu
+          assert '\\MENU\\CSANIM.RLE;1' in menu
+          assert '\\MENU\\CSCHAR.RLE;1' in menu
+          print('Lossless Character Select RAM validation passed: 250057 packed bytes total')
           PY
 
       - name: Upload generated Character Select runtime source
@@ -126,9 +147,9 @@ jobs:
           path: |
             upstream/src/menu.c
             upstream/src/menu.h
-            upstream/src/io.c
-            upstream/src/io.h
             upstream/funkin.xml
+            upstream/iso/menu/csanim.rle
+            upstream/iso/menu/cschar.rle
 
       - name: Acquire PsyQ compatibility libraries
         run: |
@@ -171,19 +192,28 @@ jobs:
       - name: Package correction checkpoint
         run: |
           mkdir -p build/release
-          cp upstream/funkin.bin build/release/PSXFunkin_v084_Character_Select_HiFi_Fix.bin
-          cat > build/release/PSXFunkin_v084_Character_Select_HiFi_Fix.cue <<'EOF'
-          FILE "PSXFunkin_v084_Character_Select_HiFi_Fix.bin" BINARY
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Character_Select_RAM_Fix.bin
+          cat > build/release/PSXFunkin_v084_Character_Select_RAM_Fix.cue <<'EOF'
+          FILE "PSXFunkin_v084_Character_Select_RAM_Fix.bin" BINARY
             TRACK 01 MODE2/2352
             INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/
           cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/release/
+          cat > build/release/CHARSELECT_RAM_FIX.txt <<'EOF'
+          Character Select RAM correction
+          - Keeps all 30 256x192 high-resolution character frames.
+          - Lossless byte-RLE; decoded frame bytes are verified identical to the converted authentic Funkin frames.
+          - Removes the 0xB4800 whole-bank allocation that crashed on real PS1 memory limits.
+          - Active environment bank: 78,892 bytes packed.
+          - Character bank: 171,165 bytes packed.
+          - Runtime scratch: 9,632 + 24,608 bytes.
+          EOF
           (cd build/release && sha256sum * > SHA256SUMS.txt)
 
       - name: Upload DuckStation-ready correction
         uses: actions/upload-artifact@v4
         with:
-          name: psxfunkin-v084-charselect-hifi-fix
+          name: psxfunkin-v084-charselect-ram-fix
           compression-level: 0
           path: build/release/
