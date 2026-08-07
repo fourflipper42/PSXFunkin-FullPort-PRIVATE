@@ -1,0 +1,174 @@
+diff --git a/src/stagedef_disc1.h b/src/stagedef_disc1.h
+index 956befe..6d3cfe5 100644
+--- a/src/stagedef_disc1.h
++++ b/src/stagedef_disc1.h
+@@ -373,132 +373,43 @@
+ 		StageId_7_3, 0
+ 	},
+ 	
+-	{ //StageId_Kapi_1 (Wocky)
+-		//Characters
+-		{Char_BF_New,   FIXED_DEC(105,1),  FIXED_DEC(100,1)},
+-		{Char_Dad_New, FIXED_DEC(-120,1),  FIXED_DEC(100,1)},
+-		{Char_GF_New,     FIXED_DEC(0,1),    FIXED_DEC(0,1)},
+-		
+-		//Stage background
+-		Back_Dummy_New,
+-		
+-		//Song info
+-		{FIXED_DEC(22,10),FIXED_DEC(22,10),FIXED_DEC(22,10)},
+-		0x80, 1,
+-		XA_Wocky, 0,
+-		
+-		StageId_Kapi_2, STAGE_LOAD_FLAG
+-	},
+-	{ //StageId_Kapi_2 (Beathoven)
+-		//Characters
+-		{Char_BF_New,   FIXED_DEC(105,1),  FIXED_DEC(100,1)},
+-		{Char_Dad_New, FIXED_DEC(-120,1),  FIXED_DEC(100,1)},
+-		{Char_GF_New,     FIXED_DEC(0,1),  FIXED_DEC(-15,1)},
+-		
+-		//Stage background
+-		Back_Dummy_New,
+-		
+-		//Song info
+-		{FIXED_DEC(21,10),FIXED_DEC(21,10),FIXED_DEC(21,10)},
+-		0x80, 2,
+-		XA_Beathoven, 2,
+-		
+-		StageId_Kapi_3, STAGE_LOAD_FLAG
+-	},
+-	{ //StageId_Kapi_3 (Hairball)
+-		//Characters
+-		{Char_BF_New,   FIXED_DEC(105,1),  FIXED_DEC(100,1)},
+-		{Char_Dad_New, FIXED_DEC(-120,1),  FIXED_DEC(100,1)},
+-		{Char_GF_New,     FIXED_DEC(0,1),  FIXED_DEC(-15,1)},
+-		
+-		//Stage background
+-		Back_Dummy_New,
+-		
+-		//Song info
+-		{FIXED_DEC(19,10),FIXED_DEC(19,10),FIXED_DEC(19,10)},
+-		0x80, 3,
+-		XA_Hairball, 0,
+-		
+-		StageId_Kapi_4, STAGE_LOAD_FLAG
+-	},
+-	{ //StageId_Kapi_4 (Nyaw)
+-		//Characters
+-		{Char_BF_New,   FIXED_DEC(105,1),  FIXED_DEC(100,1)},
+-		{Char_Dad_New, FIXED_DEC(-120,1),  FIXED_DEC(100,1)},
+-		{Char_GF_New,     FIXED_DEC(0,1),  FIXED_DEC(-15,1)},
+-		
+-		//Stage background
+-		Back_Dummy_New,
+-		
+-		//Song info
+-		{FIXED_DEC(25,10),FIXED_DEC(25,10),FIXED_DEC(25,10)},
+-		0x80, 4,
+-		XA_Nyaw, 2,
+-		
+-		StageId_Kapi_4, 0
++	{ //StageId_8_1 (Darnell)
++		{Char_PicoPlayer_New, FIXED_DEC(154,1), FIXED_DEC(17,1)},
++		{Char_Darnell_New,   FIXED_DEC(-117,1), FIXED_DEC(35,1)},
++		{Char_Nene_New,      FIXED_DEC(0,1),    FIXED_DEC(-11,1)},
++		Back_Weekend1_New,
++		{FIXED_DEC(2,1),FIXED_DEC(2,1),FIXED_DEC(24,10)},
++		8, 1,
++		XA_Darnell, 0,
++		StageId_8_2, STAGE_LOAD_FLAG
+ 	},
+-	
+-	{ //StageId_Clwn_1 (Improbable Outset)
+-		//Characters
+-		{Char_BF_New,    FIXED_DEC(105,1),  FIXED_DEC(100,1)},
+-		{Char_Tank_New, FIXED_DEC(-120,1),  FIXED_DEC(100,1)},
+-		{Char_GF_New,      FIXED_DEC(0,1),  FIXED_DEC(-15,1)},
+-		
+-		//Stage background
+-		Back_Dummy_New,
+-		
+-		//Song info
+-		{FIXED_DEC(2,1),FIXED_DEC(25,10),FIXED_DEC(3,1)},
+-		0x81, 1,
+-		XA_ImprobableOutset, 0,
+-		
+-		StageId_Clwn_2, STAGE_LOAD_FLAG | STAGE_LOAD_OPPONENT
++	{ //StageId_8_2 (Lit Up)
++		{Char_PicoPlayer_New, FIXED_DEC(154,1), FIXED_DEC(17,1)},
++		{Char_Darnell_New,   FIXED_DEC(-117,1), FIXED_DEC(35,1)},
++		{Char_Nene_New,      FIXED_DEC(0,1),    FIXED_DEC(-11,1)},
++		Back_Weekend1_New,
++		{FIXED_DEC(24,10),FIXED_DEC(24,10),FIXED_DEC(24,10)},
++		8, 2,
++		XA_LitUp, 2,
++		StageId_8_3, STAGE_LOAD_FLAG
+ 	},
+-	{ //StageId_Clwn_2 (Madness)
+-		//Characters
+-		{Char_BF_New,    FIXED_DEC(105,1),  FIXED_DEC(100,1)},
+-		{Char_Tank_New, FIXED_DEC(-120,1),  FIXED_DEC(100,1)},
+-		{Char_GF_New,      FIXED_DEC(0,1),  FIXED_DEC(-15,1)},
+-		
+-		//Stage background
+-		Back_Dummy_New,
+-		
+-		//Song info
+-		{FIXED_DEC(2,1),FIXED_DEC(25,10),FIXED_DEC(3,1)},
+-		0x81, 2,
+-		XA_Madness, 2,
+-		
+-		StageId_Clwn_3, 0
++	{ //StageId_8_3 (2Hot)
++		{Char_PicoPlayer_New, FIXED_DEC(154,1), FIXED_DEC(17,1)},
++		{Char_Darnell_New,   FIXED_DEC(-117,1), FIXED_DEC(35,1)},
++		{Char_Nene_New,      FIXED_DEC(0,1),    FIXED_DEC(-11,1)},
++		Back_Weekend1_New,
++		{FIXED_DEC(27,10),FIXED_DEC(27,10),FIXED_DEC(28,10)},
++		8, 3,
++		XA_2Hot, 4,
++		StageId_8_4, STAGE_LOAD_FLAG | STAGE_LOAD_PLAYER | STAGE_LOAD_OPPONENT | STAGE_LOAD_STAGE
+ 	},
+-	{ //StageId_Clwn_3 (Hellclown)
+-		//Characters
+-		{Char_BF_New,    FIXED_DEC(105,1),  FIXED_DEC(100,1)},
+-		{Char_Tank_New, FIXED_DEC(-120,1),  FIXED_DEC(100,1)},
+-		{Char_GF_New,      FIXED_DEC(0,1),  FIXED_DEC(-15,1)},
+-		
+-		//Stage background
+-		Back_Dummy_New,
+-		
+-		//Song info
+-		{FIXED_DEC(2,1),FIXED_DEC(25,10),FIXED_DEC(3,1)},
+-		0x81, 3,
+-		XA_Hellclown, 0,
+-		
+-		StageId_Clwn_3, 0
++	{ //StageId_8_4 (Blazin')
++		{Char_PicoBlazin_New,    FIXED_DEC(60,1),  FIXED_DEC(25,1)},
++		{Char_DarnellBlazin_New, FIXED_DEC(-60,1), FIXED_DEC(25,1)},
++		{Char_Nene_New,          FIXED_DEC(0,1),   FIXED_DEC(-70,1)},
++		Back_Weekend1_New,
++		{FIXED_DEC(2,1),FIXED_DEC(24,10),FIXED_DEC(32,10)},
++		8, 4,
++		XA_Blazin, 6,
++		StageId_8_4, 0
+ 	},
+-	{ //StageId_Clwn_4 (Expurgation)
+-		//Characters
+-		{Char_BF_New,    FIXED_DEC(105,1),  FIXED_DEC(100,1)},
+-		{Char_Tank_New, FIXED_DEC(-120,1),  FIXED_DEC(100,1)},
+-		{Char_GF_New,      FIXED_DEC(0,1),  FIXED_DEC(-15,1)},
+-		
+-		//Stage background
+-		Back_Dummy_New,
+-		
+-		//Song info
+-		{FIXED_DEC(34,10),FIXED_DEC(34,10),FIXED_DEC(34,10)},
+-		0x81, 4,
+-		XA_Expurgation, 2,
+-		
+-		StageId_Clwn_4, 0
+-	}
+\ No newline at end of file
