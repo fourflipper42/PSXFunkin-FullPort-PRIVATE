@@ -1,0 +1,345 @@
+diff --git a/src/stage.c b/src/stage.c
+index 5998a4a..035ea24 100644
+--- a/src/stage.c
++++ b/src/stage.c
+@@ -28,6 +28,11 @@
+ #include "character/dad.h"
+ #include "character/spook.h"
+ #include "character/pico.h"
++#include "character/picoplayer.h"
++#include "character/nene.h"
++#include "character/darnell.h"
++#include "character/picoblazin.h"
++#include "character/darnellblazin.h"
+ #include "character/mom.h"
+ #include "character/senpai.h"
+ #include "character/tank.h"
+@@ -38,6 +43,8 @@
+ #include "stage/week3.h"
+ #include "stage/week4.h"
+ #include "stage/week7.h"
++#include "stage/weekend1.h"
++#include "movie.h"
+ 
+ static const StageDef stage_defs[StageId_Max] = {
+ 	#include "stagedef_disc1.h"
+@@ -322,6 +329,81 @@ void Stage_HitNote(fixed_t offset)
+ 	}
+ }
+ 
++enum {
++	MODK_LIGHTCAN = 1, MODK_KICKCAN = 2, MODK_COCKGUN = 3, MODK_KNEECAN = 4, MODK_FIREGUN = 5,
++	MODK_BLOCKHIGH = 10, MODK_PUNCHHIGHBLOCKED = 11, MODK_PUNCHLOWDODGED = 12, MODK_DODGELOW = 13,
++	MODK_BLOCKSPIN = 14, MODK_PUNCHHIGH = 15, MODK_HITHIGH = 16, MODK_DODGEHIGH = 17,
++	MODK_DARNELL_UPPER_PREP = 18, MODK_DARNELL_UPPER = 19, MODK_HITLOW = 20,
++	MODK_PICO_UPPER_PREP = 21, MODK_PICO_UPPER = 22, MODK_BLOCKLOW = 23, MODK_PUNCHLOW = 24,
++	MODK_PUNCHLOWSPIN = 25, MODK_FAKEOUT = 26, MODK_TAUNT = 27, MODK_IDLE = 28,
++	MODK_PUNCHLOWBLOCKED = 29, MODK_PUNCHHIGHSPIN = 30,
++};
++
++static boolean Stage_ApplyModernPlayerKind(const Note *note)
++{
++	if (note->type & NOTE_FLAG_SUSTAIN)
++		return false;
++	if (stage.stage_id == StageId_8_3)
++	{
++		switch (note->pad)
++		{
++			case MODK_COCKGUN: stage.player->set_anim(stage.player, PicoPlayer_GunReload); return true;
++			case MODK_FIREGUN: stage.player->set_anim(stage.player, PicoPlayer_Shoot); return true;
++			default: break;
++		}
++	}
++	if (stage.stage_id == StageId_8_4)
++	{
++		switch (note->pad)
++		{
++			case MODK_BLOCKHIGH: case MODK_BLOCKLOW: stage.player->set_anim(stage.player, PicoBlazin_Block); return true;
++			case MODK_BLOCKSPIN: stage.player->set_anim(stage.player, PicoBlazin_Hit_Spin); return true;
++			case MODK_DODGELOW: case MODK_DODGEHIGH: stage.player->set_anim(stage.player, PicoBlazin_Dodge); return true;
++			case MODK_PUNCHHIGH: case MODK_PUNCHHIGHBLOCKED: stage.player->set_anim(stage.player, PicoBlazin_Punch_High_1); return true;
++			case MODK_PUNCHHIGHSPIN: stage.player->set_anim(stage.player, PicoBlazin_Punch_High_2); return true;
++			case MODK_PUNCHLOW: case MODK_PUNCHLOWDODGED: case MODK_PUNCHLOWBLOCKED: stage.player->set_anim(stage.player, PicoBlazin_Punch_Low_1); return true;
++			case MODK_PUNCHLOWSPIN: stage.player->set_anim(stage.player, PicoBlazin_Punch_Low_2); return true;
++			case MODK_HITHIGH: stage.player->set_anim(stage.player, PicoBlazin_Hit_High); return true;
++			case MODK_HITLOW: stage.player->set_anim(stage.player, PicoBlazin_Hit_Low); return true;
++			case MODK_PICO_UPPER_PREP: stage.player->set_anim(stage.player, PicoBlazin_Uppercut_Prep); return true;
++			case MODK_PICO_UPPER: stage.player->set_anim(stage.player, PicoBlazin_Uppercut_Punch); return true;
++			case MODK_FAKEOUT: stage.player->set_anim(stage.player, PicoBlazin_Fake_Hit); return true;
++			case MODK_TAUNT: stage.player->set_anim(stage.player, PicoBlazin_Taunt); return true;
++			default: break;
++		}
++	}
++	return false;
++}
++
++static boolean Stage_ApplyModernOpponentKind(const Note *note)
++{
++	if (note->type & NOTE_FLAG_SUSTAIN)
++		return false;
++	if (stage.stage_id == StageId_8_3)
++	{
++		switch (note->pad)
++		{
++			case MODK_LIGHTCAN: stage.opponent->set_anim(stage.opponent, Darnell_LightCan); return true;
++			case MODK_KICKCAN: stage.opponent->set_anim(stage.opponent, Darnell_KickUp); return true;
++			case MODK_KNEECAN: stage.opponent->set_anim(stage.opponent, Darnell_KneeForward); return true;
++			default: break;
++		}
++	}
++	if (stage.stage_id == StageId_8_4)
++	{
++		switch (note->pad)
++		{
++			case MODK_DARNELL_UPPER_PREP: stage.opponent->set_anim(stage.opponent, DarnellBlazin_Uppercut_Prep); return true;
++			case MODK_DARNELL_UPPER: stage.opponent->set_anim(stage.opponent, DarnellBlazin_Uppercut_Punch); return true;
++			case MODK_HITHIGH: stage.opponent->set_anim(stage.opponent, DarnellBlazin_Hit_High); return true;
++			case MODK_HITLOW: stage.opponent->set_anim(stage.opponent, DarnellBlazin_Hit_Low); return true;
++			case MODK_IDLE: stage.opponent->set_anim(stage.opponent, CharAnim_Idle); return true;
++			default: break;
++		}
++	}
++	return false;
++}
++
+ void Stage_MissNote(void)
+ {
+ 	#ifdef STAGE_FUNKYFRIDAY
+@@ -368,7 +450,8 @@ void Stage_NoteCheck(u8 type)
+ 			//Hit the note
+ 			note->type |= NOTE_FLAG_HIT;
+ 			
+-			stage.player->set_anim(stage.player, note_anims[type][0]);
++			if (!Stage_ApplyModernPlayerKind(note))
++				stage.player->set_anim(stage.player, note_anims[type][0]);
+ 			#ifndef STAGE_FUNKYFRIDAY
+ 				Stage_HitNote(stage.note_scroll - note_fp);
+ 			#else
+@@ -393,10 +476,7 @@ void Stage_NoteCheck(u8 type)
+ 				//Hit the mine
+ 				note->type |= NOTE_FLAG_HIT;
+ 				
+-				if (stage.stage_id == StageId_Clwn_4)
+-					stage.health = -0x7000;
+-				else
+-					stage.health -= 2000;
++				stage.health -= 2000;
+ 				stage.player->set_anim(stage.player, note_anims[type][1]);
+ 				stage.arrow_hitan[type] = 0;
+ 			#endif
+@@ -737,22 +817,7 @@ void Stage_DrawNotes()
+ 					note_dst.y = -note_dst.y - note_dst.h;
+ 				Stage_DrawTex(&stage.tex_hud0, &note_src, &note_dst, stage.bump);
+ 				
+-				if (stage.stage_id == StageId_Clwn_4)
+-				{
+-					//Draw note halo
+-					note_src.x = 160;
+-					note_src.y = 128 + ((animf_count & 0x3) << 3);
+-					note_src.w = 32;
+-					note_src.h = 8;
+-					
+-					note_dst.y -= FIXED_DEC(6,1);
+-					note_dst.h >>= 2;
+-					
+-					Stage_DrawTex(&stage.tex_hud0, &note_src, &note_dst, stage.bump);
+-				}
+-				else
+-				{
+-					//Draw note fire
++				//Draw note fire
+ 					note_src.x = 192 + ((animf_count & 0x1) << 5);
+ 					note_src.y = 64 + ((animf_count & 0x2) * 24);
+ 					note_src.w = 32;
+@@ -768,7 +833,6 @@ void Stage_DrawNotes()
+ 						note_dst.h = note_dst.h * 3 / 2;
+ 					}
+ 					Stage_DrawTex(&stage.tex_hud0, &note_src, &note_dst, stage.bump);
+-				}
+ 			}
+ 			else
+ 			{
+@@ -820,6 +884,7 @@ boolean Stage_SupportsDifficulty(StageId id, StageDiff difficulty)
+ 		case StageId_6_2: // Roses
+ 		case StageId_6_3: // Thorns
+ 		case StageId_7_1: // Ugh
++		case StageId_8_1: // Darnell
+ 			return true;
+ 		default:
+ 			return false;
+@@ -860,21 +925,7 @@ void Stage_LoadChart(void)
+ {
+ 	//Load stage data
+ 	char chart_path[64];
+-	if (stage.stage_def->week & 0x80)
+-	{
+-		//Use mod path convention
+-		static const char *mod_format[] = {
+-			"\\KAPI\\KAPI.%d%c.CHT;1", //Kapi
+-			"\\CLWN\\CLWN.%d%c.CHT;1" //Tricky
+-		};
+-		
+-		sprintf(chart_path, mod_format[stage.stage_def->week & 0x7F], stage.stage_def->week_song, "ENH"[stage.stage_diff]);
+-	}
+-	else
+-	{
+-		//Use standard path convention
+-		sprintf(chart_path, "\\WEEK%d\\%d.%d%c.CHT;1", stage.stage_def->week, stage.stage_def->week, stage.stage_def->week_song, "ENHRM"[stage.stage_diff]);
+-	}
++	sprintf(chart_path, "\\WEEK%d\\%d.%d%c.CHT;1", stage.stage_def->week, stage.stage_def->week, stage.stage_def->week_song, "ENHRM"[stage.stage_diff]);
+ 	
+ 	if (stage.chart_data != NULL)
+ 		Mem_Free(stage.chart_data);
+@@ -931,9 +982,28 @@ void Stage_LoadState(void)
+ 	stage.objlist_bg = NULL;
+ }
+ 
++// Weekend 1 story cinematics. Keep the last played ID so retrying a song does not replay its intro.
++static StageId weekend1_last_cutscene = StageId_Max;
++static void Stage_PlayWeekend1Cutscene(StageId id, boolean story)
++{
++	if (!story || id == weekend1_last_cutscene)
++		return;
++	Audio_StopXA();
++	switch (id)
++	{
++		case StageId_8_1: Movie_Play("\\MOVIE\\DARNELL.STR;1", 1297); break;
++		case StageId_8_3: Movie_Play("\\MOVIE\\2HOT.STR;1", 428); break;
++		case StageId_8_4: Movie_Play("\\MOVIE\\BLAZIN.STR;1", 657); break;
++		default: return;
++	}
++	weekend1_last_cutscene = id;
++}
++
+ //Stage functions
+ void Stage_Load(StageId id, StageDiff difficulty, boolean story)
+ {
++	Stage_PlayWeekend1Cutscene(id, story);
++
+ 	//Never attempt to read a chart that does not exist for this song.
+ 	if (!Stage_SupportsDifficulty(id, difficulty))
+ 		difficulty = StageDiff_Hard;
+@@ -1068,17 +1138,10 @@ void Stage_Tick()
+ 				Stage_Unload();
+ 				
+ 				LoadScr_Start();
+-				if (stage.stage_id <= StageId_LastVanilla)
+-				{
+-					if (stage.story)
+-						Menu_Load(MenuPage_Story);
+-					else
+-						Menu_Load(MenuPage_Freeplay);
+-				}
++				if (stage.story)
++					Menu_Load(MenuPage_Story);
+ 				else
+-				{
+-					Menu_Load(MenuPage_Mods);
+-				}
++					Menu_Load(MenuPage_Freeplay);
+ 				LoadScr_End();
+ 				
+ 				gameloop = GameLoop_Menu;
+@@ -1320,7 +1383,8 @@ void Stage_Tick()
+ 				{
+ 					//Opponent hits note
+ 					Stage_StartVocal();
+-					stage.opponent->set_anim(stage.opponent, note_anims[note->type & 0x3][(note->type & NOTE_FLAG_ALT_ANIM) != 0]);
++					if (!Stage_ApplyModernOpponentKind(note))
++						stage.opponent->set_anim(stage.opponent, note_anims[note->type & 0x3][(note->type & NOTE_FLAG_ALT_ANIM) != 0]);
+ 					note->type |= NOTE_FLAG_HIT;
+ 				}
+ 			}
+diff --git a/src/stage.h b/src/stage.h
+index 933e4b5..879f322 100644
+--- a/src/stage.h
++++ b/src/stage.h
+@@ -59,21 +59,17 @@ typedef enum
+ 	StageId_7_1, //Ugh
+ 	StageId_7_2, //Guns
+ 	StageId_7_3, //Stress
++
++	StageId_8_1, //Darnell
++	StageId_8_2, //Lit Up
++	StageId_8_3, //2Hot
++	StageId_8_4, //Blazin'
+ 	
+-	StageId_Kapi_1, //Wocky
+-	StageId_Kapi_2, //Beathoven
+-	StageId_Kapi_3, //Hairball
+-	StageId_Kapi_4, //Nyaw
+-	
+-	StageId_Clwn_1, //Improbable Outset
+-	StageId_Clwn_2, //Madness
+-	StageId_Clwn_3, //Hellclown
+-	StageId_Clwn_4, //Expurgation
+-	
+ 	StageId_Max
+ } StageId;
+ 
+-#define StageId_LastVanilla StageId_7_3
++#define StageId_LastVanilla StageId_8_4
+ 
+ typedef enum
+ {
+diff --git a/src/stage/weekend1.c b/src/stage/weekend1.c
+new file mode 100644
+index 0000000..c488df9
+--- /dev/null
++++ b/src/stage/weekend1.c
+@@ -0,0 +1,44 @@
++#include "weekend1.h"
++#include "../mem.h"
++#include "../archive.h"
++
++typedef struct {
++    StageBack back;
++    Gfx_Tex tex_left, tex_right;
++} Back_Weekend1;
++
++static void Back_Weekend1_DrawBG(StageBack *back)
++{
++    Back_Weekend1 *this=(Back_Weekend1*)back;
++    const RECT src={0,0,256,240};
++    RECT_FIXED dst={
++        FIXED_DEC(-256,1)-stage.camera.x,
++        FIXED_DEC(-120,1)-stage.camera.y,
++        FIXED_DEC(256,1),FIXED_DEC(240,1)
++    };
++    Stage_DrawTex(&this->tex_left,&src,&dst,stage.camera.bzoom);
++    dst.x += FIXED_DEC(256,1);
++    Stage_DrawTex(&this->tex_right,&src,&dst,stage.camera.bzoom);
++}
++
++static void Back_Weekend1_Free(StageBack *back)
++{
++    Mem_Free(back);
++}
++
++StageBack *Back_Weekend1_New()
++{
++    Back_Weekend1 *this=(Back_Weekend1*)Mem_Alloc(sizeof(Back_Weekend1));
++    if (!this) return NULL;
++    this->back.draw_fg=NULL;
++    this->back.draw_md=NULL;
++    this->back.draw_bg=Back_Weekend1_DrawBG;
++    this->back.free=Back_Weekend1_Free;
++    const char *path=(stage.stage_id==StageId_8_4) ? "\\WEEK8\\BLAZIN.ARC;1" : "\\WEEK8\\BACK.ARC;1";
++    IO_Data arc=IO_Read(path);
++    Gfx_LoadTex(&this->tex_left,Archive_Find(arc,"back0.tim"),0);
++    Gfx_LoadTex(&this->tex_right,Archive_Find(arc,"back1.tim"),0);
++    Mem_Free(arc);
++    Gfx_SetClear(0,0,0);
++    return (StageBack*)this;
++}
+diff --git a/src/stage/weekend1.h b/src/stage/weekend1.h
+new file mode 100644
+index 0000000..6352548
+--- /dev/null
++++ b/src/stage/weekend1.h
+@@ -0,0 +1,5 @@
++#ifndef _WEEKEND1_H
++#define _WEEKEND1_H
++#include "../stage.h"
++StageBack *Back_Weekend1_New();
++#endif
