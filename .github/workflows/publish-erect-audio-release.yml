@@ -1,0 +1,92 @@
+name: Publish Erect Audio Checkpoint Release
+
+on:
+  push:
+    branches: [ erect-audio-checkpoint ]
+    paths:
+      - '.github/workflows/publish-erect-audio-release.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download exact user-tested checkpoint artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release
+          gh run download 31184782654 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name psxfunkin-v084-erect-audio-fix \
+            --dir release
+          test -s release/PSXFunkin_v084_Erect_Audio_Fix.bin
+          test -s release/PSXFunkin_v084_Erect_Audio_Fix.cue
+          test -s release/SHA256SUMS.txt
+
+      - name: Verify tested BIN
+        run: |
+          echo '84df5284fdb8720b388ebb2ecebf0ef49d42350016ef616a3d34b35939519c2e  release/PSXFunkin_v084_Erect_Audio_Fix.bin' | sha256sum -c -
+          grep -Fx 'FILE "PSXFunkin_v084_Erect_Audio_Fix.bin" BINARY' release/PSXFunkin_v084_Erect_Audio_Fix.cue
+          test "$(( $(stat -c%s release/PSXFunkin_v084_Erect_Audio_Fix.bin) % 2352 ))" -eq 0
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG='v0.8.4-erect-nightmare-audio-checkpoint'
+          TITLE='PSXFunkin v0.8.4 — Erect/Nightmare Audio Checkpoint'
+          cat > /tmp/release-notes.md <<'EOF'
+          User-confirmed playable checkpoint for the PSXFunkin full-content port.
+
+          Included in this checkpoint:
+          - Official v0.8.4 chart conversion for the currently supported base songs.
+          - Erect difficulty charts.
+          - Nightmare difficulty charts where supplied by the official v0.8.4 data.
+          - Official Erect remix audio for the 16 supported Erect/Nightmare songs.
+          - Corrected XA routing for Erect/Nightmare.
+          - First-opponent-note freeze fix.
+          - Easy / Normal / Hard retain the legacy audio routing.
+
+          Validation:
+          - MIPS PS1 executable compiled successfully.
+          - MODE2/2352 BIN/CUE built successfully.
+          - User tested this exact BIN in DuckStation and confirmed the previously observed first-opponent-note freeze is resolved and gameplay works correctly.
+
+          Tested build source commit: 437b45838dbbc02947fd996fc0f0fd3077de69c2
+          Tested BIN SHA-256: 84df5284fdb8720b388ebb2ecebf0ef49d42350016ef616a3d34b35939519c2e
+
+          This is a milestone checkpoint only. Pico Mixes, Weekend 1, SPAGHETTI, and later content are not part of this release.
+          EOF
+
+          if gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              release/PSXFunkin_v084_Erect_Audio_Fix.bin \
+              release/PSXFunkin_v084_Erect_Audio_Fix.cue \
+              release/SHA256SUMS.txt \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              release/PSXFunkin_v084_Erect_Audio_Fix.bin \
+              release/PSXFunkin_v084_Erect_Audio_Fix.cue \
+              release/SHA256SUMS.txt \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target 437b45838dbbc02947fd996fc0f0fd3077de69c2 \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md
+          fi
+
+      - name: Confirm release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.8.4-erect-nightmare-audio-checkpoint \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json tagName,name,isDraft,isPrerelease,assets,url
