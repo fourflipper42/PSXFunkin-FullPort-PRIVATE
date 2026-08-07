@@ -57,6 +57,9 @@ def load_builder(path: Path):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot import {path}")
     mod = importlib.util.module_from_spec(spec)
+    # dataclasses resolves postponed annotations through sys.modules while the
+    # module body is executing. Register the dynamic module before exec_module.
+    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 
