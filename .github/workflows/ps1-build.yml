@@ -68,14 +68,23 @@ jobs:
 
       - name: Acquire converted PsyQ compatibility libraries for build only
         run: |
-          mkdir -p upstream/mips/psyq
+          rm -rf /tmp/psyq-extract upstream/mips/psyq
+          mkdir -p /tmp/psyq-extract upstream/mips/psyq
           curl -fL --retry 3 --retry-delay 2 \
             http://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip \
             -o /tmp/psyq.zip
-          unzip -q /tmp/psyq.zip -d upstream/mips/psyq
-          test -d upstream/mips/psyq/include
-          test -d upstream/mips/psyq/lib
-          rm -f /tmp/psyq.zip
+          unzip -q /tmp/psyq.zip -d /tmp/psyq-extract
+          echo "Converted PsyQ archive layout:"
+          find /tmp/psyq-extract -maxdepth 3 -type d -print | sort
+          INC="$(find /tmp/psyq-extract -type d -name include -print -quit)"
+          LIB="$(find /tmp/psyq-extract -type d -name lib -print -quit)"
+          test -n "$INC"
+          test -n "$LIB"
+          cp -a "$INC" upstream/mips/psyq/include
+          cp -a "$LIB" upstream/mips/psyq/lib
+          test -f upstream/mips/psyq/include/libetc.h
+          test -n "$(find upstream/mips/psyq/lib -type f | head -n 1)"
+          rm -rf /tmp/psyq.zip /tmp/psyq-extract
 
       - name: Build mkpsxiso
         run: |
