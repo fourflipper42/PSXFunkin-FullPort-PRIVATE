@@ -27,10 +27,6 @@ def once(text: str, old: str, new: str, label: str) -> str:
 
 b = builder.read_text()
 
-# Keep the PS1-friendly 4bpp pixel storage, but stop forcing an entire scene or
-# BF+GF overlay through one 15-colour CLUT. A 4x4 tile grid gets sixteen
-# independent CLUTs, giving each region its own 15 visible colours while adding
-# only 480 bytes of palette data to each frame record.
 b = once(
     b,
     'CLUT_BYTES = 16 * 2\nPIXEL_BYTES = SCENE_W * SCENE_H // 2\nRECORD_BYTES = CLUT_BYTES + PIXEL_BYTES\nCHAR_PIXEL_BYTES = CHAR_W * CHAR_H // 2\nCHAR_RECORD_BYTES = CLUT_BYTES + CHAR_PIXEL_BYTES',
@@ -115,8 +111,6 @@ def char_frame_record(frame: Image.Image) -> bytes:
         raise RuntimeError(f"Character Select character frame record {len(result)} != {CHAR_RECORD_BYTES}")
     return result
 
-
-def mat_mul(a: Matrix, b: Matrix) -> Matrix:
 ''',
     'record encoders',
 )
@@ -129,8 +123,6 @@ old_char_tail = '''    # Same central 4:3 crop as the environment, but much high
 new_char_tail = '''    # Official foreground order: speakers and foreground/card pieces are above\n    # GF/player, not flattened underneath them in the environment bank.\n    paste_anim(scene, anims.get("charSelectSpeakers"), -10, 0, i, count)\n    paste_static(scene, root, "foregroundBlur.png", -125, 170)\n    for png_name, xml_name, x, y in (\n        ("dipshitBlur.png", "dipshitBlur.xml", 419, -65),\n        ("dipshitBacking.png", "dipshitBacking.xml", 423, -17),\n    ):\n        png = root / "images" / "charSelect" / png_name\n        xml = root / "images" / "charSelect" / xml_name\n        if png.is_file() and xml.is_file():\n            scene.alpha_composite(sparrow_frame(png, xml, i, count), (x, y))\n    paste_static(scene, root, "chooseDipshit.png", 426, -13)\n    return scene.crop((160, 0, 1120, 720)).resize((CHAR_W, CHAR_H), Image.Resampling.LANCZOS)'''
 b = once(b, old_char_tail, new_char_tail, 'foreground overlay order')
 
-# Preserve v2's explicit F=1/C=0 XA subheader values, then physically space
-# matching audio sectors the same way as PSXFunkin's established menu XA.
 old_xa = '''    subprocess.run([str(psxavenc), "-t", "xa", "-f", "37800", "-b", "4", "-c", "2", "-F", "1", "-C", "0", str(source), str(out)], check=True)\n    if out.stat().st_size == 0 or out.stat().st_size % 2336:\n        raise RuntimeError("CHARSEL.XA is not a valid raw XA sector stream")'''
 new_xa = '''    subprocess.run([str(psxavenc), "-t", "xa", "-f", "37800", "-b", "4", "-c", "2", "-F", "1", "-C", "0", str(source), str(out)], check=True)\n    raw = out.read_bytes()\n    if not raw or len(raw) % 2336:\n        raise RuntimeError("CHARSEL.XA encoder output is not a valid 2336-byte XA sector stream")\n    zero = bytes(2336)\n    physical = bytearray()\n    for pos in range(0, len(raw), 2336):\n        physical.extend(raw[pos:pos + 2336])\n        physical.extend(zero)\n        physical.extend(zero)\n        physical.extend(zero)\n    out.write_bytes(physical)\n    if out.stat().st_size != len(raw) * 4:\n        raise RuntimeError("CHARSEL.XA physical interleave size mismatch")'''
 b = once(b, old_xa, new_xa, 'stayFunky physical XA interleave')
@@ -161,8 +153,7 @@ r = between(
 	Gfx_DrawTex(&menu.tex_story, &src, &dst);
 }
 
-static void Menu_CSDrawGrid(void)
-{''',
+''',
     'lock colour path',
 )
 
