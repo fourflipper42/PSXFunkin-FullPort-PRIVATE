@@ -70,9 +70,10 @@ index 308f030..0b0ec57 100644
 -	//CLWNB.XA
 -	XA_Hellclown,   //Hellclown
 -	XA_Expurgation, //Expurgation
-+	//WEEK8.XA
++	//WEEK8A.XA
 +	XA_Darnell,
 +	XA_LitUp,
++	//WEEK8B.XA
 +	XA_2Hot,
 +	XA_Blazin,
  } XA_Track;
@@ -258,5 +259,5 @@ index 6707aa1..9aee122 100644
  	MenuPage_Freeplay,
 -	MenuPage_Mods,
  	MenuPage_Options,
- 	MenuPage_Stage,
- 	MenuPage_Opening,
+ 	
+ 	MenuPage_Stage, //Changes game loop
