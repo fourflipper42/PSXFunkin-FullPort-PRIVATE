@@ -1,0 +1,206 @@
+--- a/src/stage.h
++++ b/src/stage.h
+@@ -80,6 +80,9 @@
+ 	StageDiff_Easy,
+ 	StageDiff_Normal,
+ 	StageDiff_Hard,
++	StageDiff_Erect,
++	StageDiff_Nightmare,
++	StageDiff_Max,
+ } StageDiff;
+ 
+ typedef enum
+@@ -236,6 +239,7 @@
+ void Stage_DrawTexArb(Gfx_Tex *tex, const RECT *src, const POINT_FIXED *p0, const POINT_FIXED *p1, const POINT_FIXED *p2, const POINT_FIXED *p3, fixed_t zoom);
+ 
+ //Stage functions
++boolean Stage_SupportsDifficulty(StageId id, StageDiff difficulty);
+ void Stage_Load(StageId id, StageDiff difficulty, boolean story);
+ void Stage_Unload();
+ void Stage_Tick();
+--- a/src/stage.c
++++ b/src/stage.c
+@@ -795,6 +795,37 @@
+ 	}
+ }
+ 
++//Difficulty availability
++
++boolean Stage_SupportsDifficulty(StageId id, StageDiff difficulty)
++{
++	if (difficulty <= StageDiff_Hard)
++		return true;
++
++	switch (id)
++	{
++		case StageId_1_1: // Bopeebo
++		case StageId_1_2: // Fresh
++		case StageId_1_3: // Dadbattle
++		case StageId_2_1: // Spookeez
++		case StageId_2_2: // South
++		case StageId_3_1: // Pico
++		case StageId_3_2: // Philly Nice
++		case StageId_3_3: // Blammed
++		case StageId_4_1: // Satin Panties
++		case StageId_4_2: // High
++		case StageId_5_1: // Cocoa
++		case StageId_5_2: // Eggnog
++		case StageId_6_1: // Senpai
++		case StageId_6_2: // Roses
++		case StageId_6_3: // Thorns
++		case StageId_7_1: // Ugh
++			return true;
++		default:
++			return false;
++	}
++}
++
+ //Stage loads
+ void Stage_LoadPlayer(void)
+ {
+@@ -842,7 +873,7 @@
+ 	else
+ 	{
+ 		//Use standard path convention
+-		sprintf(chart_path, "\\WEEK%d\\%d.%d%c.CHT;1", stage.stage_def->week, stage.stage_def->week, stage.stage_def->week_song, "ENH"[stage.stage_diff]);
++		sprintf(chart_path, "\\WEEK%d\\%d.%d%c.CHT;1", stage.stage_def->week, stage.stage_def->week, stage.stage_def->week_song, "ENHRM"[stage.stage_diff]);
+ 	}
+ 	
+ 	if (stage.chart_data != NULL)
+@@ -854,7 +885,7 @@
+ 	stage.cur_section = stage.sections;
+ 	stage.cur_note = stage.notes;
+ 	
+-	stage.speed = stage.stage_def->speed[stage.stage_diff];
++	stage.speed = stage.stage_def->speed[(stage.stage_diff <= StageDiff_Hard) ? stage.stage_diff : StageDiff_Hard];
+ 	
+ 	stage.step_crochet = 0;
+ 	stage.time_base = 0;
+@@ -903,6 +934,10 @@
+ //Stage functions
+ void Stage_Load(StageId id, StageDiff difficulty, boolean story)
+ {
++	//Never attempt to read a chart that does not exist for this song.
++	if (!Stage_SupportsDifficulty(id, difficulty))
++		difficulty = StageDiff_Hard;
++
+ 	//Get stage definition
+ 	stage.stage_def = &stage_defs[stage.stage_id = id];
+ 	stage.stage_diff = difficulty;
+--- a/src/menu.c
++++ b/src/menu.c
+@@ -139,45 +139,60 @@
+ 		Gfx_DrawTexCol(&menu.tex_back, &back_src, &back_dst, r1, g1, b1);
+ }
+ 
+-static void Menu_DifficultySelector(s32 x, s32 y)
++static void Menu_DifficultySelector(StageId stage_id, boolean allow_extra, s32 x, s32 y)
+ {
+-	//Change difficulty
++	// Change difficulty. Story Mode keeps the original three difficulties;
++	// Erect/Nightmare are selectable in Freeplay only, matching their
++	// current official-game presentation and avoiding mixed-difficulty weeks.
+ 	if (menu.next_page == menu.page && Trans_Idle())
+ 	{
+-		if (pad_state.press & PAD_LEFT)
++		if (pad_state.press & (PAD_LEFT | PAD_RIGHT))
+ 		{
+-			if (menu.page_param.stage.diff > StageDiff_Easy)
+-				menu.page_param.stage.diff--;
+-			else
+-				menu.page_param.stage.diff = StageDiff_Hard;
+-		}
+-		if (pad_state.press & PAD_RIGHT)
+-		{
+-			if (menu.page_param.stage.diff < StageDiff_Hard)
+-				menu.page_param.stage.diff++;
+-			else
+-				menu.page_param.stage.diff = StageDiff_Easy;
++			StageDiff next = menu.page_param.stage.diff;
++			s8 direction = (pad_state.press & PAD_RIGHT) ? 1 : -1;
++			u8 attempts = 0;
++			do
++			{
++				s8 value = (s8)next + direction;
++				s8 max_diff = allow_extra ? (StageDiff_Max - 1) : StageDiff_Hard;
++				if (value < StageDiff_Easy)
++					value = max_diff;
++				else if (value > max_diff)
++					value = StageDiff_Easy;
++				next = (StageDiff)value;
++				attempts++;
++			} while (allow_extra && !Stage_SupportsDifficulty(stage_id, next) && attempts < StageDiff_Max);
++			menu.page_param.stage.diff = next;
+ 		}
+ 	}
+-	
+-	//Draw difficulty arrows
++
++	// Draw difficulty arrows.
+ 	static const RECT arrow_src[2][2] = {
+ 		{{224, 64, 16, 32}, {224, 96, 16, 32}}, //left
+ 		{{240, 64, 16, 32}, {240, 96, 16, 32}}, //right
+ 	};
+-	
++
+ 	Gfx_BlitTex(&menu.tex_story, &arrow_src[0][(pad_state.held & PAD_LEFT) != 0], x - 40 - 16, y - 16);
+ 	Gfx_BlitTex(&menu.tex_story, &arrow_src[1][(pad_state.held & PAD_RIGHT) != 0], x + 40, y - 16);
+-	
+-	//Draw difficulty
+-	static const RECT diff_srcs[] = {
+-		{  0, 96, 49, 16},
+-		{ 64, 96, 77, 16},
+-		{144, 96, 53, 16},
+-	};
+-	
+-	const RECT *diff_src = &diff_srcs[menu.page_param.stage.diff];
+-	Gfx_BlitTex(&menu.tex_story, diff_src, x - (diff_src->w >> 1), y - 8 + ((pad_state.press & (PAD_LEFT | PAD_RIGHT)) != 0));
++
++	// Preserve the original art for Easy/Normal/Hard. New official
++	// difficulties use the existing bold menu font to avoid replacing
++	// the t0.12 story texture atlas.
++	if (menu.page_param.stage.diff <= StageDiff_Hard)
++	{
++		static const RECT diff_srcs[] = {
++			{  0, 96, 49, 16},
++			{ 64, 96, 77, 16},
++			{144, 96, 53, 16},
++		};
++		const RECT *diff_src = &diff_srcs[menu.page_param.stage.diff];
++		Gfx_BlitTex(&menu.tex_story, diff_src, x - (diff_src->w >> 1), y - 8 + ((pad_state.press & (PAD_LEFT | PAD_RIGHT)) != 0));
++	}
++	else
++	{
++		static const char *diff_names[] = {"EASY", "NORMAL", "HARD", "ERECT", "NIGHTMARE"};
++		menu.font_bold.draw(&menu.font_bold, diff_names[menu.page_param.stage.diff], x, y - 8, FontAlign_Center);
++	}
+ }
+ 
+ static const void Menu_DrawWeek(const char *week, s32 x, s32 y)
+@@ -574,7 +589,7 @@
+ 			}
+ 			
+ 			//Draw difficulty selector
+-			Menu_DifficultySelector(SCREEN_WIDTH - 75, 68);
++			Menu_DifficultySelector(menu_options[menu.select].stage, false, SCREEN_WIDTH - 75, 68);
+ 			
+ 			//Handle option and selection
+ 			if (menu.trans_time != 0 && --menu.trans_time == 0)
+@@ -709,7 +724,7 @@
+ 			);
+ 			
+ 			//Draw difficulty selector
+-			Menu_DifficultySelector(SCREEN_WIDTH - 100, SCREEN_HEIGHT2 - 48);
++			Menu_DifficultySelector(menu_options[menu.select].stage, true, SCREEN_WIDTH - 100, SCREEN_HEIGHT2 - 48);
+ 			
+ 			//Handle option and selection
+ 			if (menu.next_page == menu.page && Trans_Idle())
+@@ -809,7 +824,7 @@
+ 			
+ 			//Draw difficulty selector
+ 			if (menu_options[menu.select].difficulty)
+-				Menu_DifficultySelector(SCREEN_WIDTH - 100, SCREEN_HEIGHT2 - 48);
++				Menu_DifficultySelector(menu_options[menu.select].stage, true, SCREEN_WIDTH - 100, SCREEN_HEIGHT2 - 48);
+ 			
+ 			//Handle option and selection
+ 			if (menu.next_page == menu.page && Trans_Idle())
