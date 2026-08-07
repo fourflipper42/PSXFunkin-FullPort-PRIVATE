@@ -193,7 +193,12 @@ jobs:
           cat build/charselect_build.log
           if [ "$RC" -ne 0 ]; then exit "$RC"; fi
           set -e
-          python3 scripts/apply_v084_charselect_full.py upstream
+          set +e
+          python3 scripts/apply_v084_charselect_full.py upstream > build/charselect_apply.log 2>&1
+          APPLY_RC=$?
+          cat build/charselect_apply.log
+          if [ "$APPLY_RC" -ne 0 ]; then exit "$APPLY_RC"; fi
+          set -e
           git -C upstream diff --check
           test -s upstream/iso/menu/csanim.bin
           test "$(stat -c%s upstream/iso/menu/csanim.bin)" -eq 520128
@@ -243,6 +248,7 @@ jobs:
         run: |
           mkdir -p build/charselect-diagnostics
           cp build/charselect_build.log build/charselect-diagnostics/ 2>/dev/null || true
+          cp build/charselect_apply.log build/charselect-diagnostics/ 2>/dev/null || true
           find official-v084/images/charSelect -maxdepth 3 -type f -printf '%P\n' | sort > build/charselect-diagnostics/charselect-files.txt || true
           find official-v084 -type f | grep -Ei '(stayFunky|CS_select|CS_locked|CS_Lights|CS_confirm|introSelect)' | sort > build/charselect-diagnostics/charselect-audio-video-files.txt || true
           cp scripts/build_v084_charselect_full.py build/charselect-diagnostics/
@@ -251,9 +257,10 @@ jobs:
           from pathlib import Path
           def esc(s):
               return s.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
-          log=Path('build/charselect_build.log')
-          if log.is_file():
-              print('::error title=Character Select builder::' + esc(log.read_text(errors='replace')[-6000:]))
+          for label, name in [('builder','charselect_build.log'), ('runtime apply','charselect_apply.log')]:
+              log=Path('build')/name
+              if log.is_file():
+                  print(f'::error title=Character Select {label}::' + esc(log.read_text(errors='replace')[-6000:]))
           root=Path('official-v084/images/charSelect')
           dirs=sorted(p.name for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
           print('::warning title=Character Select asset folders::' + esc(' | '.join(dirs)))
