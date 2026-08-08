@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   ps1-build:
@@ -248,9 +248,15 @@ jobs:
           EOF
           (cd build/release && sha256sum * > SHA256SUMS.txt)
 
-      - name: Upload exact UI v6 artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: psxfunkin-v084-charselect-exact-ui-v6
-          compression-level: 0
-          path: build/release/
+      - name: Publish exact UI v6 prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="charselect-exact-ui-v6-${GITHUB_SHA:0:12}"
+          gh release create "$TAG" build/release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "PSXFunkin Character Select Exact UI v6 test" \
+            --notes "DuckStation test checkpoint for the exact-source-coordinate Character Select v6 renderer. Audio and the confirmed font-safe VRAM fix are unchanged. This is not a final release."
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY"
