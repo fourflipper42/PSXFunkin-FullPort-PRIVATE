@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Run the v6 exact-coordinate builder with page-local control packing fixed."""
+"""Run v6 exact-coordinate UI builder with lossless cross-page control packing.
+
+Cursor graphics stay wholly inside one 128px 8bpp texture page. Official
+nametags retain their exact PS1-scaled dimensions, even when they cross the
+128px page boundary; the runtime splits those draws instead of shrinking art.
+"""
 from pathlib import Path
 from PIL import Image
 import build_charselect_exact_ui_v6 as base
@@ -25,34 +30,58 @@ def pack_controls(mod, root: Path):
     locked_name = base.load_static(root, 'lockedNametag.png')
     if bf_name is None or locked_name is None:
         raise RuntimeError('official Character Select nametag artwork missing')
+    # Preserve the actual v0.8.4 0.77 nametag scale, then the single 1/3 PS1 scale.
     bf_name = base.resize_exact(bf_name, 0.77 * base.SCALE)
     locked_name = base.resize_exact(locked_name, 0.77 * base.SCALE)
 
-    items = [
+    cursor_items = [
         ('cursor_dark', dark), ('cursor_light', light), ('cursor_yellow', yellow),
         ('cursor_orange', orange), ('cursor_confirm', accepted), ('cursor_deny', denied),
-        ('name_bf', bf_name), ('name_locked', locked_name),
     ]
 
     atlas = Image.new('RGBA', (base.CTRL_W, base.CTRL_H), (0, 0, 0, 0))
     rects = {}
-    page = 0
-    y = 0
-    for name, image in items:
+
+    # Reserve the bottom of both pages for the two authentic-width nametags.
+    # They are allowed to cross x=128; the runtime splits the draw there.
+    for name, image in (('name_bf', bf_name), ('name_locked', locked_name)):
+        if image.width > base.CTRL_W or image.height > base.CTRL_H:
+            raise RuntimeError(f'{name} exceeds complete control atlas: {image.size}')
+    locked_y = base.CTRL_H - locked_name.height
+    bf_y = locked_y - 2 - bf_name.height
+    if bf_y < 0:
+        raise RuntimeError(f'nametags do not fit vertically: bf={bf_name.size} locked={locked_name.size}')
+
+    page_y = [0, 0]
+    for name, image in cursor_items:
         w, h = image.size
-        if w > 128 or h > base.CTRL_H:
-            raise RuntimeError(f'{name} cannot fit a control page: {image.size}')
-        if y + h > base.CTRL_H:
-            page += 1
-            y = 0
-        if page > 1:
-            raise RuntimeError(f'control atlas overflow while packing {name}; sizes={[i[1].size for i in items]}')
-        x = page * 128
-        atlas.alpha_composite(image, (x, y))
-        rects[name] = [x, y, w, h]
-        y += h + 2
+        if w > 128:
+            raise RuntimeError(f'{name} width {w} exceeds one cursor texture page')
+        placed = False
+        for page in range(2):
+            if page_y[page] + h <= bf_y - 2:
+                x = page * 128
+                y = page_y[page]
+                atlas.alpha_composite(image, (x, y))
+                rects[name] = [x, y, w, h]
+                page_y[page] = y + h + 2
+                placed = True
+                break
+        if not placed:
+            raise RuntimeError(
+                f'cursor controls overflow reserved atlas area while packing {name}; '
+                f'page_y={page_y} reserve_start={bf_y} size={image.size}'
+            )
+
+    atlas.alpha_composite(bf_name, (0, bf_y))
+    atlas.alpha_composite(locked_name, (0, locked_y))
+    rects['name_bf'] = [0, bf_y, bf_name.width, bf_name.height]
+    rects['name_locked'] = [0, locked_y, locked_name.width, locked_name.height]
 
     def tag_pos(img: Image.Image):
+        # img is already official 0.77 scale * PS1 1/3 scale. Dividing only by
+        # PS1 SCALE recovers the actual 1280x720 display dimensions used when
+        # centering around Nametag.hx midpoint (1008,100).
         source_w = img.width / base.SCALE
         source_h = img.height / base.SCALE
         left_source = 1008 - source_w / 2
@@ -76,6 +105,7 @@ def pack_controls(mod, root: Path):
         'cursor_positions': cursor_xy,
         'name_bf_pos': list(tag_pos(bf_name)),
         'name_locked_pos': list(tag_pos(locked_name)),
+        'wide_control_split_x': 128,
         'official': {
             'grid_origin': [base.GRID_X, base.GRID_Y],
             'grid_spread': [base.GRID_X_SPREAD, base.GRID_Y_SPREAD],
