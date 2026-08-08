@@ -122,5 +122,21 @@ def pack_controls(mod, root: Path):
 
 base.pack_controls = pack_controls
 
+# The generated header is included before menu.c's PSX typedef headers. Keep it
+# self-contained by using standard C 'short' for these tiny screen coordinates
+# instead of the project-local s16 typedef.
+_original_write_header = base.write_header
+
+def write_header_portable(path: Path, meta: dict) -> None:
+    _original_write_header(path, meta)
+    text = path.read_text()
+    text = text.replace('static const s16 csv6_cursor_x', 'static const short csv6_cursor_x')
+    text = text.replace('static const s16 csv6_cursor_y', 'static const short csv6_cursor_y')
+    if 'static const s16 csv6_cursor_' in text:
+        raise RuntimeError('non-portable s16 cursor type remains in generated v6 header')
+    path.write_text(text)
+
+base.write_header = write_header_portable
+
 if __name__ == '__main__':
     base.main()
