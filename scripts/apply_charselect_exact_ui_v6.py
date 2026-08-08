@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Apply the Character Select v6 exact-coordinate UI renderer.
 
-Run after v5/v5.1.  The font-safe HQ scene layers remain untouched.  Only the
+Run after v5/v5.1. The font-safe HQ scene layers remain untouched. Only the
 mis-sized hand-fitted selector/grid/nametag path is replaced.
 """
 from pathlib import Path
@@ -40,8 +40,6 @@ def main() -> None:
         'generated header include',
     )
 
-    # Replace v5.1's two-page hand-fitted atlas with three full-screen exact
-    # grid pages plus a two-page control atlas.
     text = once(
         text,
         'static Gfx_Tex menu_cs_ui_pages[2];\n',
@@ -83,6 +81,23 @@ def main() -> None:
     draw_rect_end = 'static void Menu_CSDrawHQForeground(const RECT *dst)\n{'
     new_helpers = r'''static void Menu_CSDrawV6Control(const RECT *src, const RECT *dst)
 {
+	// 8bpp texture pages are 128 pixels wide. Preserve authentic assets wider
+	// than one page (notably the 129px PS1-scaled BF nametag) by splitting the
+	// source and destination at the page boundary instead of rescaling it.
+	if (src->x < 128 && (src->x + src->w) > 128)
+	{
+		s32 left_w = 128 - src->x;
+		s32 right_w = src->w - left_w;
+		s32 left_dst_w = ((s32)dst->w * left_w) / src->w;
+		RECT left_src = {src->x, src->y, left_w, src->h};
+		RECT left_dst = {dst->x, dst->y, left_dst_w, dst->h};
+		RECT right_src = {0, src->y, right_w, src->h};
+		RECT right_dst = {dst->x + left_dst_w, dst->y, dst->w - left_dst_w, dst->h};
+		Gfx_DrawTex(&menu_cs_ctrl_v6[0], &left_src, &left_dst);
+		Gfx_DrawTex(&menu_cs_ctrl_v6[1], &right_src, &right_dst);
+		return;
+	}
+
 	u8 page = (src->x >= 128) ? 1 : 0;
 	RECT local = {src->x - (page ? 128 : 0), src->y, src->w, src->h};
 	Gfx_DrawTex(&menu_cs_ctrl_v6[page], &local, dst);
@@ -178,7 +193,7 @@ static void Menu_CSDrawV6GridPages(void)
     for marker in (
         'charselect_ui_v6_generated.h', 'csgrid6a.tim;1', 'csgrid6b.tim;1', 'csgrid6c.tim;1',
         'csctrl6a.tim;1', 'csctrl6b.tim;1', 'menu_csdrawv6gridpages', 'csv6_name_bf_dst_x',
-        'csv6_cursor_x[menu_cs_grid % 9]',
+        'csv6_cursor_x[menu_cs_grid % 9]', 'left_w = 128 - src->x',
     ):
         if marker not in low:
             raise SystemExit(f'v6 runtime missing {marker}')
@@ -189,7 +204,7 @@ static void Menu_CSDrawV6GridPages(void)
     if 'menu_cs_hq_char_vram_x, 0, menu_cs_char_word_w' in low:
         raise SystemExit('font-corrupting y=0 character upload returned')
 
-    print('Applied Character Select v6 exact source-coordinate UI renderer')
+    print('Applied Character Select v6 exact source-coordinate UI renderer with cross-page nametag draws')
 
 
 if __name__ == '__main__':
