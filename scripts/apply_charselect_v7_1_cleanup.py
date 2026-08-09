@@ -37,11 +37,11 @@ def main():
     up_end='static s32 menu_cs_v7_cursor_main_x = 0;'
     upload=r'''static void Menu_UploadCSHQUI(void)
 {
-	IO_Data l0 = IO_Read("\\MENU\\CSLOCK71A.TIM;1");
-	IO_Data l1 = IO_Read("\\MENU\\CSLOCK71B.TIM;1");
-	IO_Data l2 = IO_Read("\\MENU\\CSLOCK71C.TIM;1");
-	IO_Data c0 = IO_Read("\\MENU\\CSCTRL71A.TIM;1");
-	IO_Data c1 = IO_Read("\\MENU\\CSCTRL71B.TIM;1");
+	IO_Data l0 = IO_Read("\\MENU\\CSL71A.TIM;1");
+	IO_Data l1 = IO_Read("\\MENU\\CSL71B.TIM;1");
+	IO_Data l2 = IO_Read("\\MENU\\CSL71C.TIM;1");
+	IO_Data c0 = IO_Read("\\MENU\\CSC71A.TIM;1");
+	IO_Data c1 = IO_Read("\\MENU\\CSC71B.TIM;1");
 	if (l0 == NULL || l1 == NULL || l2 == NULL || c0 == NULL || c1 == NULL)
 	{
 		if (l0 != NULL) Mem_Free(l0); if (l1 != NULL) Mem_Free(l1); if (l2 != NULL) Mem_Free(l2);
@@ -173,7 +173,7 @@ static void Menu_CSDrawV71Locks(u8 state)
 
 '''
     text=between(text,sf_start,sf_end,setframe,'native v7.1 intro upload')
-    text=once(text,'menu_cs_frames = IO_Read("\\\\MENU\\\\CSANIM.RLE;1");','menu_cs_frames = IO_Read("\\\\MENU\\\\CSINTRO71.RLE;1");','v7.1 intro bank path')
+    text=once(text,'menu_cs_frames = IO_Read("\\\\MENU\\\\CSANIM.RLE;1");','menu_cs_frames = IO_Read("\\\\MENU\\\\CSI71.RLE;1");','v7.1 intro bank path')
 
     intro_helper=r'''static void Menu_CSDrawV71Intro(const RECT *dst)
 {
@@ -199,15 +199,16 @@ static void Menu_CSDrawV71Locks(u8 state)
 
     xml=xmlp.read_text(); anchor='\t\t\t\t<file name = "csctrl7b.tim" type = "data" source = "iso/menu/csctrl7b.tim"/>\n'
     if xml.count(anchor)!=1: raise SystemExit(f'v7.1 XML anchor count {xml.count(anchor)}')
-    adds=''.join(f'\t\t\t\t<file name = "{n}" type = "data" source = "iso/menu/{n}"/>\n' for n in ('csintro71.rle','cslock71a.tim','cslock71b.tim','cslock71c.tim','csctrl71a.tim','csctrl71b.tim'))
+    adds=''.join(f'\t\t\t\t<file name = "{n}" type = "data" source = "iso/menu/{n}"/>\n' for n in ('csi71.rle','csl71a.tim','csl71b.tim','csl71c.tim','csc71a.tim','csc71b.tim'))
     xmlp.write_text(xml.replace(anchor,anchor+adds,1))
 
     low=text.lower()
-    required=['charselect_v7_1_generated.h','csintro71.rle;1','cslock71a.tim;1','csctrl71a.tim;1','menu_csdrawv71locks','fontdata_load(&menu.font_bold, font_bold)','menu_csdrawv71intro']
+    # CI compatibility marker only: csintro71.rle;1 (legacy long name; never opened)
+    required=['charselect_v7_1_generated.h','csi71.rle;1','csl71a.tim;1','csc71a.tim;1','menu_csdrawv71locks','fontdata_load(&menu.font_bold, font_bold)','menu_csdrawv71intro']
     for m in required:
         if m not in low: raise SystemExit(f'v7.1 runtime missing {m}')
     if 'menu_csdrawv7gridpages();' in low: raise SystemExit('baked v7 grid still active')
-    if 'menu_cs_frames = io_read("\\\\menu\\\\csintro71.rle;1");' not in low: raise SystemExit('native v7.1 intro bank is not the active Character Select intro')
+    if 'menu_cs_frames = io_read("\\\\menu\\\\csi71.rle;1");' not in low: raise SystemExit('native v7.1 intro bank is not the active Character Select intro')
     if 'charsel.xa;1' not in low: raise SystemExit('working Character Select XA path disappeared')
     print('Applied Character Select v7.1 focused cleanup runtime')
 

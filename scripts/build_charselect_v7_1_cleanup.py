@@ -317,7 +317,15 @@ def main():
         (menu/f'csctrl71{chr(97+i)}.tim').write_bytes(data)
 
     intro_records,intro_frames,intro_duration,intro_source_size=extract_intro(args.intro_video,mod.base.psx_color)
-    intro_bank=q2_pack(intro_records); (menu/'csintro71.rle').write_bytes(intro_bank)
+    intro_bank=q2_pack(intro_records); (menu/'csi71.rle').write_bytes(intro_bank)
+    (menu/'csintro71.rle').write_bytes(intro_bank)  # CI-only local alias; not in XML
+    # Historical long-name aliases are local build products only. The PS1 disc
+    # manifest references the 8.3-safe names above.
+    for short, legacy in (
+        ('csl71a.tim','cslock71a.tim'), ('csl71b.tim','cslock71b.tim'),
+        ('csl71c.tim','cslock71c.tim'), ('csc71a.tim','csctrl71a.tim'),
+        ('csc71b.tim','csctrl71b.tim')):
+        (menu/legacy).write_bytes((menu/short).read_bytes())
     write_header(srcdir/'charselect_v7_1_generated.h',lock_src,lock_dst,control_meta,len(intro_bank))
 
     bg=Image.open('build/charselect_v7_validation/background_00.png').convert('RGBA')
@@ -352,9 +360,9 @@ def main():
 
     cleanup={
       'policy':'v7.1 focused cleanup; BF/GF/foreground hierarchy frozen from v7',
-      'locks':{'mode':'per-cell sprites centered on canonical cursor cells','frame_numbers':lock_frames,'files':['cslock71a.tim','cslock71b.tim','cslock71c.tim'],'dst':lock_dst},
-      'controls':{**control_meta,'clut':[CTRL_CLUT[0],CTRL_CLUT[1]],'files':['csctrl71a.tim','csctrl71b.tim']},
-      'intro':{'file':'csintro71.rle','frames':INTRO_COUNT,'packed_bytes':len(intro_bank),'duration':intro_duration,'source_size':list(intro_source_size),'policy':'resize official video to 1280x720, center 960x720 4:3 crop, then 320x240 8bpp'},
+      'locks':{'mode':'per-cell sprites centered on canonical cursor cells','frame_numbers':lock_frames,'files':['csl71a.tim','csl71b.tim','csl71c.tim'],'dst':lock_dst},
+      'controls':{**control_meta,'clut':[CTRL_CLUT[0],CTRL_CLUT[1]],'files':['csc71a.tim','csc71b.tim']},
+      'intro':{'file':'csi71.rle','frames':INTRO_COUNT,'packed_bytes':len(intro_bank),'duration':intro_duration,'source_size':list(intro_source_size),'policy':'resize official video to 1280x720, center 960x720 4:3 crop, then 320x240 8bpp'},
       'font_vram':{'image':list(FONT_IMAGE_RECT),'clut':list(FONT_CLUT_RECT),'control_clut_relocated_to':[CTRL_CLUT[0],CTRL_CLUT[1]],'audit':'pass'},
       'validation_dir':str(val),
     }
