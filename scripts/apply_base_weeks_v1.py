@@ -34,6 +34,19 @@ def copy_adapted(reference: Path, destination: Path) -> None:
     text = text.replace("\tXmasBF_ArcMain_XmasBF6,\n", "")
     text = text.replace("if(stage.prefs.lowquality ==false)", "if (1)")
     text = text.replace("if (stage.prefs.lowquality ==false)", "if (1)")
+    text = text.replace("character->pad_held", "pad_state.held")
+    text = text.replace(
+        "\t//Perform idle dance\n"
+        "\tif ((pad_state.held & (INPUT_LEFT | INPUT_DOWN | INPUT_UP | INPUT_RIGHT)) == 0)\n"
+        "\t\tCharacter_PerformIdle(character);\n",
+        "\t//Use the cuckydev character idle contract.\n"
+        "\tCharacter_CheckEndSing(character);\n"
+        "\tif ((stage.flag & STAGE_FLAG_JUST_STEP) && Animatable_Ended(&character->animatable) &&\n"
+        "\t    character->animatable.anim != CharAnim_Left && character->animatable.anim != CharAnim_Down &&\n"
+        "\t    character->animatable.anim != CharAnim_Up && character->animatable.anim != CharAnim_Right &&\n"
+        "\t    (stage.song_step & 0x7) == 0)\n"
+        "\t\tcharacter->set_anim(character, CharAnim_Idle);\n",
+    )
     text = re.sub(
         r"\n\s*stage\.bgcolor\[0\]=([0-9]+);\n\s*stage\.bgcolor\[1\]=([0-9]+);\n\s*stage\.bgcolor\[2\]=([0-9]+);\n\s*Gfx_SetClear\(stage\.bgcolor\[0\], stage\.bgcolor\[1\], stage\.bgcolor\[2\]\);",
         lambda match: f"\n\tGfx_SetClear({match.group(1)}, {match.group(2)}, {match.group(3)});",
@@ -137,8 +150,12 @@ static void Char_XmasP_Draw2x(Char_XmasP *this)
 static void Char_XmasP_Tick(Character *character)
 {
 	Char_XmasP *this = (Char_XmasP*)character;
-	if ((character->pad_held & (INPUT_LEFT | INPUT_DOWN | INPUT_UP | INPUT_RIGHT)) == 0)
-		Character_PerformIdle(character);
+	Character_CheckEndSing(character);
+	if ((stage.flag & STAGE_FLAG_JUST_STEP) && Animatable_Ended(&character->animatable) &&
+	    character->animatable.anim != CharAnim_Left && character->animatable.anim != CharAnim_Down &&
+	    character->animatable.anim != CharAnim_Up && character->animatable.anim != CharAnim_Right &&
+	    (stage.song_step & 0x7) == 0)
+		character->set_anim(character, CharAnim_Idle);
 	Animatable_Animate(&character->animatable, this, Char_XmasP_SetFrame);
 	Char_XmasP_Draw2x(this);
 }
