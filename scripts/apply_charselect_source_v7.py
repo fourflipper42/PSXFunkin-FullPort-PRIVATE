@@ -70,6 +70,10 @@ def main() -> None:
 #define MENU_CS_V7_BG_CLUT_X 704
 #define MENU_CS_V7_BG_CLUT_Y 509
 
+/* Gfx_Tex must be declared in menu.c after gfx.h, never in the early generated header. */
+static Gfx_Tex menu_cs_grid_v7[3];
+static Gfx_Tex menu_cs_ctrl_v7[2];
+
 static void Menu_SetCSV7BackgroundFrame(u8 frame)
 {
 	if (menu_cs_bg_frames == NULL)

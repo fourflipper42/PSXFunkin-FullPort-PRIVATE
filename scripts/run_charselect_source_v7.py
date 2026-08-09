@@ -216,9 +216,6 @@ def portable_write_header(path: Path, bg_count: int, meta: dict) -> None:
 #define MENU_CS_HQ_FG_CLUT_X 704
 #define MENU_CS_HQ_FG_CLUT_Y 510
 
-static Gfx_Tex menu_cs_grid_v7[3];
-static Gfx_Tex menu_cs_ctrl_v7[2];
-
 '''
     marker = '\n#endif\n'
     if text.count(marker) != 1:
