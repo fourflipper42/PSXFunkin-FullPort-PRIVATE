@@ -50,12 +50,17 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
     atlas = AnimateAtlas(atlas_path)
     atlas_frames = atlas.timeline_length(atlas.root["TL"])
     frame_count = math.ceil((320 / 24) * FPS)
-    silent = temporary / "stress-pico-ending-silent.mp4"
+
+    # Keep the handoff to psxavenc deliberately simple. The previous H.264/AAC
+    # MP4 intermediate rendered and muxed correctly in ffmpeg but psxavenc
+    # exited before decoding it. An AVI containing uncompressed BGR24 video and
+    # PCM audio avoids depending on H.264/AAC decoders in the psxavenc build.
+    silent = temporary / "stress-pico-ending-silent.avi"
     process = subprocess.Popen([
         str(ffmpeg), "-y", "-loglevel", "error", "-f", "rawvideo",
         "-pix_fmt", "rgb24", "-s", "320x240", "-r", str(FPS), "-i", "-",
-        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "12",
-        "-pix_fmt", "yuv420p", str(silent),
+        "-an", "-c:v", "rawvideo", "-pix_fmt", "bgr24", "-r", str(FPS),
+        str(silent),
     ], stdin=subprocess.PIPE)
     assert process.stdin is not None
     for output_frame in range(frame_count):
@@ -79,11 +84,12 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
         raise RuntimeError("ffmpeg failed while rendering Stress Pico ending")
     phase("ending atlas render completed")
 
-    target = temporary / "stress-pico-ending.mp4"
+    target = temporary / "stress-pico-ending.avi"
     phase("ending audio mux started")
     subprocess.run([
         str(ffmpeg), "-y", "-loglevel", "error", "-i", str(silent), "-i", str(audio),
-        "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac",
+        "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+        "-c:a", "pcm_s16le", "-ar", "44100", "-ac", "2",
         "-t", f"{frame_count / FPS:.6f}", str(target),
     ], check=True)
     phase("ending audio mux completed")
