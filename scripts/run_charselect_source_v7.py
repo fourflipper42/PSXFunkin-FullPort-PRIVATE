@@ -6,7 +6,9 @@ working conversion modules:
 - direct Sparrow sampling for selector effects,
 - Lock.hx-compatible tinting of only Animate leaves descended from a layer
   named ``color``, while preserving the exported registration relative to the
-  official `(230,110)` Lock.hx sprite offset.
+  official `(230,110)` Lock.hx sprite offset,
+- portable generated coordinate tables that do not depend on PSXFunkin's s16
+  typedef being visible before the generated header is included.
 """
 from __future__ import annotations
 
@@ -188,6 +190,25 @@ def source_layered_lock_frames(root: Path) -> list[Image.Image]:
 
 
 v7.lock_frames = source_layered_lock_frames
+
+
+# The generated header is included before menu.c has seen PSXFunkin's local
+# `s16` typedef. V6 already solved this exact ordering issue by emitting plain
+# standard-C `short` tables; do the same for every v7 generated coordinate and
+# source rectangle table.
+_original_write_header = v7.write_header
+
+
+def portable_write_header(path: Path, bg_count: int, meta: dict) -> None:
+    _original_write_header(path, bg_count, meta)
+    text = path.read_text()
+    text = text.replace('static const s16 csv7_', 'static const short csv7_')
+    if 'static const s16 csv7_' in text:
+        raise RuntimeError('non-portable s16 v7 header type remains')
+    path.write_text(text)
+
+
+v7.write_header = portable_write_header
 
 
 if __name__ == '__main__':
