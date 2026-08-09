@@ -46,7 +46,12 @@ PICO_RELEASE_FILES = (
 
 
 def recover_official_pico_sources() -> list[str]:
-    """Recover missing Pico UI atlases from the already pinned v0.8.4 ZIP."""
+    """Recover missing Pico UI atlases from the already pinned v0.8.4 ZIP.
+
+    Official release ZIPs may wrap ``assets/`` in a top-level directory. Match
+    canonical v0.8.4 paths by case-insensitive suffix, like the proven Weekend
+    recovery path, while still requiring the exact canonical asset subtree.
+    """
     workspace = Path.cwd()
     root = workspace / "official-v084"
     archive = workspace / "official-assets/funkin-linux-64bit.zip"
@@ -55,11 +60,52 @@ def recover_official_pico_sources() -> list[str]:
 
     recovered: list[str] = []
     with zipfile.ZipFile(archive) as zf:
-        files = {
-            info.filename.lower(): info
+        files = [
+            info
             for info in zf.infolist()
             if not info.is_dir()
-        }
+        ]
+
+        def best_file_match(source: str) -> zipfile.ZipInfo | None:
+            canonical = source.lower().strip("/")
+            matches = [
+                info for info in files
+                if info.filename.lower().strip("/") == canonical
+                or info.filename.lower().strip("/").endswith("/" + canonical)
+            ]
+            if not matches:
+                return None
+            return sorted(
+                matches,
+                key=lambda info: (
+                    len(PurePosixPath(info.filename).parts),
+                    len(info.filename),
+                    info.filename.lower(),
+                ),
+            )[0]
+
+        def tree_matches(source: str) -> list[tuple[zipfile.ZipInfo, PurePosixPath]]:
+            canonical = source.lower().strip("/")
+            prefix = canonical + "/"
+            wrapped = "/" + prefix
+            matches: list[tuple[zipfile.ZipInfo, PurePosixPath]] = []
+            for info in files:
+                low = info.filename.lower().strip("/")
+                if low.startswith(prefix):
+                    offset = len(prefix)
+                    raw = info.filename.strip("/")[offset:]
+                else:
+                    marker_at = low.find(wrapped)
+                    if marker_at < 0:
+                        continue
+                    offset = marker_at + len(wrapped)
+                    raw = info.filename.strip("/")[offset:]
+                if raw:
+                    matches.append((info, PurePosixPath(raw)))
+            return sorted(
+                matches,
+                key=lambda row: (str(row[1]).lower(), row[0].filename.lower()),
+            )
 
         def extract(info: zipfile.ZipInfo, target: Path) -> None:
             data = zf.read(info)
@@ -77,7 +123,7 @@ def recover_official_pico_sources() -> list[str]:
             target = root.joinpath(*relative.parts)
             if target.is_file() and target.stat().st_size > 0:
                 continue
-            info = files.get(source.lower())
+            info = best_file_match(source)
             if info is None:
                 raise RuntimeError(
                     "official Pico source missing from pinned v0.8.4 archive: "
@@ -95,15 +141,13 @@ def recover_official_pico_sources() -> list[str]:
             )
             if all(path.is_file() and path.stat().st_size > 0 for path in required):
                 continue
-            prefix = source.lower().rstrip("/") + "/"
-            matches = [info for low, info in files.items() if low.startswith(prefix)]
+            matches = tree_matches(source)
             if not matches:
                 raise RuntimeError(
                     "official Pico Animate atlas missing from pinned v0.8.4 archive: "
                     f"{source}"
                 )
-            for info in sorted(matches, key=lambda row: row.filename.lower()):
-                suffix = PurePosixPath(info.filename).relative_to(source)
+            for info, suffix in matches:
                 extract(info, target_dir.joinpath(*suffix.parts))
             if not all(path.is_file() and path.stat().st_size > 0 for path in required):
                 raise RuntimeError(
