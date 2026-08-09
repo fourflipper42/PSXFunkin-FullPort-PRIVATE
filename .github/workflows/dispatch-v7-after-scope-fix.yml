@@ -1,0 +1,24 @@
+name: Dispatch v7 after scope fix
+
+on:
+  push:
+    branches: [ charselect-full-checkpoint ]
+    paths:
+      - '.github/workflows/dispatch-v7-after-scope-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch source-correct v7 build at fixed branch head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run charselect-source-v7-build.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref charselect-full-checkpoint
