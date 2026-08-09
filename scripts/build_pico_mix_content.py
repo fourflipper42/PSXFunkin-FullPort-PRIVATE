@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import runpy
+import traceback
 
 
 CORE = Path(__file__).with_name("build_pico_mix_content_core.py")
@@ -65,4 +66,19 @@ def mix_song(ffmpeg: Path, song_dir: Path, voices: list[str], target: Path) -> N
 
 
 core["mix_song"] = mix_song
-core["main"]()
+
+
+def workflow_escape(text: str) -> str:
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+if __name__ == "__main__":
+    print("::notice title=Pico Mix phase::content builder started", flush=True)
+    try:
+        core["main"]()
+    except BaseException as exc:
+        detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        print(f"::error title=Pico Mix content failure::{workflow_escape(detail)}", flush=True)
+        raise
+    else:
+        print("::notice title=Pico Mix phase::content builder completed", flush=True)
