@@ -1,12 +1,14 @@
-name: PSXFunkin v0.8.4 Character Select v7.1 Cleanup
+name: PSXFunkin Full Port Completion - Freeplay Parity v1
 
 on:
   push:
-    branches: [ charselect-v7-1-cleanup ]
+    branches: [ full-port-completion ]
     paths:
       - '.github/workflows/charselect-v7-1-build.yml'
       - 'scripts/build_charselect_v7_1_cleanup.py'
       - 'scripts/apply_charselect_v7_1_cleanup.py'
+      - 'scripts/build_freeplay_parity_v1.py'
+      - 'scripts/apply_freeplay_parity_v1.py'
   workflow_dispatch:
 
 permissions:
@@ -42,7 +44,9 @@ jobs:
             scripts/run_charselect_source_v7.py \
             scripts/apply_charselect_source_v7.py \
             scripts/build_charselect_v7_1_cleanup.py \
-            scripts/apply_charselect_v7_1_cleanup.py
+            scripts/apply_charselect_v7_1_cleanup.py \
+            scripts/build_freeplay_parity_v1.py \
+            scripts/apply_freeplay_parity_v1.py
 
       - name: Install build dependencies
         run: |
@@ -204,6 +208,34 @@ jobs:
           print(json.dumps(r,indent=2))
           PY
 
+      - name: Build and apply official Freeplay parity v1
+        run: |
+          mkdir -p build/freeplay-v1-validation
+          python3 scripts/build_freeplay_parity_v1.py \
+            --assets-root official-v084 --upstream upstream \
+            --report build/freeplay_parity_v1.json \
+            --validation-dir build/freeplay-v1-validation
+          python3 scripts/apply_freeplay_parity_v1.py upstream
+          git -C upstream diff --check
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('build/freeplay_parity_v1.json').read_text())
+          assert report['policy'].startswith('official-v0.8.4-existing-files-only')
+          assert report['animation']['selected_capsules']==8
+          assert report['animation']['unselected_capsules']==8
+          assert report['animation']['selectors']==15
+          assert len(report['metadata']['entries'])==20
+          for name in ('fpanim.tim','fpmeta.tim','fpdj.bin'):
+              path=Path('upstream/iso/menu',name)
+              assert path.is_file() and path.stat().st_size > 0, name
+          menu=Path('upstream/src/menu.c').read_text().lower()
+          for marker in ('menu_fp_song_count 22','menu_freeplaytickpreview','pad_select','pad_l1','pad_r1','charselect_v7_1_generated.h'):
+              assert marker in menu, marker
+          assert menu.count('case menupage_characterselect:')==1
+          print('FREEPLAY_PARITY_V1_VALIDATION_OK')
+          PY
+
       - name: Acquire PsyQ compatibility libraries
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
@@ -243,50 +275,52 @@ jobs:
           echo "Raw disc sectors: $sectors"
           test "$sectors" -le 360000
 
-      - name: Package v7.1 cleanup checkpoint
+      - name: Package Freeplay parity v1 checkpoint
         run: |
-          mkdir -p build/release/v7-1-validation
-          cp upstream/funkin.bin build/release/PSXFunkin_v084_Character_Select_v7_1_Cleanup.bin
-          cat > build/release/PSXFunkin_v084_Character_Select_v7_1_Cleanup.cue <<'EOF'
-          FILE "PSXFunkin_v084_Character_Select_v7_1_Cleanup.bin" BINARY
+          mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Freeplay_Parity_v1.bin
+          cat > build/release/PSXFunkin_v084_Freeplay_Parity_v1.cue <<'EOF'
+          FILE "PSXFunkin_v084_Freeplay_Parity_v1.bin" BINARY
             TRACK 01 MODE2/2352
             INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/
-          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/release/
+          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/release/
           cp build/charselect_v7_1_validation/*.png build/release/v7-1-validation/
-          cat > build/release/CHARSELECT_V7_1_CLEANUP.txt <<'EOF'
-          Character Select v7.1 cleanup
-          - BF/GF/foreground v7 hierarchy is frozen unchanged.
-          - Locks are independent per-cell sprites centered on the canonical selector cells.
-          - BF PixelatedIcon uses the real bfpixel Sparrow animation at explicit 128px Character Select size.
-          - Boldfont CLUT (0,511) is protected; control CLUT moved to (256,511), with font reload on exit.
-          - Intro is native 320x240 8bpp, aligned by the official 1280x720 centered-video policy and the PS1 4:3 crop.
-          - Boyfriend nametag uses the source midpoint with a 5px PS1 safe-area clamp.
-          - Nine selector-state validation PNGs are included.
+          cp build/freeplay-v1-validation/*.png build/release/freeplay-v1-validation/
+          cat > build/release/FREEPLAY_PARITY_V1.txt <<'EOF'
+          Freeplay parity v1 checkpoint
+          - Character Select v7.1 visual hierarchy and audio are frozen unchanged.
+          - Official 8-frame selected and 8-frame unselected song capsules.
+          - Official 15-frame selector and all 14 official Boyfriend DJ frames.
+          - Data-driven albums, opponent icons, BPM and rating metadata for the base weeks.
+          - Random entry, delayed looping previews, controller held-repeat, L1/R1 jumps and volatile favorites.
+          - Personal-best and clear fields intentionally remain zero until the persistent memory-card score pass.
           EOF
           (cd build/release && find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
-          sha256sum build/release/PSXFunkin_v084_Character_Select_v7_1_Cleanup.bin
-          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Character_Select_v7_1_Cleanup.bin
+          sha256sum build/release/PSXFunkin_v084_Freeplay_Parity_v1.bin
+          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Freeplay_Parity_v1.bin
 
-      - name: Publish v7.1 cleanup prerelease
+      - name: Publish Freeplay parity v1 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          TAG="charselect-v7-1-cleanup-${SHORT}"
+          TAG="freeplay-parity-v1-${SHORT}"
           gh release create "$TAG" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title 'PSXFunkin Character Select v7.1 cleanup test' \
-            --notes 'DuckStation test checkpoint for the focused Character Select v7.1 cleanup. The user-confirmed BF/GF hierarchy and working Character Select audio are frozen; this pass targets grid/locks, BF icon registration, text/VRAM restoration, intro alignment/quality, and the BF nametag position only. This is not a final release.' \
-            build/release/PSXFunkin_v084_Character_Select_v7_1_Cleanup.bin \
-            build/release/PSXFunkin_v084_Character_Select_v7_1_Cleanup.cue \
+            --title 'PSXFunkin Freeplay parity v1 test' \
+            --notes 'DuckStation checkpoint for the first full Freeplay parity pass. Character Select v7.1 remains frozen. This build adds official capsule/selector animation, per-song albums and icons, Random, previews, and console navigation; it is not the final release.' \
+            build/release/PSXFunkin_v084_Freeplay_Parity_v1.bin \
+            build/release/PSXFunkin_v084_Freeplay_Parity_v1.cue \
             build/release/funkin.ps-exe \
             build/release/menu_visual_sources.json \
             build/release/erect_audio.json \
             build/release/v084_charts.json \
-            build/release/CHARSELECT_V7_1_CLEANUP.txt \
+            build/release/freeplay_parity_v1.json \
+            build/release/FREEPLAY_PARITY_V1.txt \
             build/release/SHA256SUMS.txt \
-            build/release/v7-1-validation/*.png
+            build/release/v7-1-validation/*.png \
+            build/release/freeplay-v1-validation/*.png
