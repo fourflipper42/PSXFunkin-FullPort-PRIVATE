@@ -48,6 +48,9 @@ typedef struct
 #define MENU_FP_META_CELL 48
 #define MENU_FP_META_VRAM_X 512
 #define MENU_FP_PREVIEW_DELAY 15
+#define MENU_FP_DIGIT_Y 208
+#define MENU_FP_DIGIT_W 9
+#define MENU_FP_DIGIT_H 14
 
 static const MenuFreeplaySong menu_fp_songs[MENU_FP_SONG_COUNT] = {
 	{StageId_1_4, XA_Tutorial, 2, "TUTORIAL", "TUTORIAL", 100, 100, {0,0,1,0,0}, 0, 17},
@@ -140,6 +143,46 @@ static void Menu_FreeplayDrawMeta(u8 cell, const RECT *dst)
 		src.x -= 128;
 	}
 	Gfx_DrawTex(&tex, &src, dst);
+}
+
+static void Menu_FreeplayDrawSmallText(const char *text, s16 x, s16 y)
+{
+	u32 pattern = 0;
+	u8 phase = (animf_count >> 1) & 1;
+	while (*text != '\0')
+	{
+		u8 original = (u8)*text++;
+		if (original >= 'A' && original <= 'Z')
+		{
+			u8 c = original - 'A';
+			RECT src = {((c & 7) << 5) + ((((pattern >> c) & 1) ^ phase) << 4), (c & ~7) << 1, 16, 16};
+			RECT dst = {x, y, 8, 8};
+			Gfx_DrawTex(&menu.font_bold.tex, &src, &dst);
+			pattern ^= 1u << c;
+		}
+		x += 7;
+	}
+}
+
+static s16 Menu_FreeplayDrawNumber(u16 value, s16 x, s16 y, u8 width, u8 height)
+{
+	u8 digits[5];
+	u8 count = 0;
+	do
+	{
+		digits[count++] = value % 10;
+		value /= 10;
+	} while (value != 0 && count < COUNT_OF(digits));
+
+	while (count != 0)
+	{
+		u8 digit = digits[--count];
+		RECT src = {digit * MENU_FP_DIGIT_W, MENU_FP_DIGIT_Y, MENU_FP_DIGIT_W, MENU_FP_DIGIT_H};
+		RECT dst = {x, y, width, height};
+		Gfx_DrawTex(&menu_fp_anim, &src, &dst);
+		x += width;
+	}
+	return x;
 }
 
 static void Menu_FreeplayMove(s8 direction)
@@ -281,17 +324,18 @@ FREEPLAY_CASE = r'''		case MenuPage_Freeplay:
 			menu.font_bold.draw(&menu.font_bold,
 				(menu.select == MENU_FP_RANDOM_OPTION) ? "ANY SONG" : song->week,
 				15, 92, FontAlign_Left);
-			menu.font_bold.draw(&menu.font_bold, "TRIANGLE CHARACTER", 8, SCREEN_HEIGHT - 18, FontAlign_Left);
-			menu.font_bold.draw(&menu.font_bold, "L1/R1 JUMP  SELECT RANDOM", 116, SCREEN_HEIGHT - 18, FontAlign_Left);
+			Menu_FreeplayDrawSmallText("TRIANGLE CHARACTER", 8, SCREEN_HEIGHT - 10);
+			Menu_FreeplayDrawSmallText("SHOULDERS JUMP SELECT RANDOM", 126, SCREEN_HEIGHT - 10);
 
-			char status[48];
 			u16 shown_bpm = (menu.page_param.stage.diff >= StageDiff_Erect) ? song->erect_bpm : song->bpm;
 			u8 shown_rating = song->rating[menu.page_param.stage.diff];
-			sprintf(status, "BPM %d  RATING %d", shown_bpm, shown_rating);
-			menu.font_bold.draw(&menu.font_bold, status, 150, 48, FontAlign_Left);
-			menu.font_bold.draw(&menu.font_bold, "PERSONAL BEST 0  CLEAR 0%", 150, 58, FontAlign_Left);
+			Menu_FreeplayDrawSmallText("PERSONAL BEST", 150, 42);
+			Menu_FreeplayDrawNumber(0, 244, 40, 7, 11);
+			Menu_FreeplayDrawSmallText("COMPLETION", 150, 52);
+			Menu_FreeplayDrawNumber(0, 224, 50, 7, 11);
+			Menu_FreeplayDrawSmallText("PERCENT", 234, 52);
 			if (menu.select != MENU_FP_RANDOM_OPTION && (menu_fp_favorites & (1u << Menu_FreeplaySongIndex(menu.select))))
-				menu.font_bold.draw(&menu.font_bold, "FAVORITE", 267, 48, FontAlign_Right);
+				Menu_FreeplayDrawSmallText("FAVORITE", 264, 42);
 
 			u8 capsule_frame = (u8)((animf_count / 4) & 7);
 			u8 selector_frame = (u8)((animf_count / 3) % 15);
@@ -316,8 +360,16 @@ FREEPLAY_CASE = r'''		case MenuPage_Freeplay:
 					Gfx_DrawTex(&menu_fp_anim, &pointer_src, &pointer_dst);
 				}
 
-				menu.font_bold.draw(&menu.font_bold, label,
-					selected ? 159 : 166, y - 5, FontAlign_Left);
+				Menu_FreeplayDrawSmallText(label, selected ? 159 : 166, y - 4);
+				if (selected && option != MENU_FP_RANDOM_OPTION)
+				{
+					RECT bpm_src = {96, MENU_FP_DIGIT_Y, 25, 14};
+					RECT bpm_dst = {161, y + 5, 13, 7};
+					Gfx_DrawTex(&menu_fp_anim, &bpm_src, &bpm_dst);
+					Menu_FreeplayDrawNumber(shown_bpm, 176, y + 4, 5, 8);
+					Menu_FreeplayDrawSmallText("RATING", 242, y + 5);
+					Menu_FreeplayDrawNumber(shown_rating, 287, y + 4, 5, 8);
+				}
 				RECT capsule_src = {
 					selected ? 0 : 104,
 					capsule_frame * 24,
@@ -445,7 +497,8 @@ def main() -> None:
         "pad_select",
         "pad_l1",
         "pad_r1",
-        "personal best 0",
+        "personal best",
+        "menu_freeplaydrawnumber",
         "randomrange",
         "charselect_v7_1_generated.h",
     )
