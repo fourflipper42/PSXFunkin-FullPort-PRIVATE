@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Convert the official Stress Pico Mix opening and ending cutscenes to PS1 STR."""
-# CI trigger after fixing the official Spooky Dark flat Sparrow asset staging.
 from __future__ import annotations
 
 import argparse
@@ -28,25 +27,25 @@ def workflow_escape(text: str) -> str:
 
 
 def phase(message: str) -> None:
-    print(f"::notice title=Pico Mix movie phase::{message}", flush=True)
+    print(f"::notice title=Pico Mix movie phase::{workflow_escape(message)}", flush=True)
 
 
-def run_psxavenc(command: list[str], label: str) -> None:
-    """Run psxavenc while preserving its diagnostics for GitHub Actions."""
+def run_checked(command: list[str], label: str) -> str:
     result = subprocess.run(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
     )
+    output = (result.stdout or "").strip()
     if result.returncode != 0:
-        output = (result.stdout or "").strip()
-        if len(output) > 12000:
-            output = output[-12000:]
-        raise RuntimeError(
-            f"{label} failed with exit code {result.returncode}"
-            + (f"\n{output}" if output else "\npsxavenc produced no diagnostic output")
+        short = output[-3000:] if output else "no diagnostic output"
+        print(
+            f"::error title={workflow_escape(label)}::{workflow_escape(short)}",
+            flush=True,
         )
+        raise RuntimeError(f"{label} failed with exit code {result.returncode}\n{output[-12000:]}")
+    return output
 
 
 def encoded_frame_count(path: Path) -> int:
@@ -63,23 +62,52 @@ def encoded_frame_count(path: Path) -> int:
     return maximum
 
 
-def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -> Path:
+def probe_video(source: Path, ffmpeg: Path) -> dict[str, str]:
+    ffprobe = ffmpeg.with_name("ffprobe") if ffmpeg.parent != Path(".") else Path("ffprobe")
+    result = subprocess.run([
+        str(ffprobe), "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=codec_name,pix_fmt,color_range,color_space,color_transfer,color_primaries",
+        "-of", "json", str(source),
+    ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed for generated Pico ending: {result.stdout}")
+    data = json.loads(result.stdout)
+    streams = data.get("streams") or []
+    if len(streams) != 1:
+        raise RuntimeError(f"generated Pico ending has {len(streams)} video streams")
+    stream = streams[0]
+    color_space = stream.get("color_space")
+    if color_space not in {"bt470bg", "smpte170m"}:
+        raise RuntimeError(f"generated Pico ending has unsafe colorspace for psxavenc: {stream}")
+    phase(
+        "ending video metadata verified: "
+        f"codec={stream.get('codec_name')} pix_fmt={stream.get('pix_fmt')} "
+        f"colorspace={color_space} range={stream.get('color_range')}"
+    )
+    return stream
+
+
+def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -> tuple[Path, dict[str, str]]:
     phase("ending atlas render started")
     atlas = AnimateAtlas(atlas_path)
     atlas_frames = atlas.timeline_length(atlas.root["TL"])
     frame_count = math.ceil((320 / 24) * FPS)
 
-    # psxavenc's libavcodec handoff is intentionally kept to independent,
-    # conventional frames. H.264/AAC introduced delayed-frame decoding and the
-    # rawvideo AVI path reached psxavenc but was rejected while opening/decoding
-    # the ending. High-quality MJPEG + PCM avoids both failure modes; the final
-    # PS1 MDEC encode is far more lossy than this temporary intermediate.
-    silent = temporary / "stress-pico-ending-silent.avi"
+    # WonderfulToolchain/psxavenc passes AVCodecContext.colorspace directly to
+    # sws_getCoefficients(). An unspecified generated-video colorspace therefore
+    # reaches a libswscale path that the official Stress opening does not. Keep
+    # the successful LE SSERAFIM H.264 handoff but explicitly tag BT.601 using
+    # bt470bg (enum value 5, matching libswscale's ITU-601 coefficient table).
+    # Disable B-frames as well so the temporary stream has no delayed frames.
+    silent = temporary / "stress-pico-ending-silent.mp4"
     process = subprocess.Popen([
         str(ffmpeg), "-y", "-loglevel", "error", "-f", "rawvideo",
         "-pix_fmt", "rgb24", "-s", "320x240", "-r", str(FPS), "-i", "-",
-        "-an", "-c:v", "mjpeg", "-q:v", "2", "-pix_fmt", "yuvj420p",
-        "-r", str(FPS), str(silent),
+        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "12",
+        "-pix_fmt", "yuv420p", "-r", str(FPS), "-g", str(FPS), "-bf", "0",
+        "-colorspace", "bt470bg", "-color_primaries", "smpte170m",
+        "-color_trc", "smpte170m", "-color_range", "tv",
+        "-movflags", "+faststart", str(silent),
     ], stdin=subprocess.PIPE)
     assert process.stdin is not None
     for output_frame in range(frame_count):
@@ -96,23 +124,29 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
         fade_start = math.floor((270 / 24) * FPS)
         if output_frame >= fade_start:
             alpha = min(1.0, (output_frame - fade_start) / max(1, frame_count - fade_start))
-            frame = Image.blend(frame.convert("RGB"), Image.new("RGB", frame.size, "black"), alpha).convert("RGBA")
+            frame = Image.blend(
+                frame.convert("RGB"), Image.new("RGB", frame.size, "black"), alpha
+            ).convert("RGBA")
         process.stdin.write(frame.convert("RGB").tobytes())
     process.stdin.close()
     if process.wait() != 0:
         raise RuntimeError("ffmpeg failed while rendering Stress Pico ending")
     phase("ending atlas render completed")
 
-    target = temporary / "stress-pico-ending.avi"
-    phase("ending audio mux started")
-    subprocess.run([
-        str(ffmpeg), "-y", "-loglevel", "error", "-i", str(silent), "-i", str(audio),
+    target = temporary / "stress-pico-ending.mp4"
+    phase("ending audio normalization and mux started")
+    run_checked([
+        str(ffmpeg), "-y", "-loglevel", "error", "-fflags", "+genpts",
+        "-i", str(silent), "-i", str(audio),
         "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
-        "-c:a", "pcm_s16le", "-ar", "44100", "-ac", "2",
-        "-t", f"{frame_count / FPS:.6f}", str(target),
-    ], check=True)
-    phase("ending audio mux completed")
-    return target
+        "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+        "-af", "aresample=44100:async=1:first_pts=0,asetpts=N/SR/TB",
+        "-avoid_negative_ts", "make_zero", "-t", f"{frame_count / FPS:.6f}",
+        "-movflags", "+faststart", str(target),
+    ], "Pico ending audio mux")
+    phase("ending audio normalization and mux completed")
+    metadata = probe_video(target, ffmpeg)
+    return target, metadata
 
 
 def main() -> None:
@@ -135,24 +169,25 @@ def main() -> None:
     args.ending_out.parent.mkdir(parents=True, exist_ok=True)
 
     phase("opening STR encode started")
-    run_psxavenc([
+    run_checked([
         str(args.psxavenc), "-q", "-t", "str", "-v", "v2",
         "-f", "37800", "-b", "4", "-c", "2", "-s", "320x240",
         "-r", "15", "-x", "2", str(args.source), str(args.out),
-    ], "opening STR encode")
+    ], "Pico opening STR encode")
     frames = encoded_frame_count(args.out)
     phase("opening STR encode completed")
 
+    ending_metadata: dict[str, str]
     with tempfile.TemporaryDirectory() as directory:
-        ending_source = build_ending(
+        ending_source, ending_metadata = build_ending(
             args.ending_atlas, args.ending_audio, args.ffmpeg, Path(directory)
         )
         phase("ending STR encode started")
-        run_psxavenc([
+        run_checked([
             str(args.psxavenc), "-q", "-t", "str", "-v", "v2",
             "-f", "37800", "-b", "4", "-c", "2", "-s", "320x240",
             "-r", str(FPS), "-x", "2", str(ending_source), str(args.ending_out),
-        ], "ending STR encode")
+        ], "Pico ending STR encode")
     ending_frames = encoded_frame_count(args.ending_out)
     phase("ending STR encode completed")
 
@@ -176,6 +211,7 @@ def main() -> None:
             "file": args.ending_out.name,
             "frames": ending_frames,
             "bytes": args.ending_out.stat().st_size,
+            "intermediate_video": ending_metadata,
         },
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
@@ -191,7 +227,7 @@ if __name__ == "__main__":
     except BaseException as exc:
         detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         print(
-            f"::error title=Pico Mix movie failure::{workflow_escape(detail)}",
+            f"::error title=Pico Mix movie failure::{workflow_escape(detail[-6000:])}",
             flush=True,
         )
         raise
