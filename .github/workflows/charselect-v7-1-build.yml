@@ -1,14 +1,16 @@
-name: PSXFunkin Full Port Completion - Freeplay Parity v1
+name: PSXFunkin Full Port Completion - Pause Menu v1
 
 on:
   push:
-    branches: [ __ci_hold__ ]
+    branches: [ full-port-completion ]
     paths:
       - '.github/workflows/charselect-v7-1-build.yml'
       - 'scripts/build_charselect_v7_1_cleanup.py'
       - 'scripts/apply_charselect_v7_1_cleanup.py'
       - 'scripts/build_freeplay_parity_v1.py'
       - 'scripts/apply_freeplay_parity_v1.py'
+      - 'scripts/build_pause_audio.py'
+      - 'scripts/apply_pause_menu_v1.py'
   workflow_dispatch:
 
 permissions:
@@ -46,7 +48,9 @@ jobs:
             scripts/build_charselect_v7_1_cleanup.py \
             scripts/apply_charselect_v7_1_cleanup.py \
             scripts/build_freeplay_parity_v1.py \
-            scripts/apply_freeplay_parity_v1.py
+            scripts/apply_freeplay_parity_v1.py \
+            scripts/build_pause_audio.py \
+            scripts/apply_pause_menu_v1.py
 
       - name: Install build dependencies
         run: |
@@ -98,6 +102,12 @@ jobs:
               if not names: raise SystemExit('introSelect missing from official v0.8.4 release')
               name=sorted(names,key=lambda n:(len(n),n))[0]
               out=Path('official-v084/videos')/PurePosixPath(name).name
+              with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
+              breakfast=[n for n in z.namelist() if PurePosixPath(n).name.lower()=='breakfast.ogg' and '/shared/music/' in ('/'+n.lower())]
+              if not breakfast: raise SystemExit('Breakfast pause music missing from official v0.8.4 release')
+              name=sorted(breakfast,key=lambda n:(0 if n.lower().endswith('/assets/shared/music/breakfast.ogg') else 1,len(n),n))[0]
+              out=Path('official-v084/assets/shared/music/breakfast.ogg')
+              out.parent.mkdir(parents=True,exist_ok=True)
               with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
           PY
 
@@ -236,6 +246,35 @@ jobs:
           print('FREEPLAY_PARITY_V1_VALIDATION_OK')
           PY
 
+      - name: Build and apply base Funkin pause menu v1
+        run: |
+          python3 scripts/build_pause_audio.py \
+            --assets-root official-v084 \
+            --out upstream/iso/music/pause.xa \
+            --psxavenc psxavenc/build/psxavenc \
+            --font-template upstream/iso/font/boldfont.tim \
+            --font-out upstream/iso/font/pausefont.tim \
+            --report build/pause_menu_v1.json
+          python3 scripts/apply_pause_menu_v1.py upstream
+          git -C upstream diff --check
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('build/pause_menu_v1.json').read_text())
+          assert report['policy']=='official-v0.8.4-breakfast-audio-only'
+          assert report['source_sha256']=='ef98010b857f8dcd5083417a6ebfe81ad473b47f2e331e5e5403e0f3bba935d8'
+          assert report['xa_bytes'] > 0 and report['xa_bytes'] % 2336 == 0
+          assert report['pause_font']['clut']==[256,511,16,1]
+          for path in ('upstream/iso/music/pause.xa','upstream/iso/font/pausefont.tim'):
+              assert Path(path).is_file() and Path(path).stat().st_size > 0, path
+          joined='\n'.join(Path('upstream/src',name).read_text().lower() for name in ('stage.c','stage.h','audio.c','audio.h','gfx.c','gfx.h','font.c','font.h'))
+          for marker in ('stagestate_pause','audio_savexa','audio_restorexa','audio_playxa_offset','stage_pausedraw','enable practice mode'):
+              assert marker in joined, marker
+          assert 'pause.xa' in Path('upstream/funkin.xml').read_text().lower()
+          assert 'pausefont.tim' in Path('upstream/funkin.xml').read_text().lower()
+          print('PAUSE_MENU_V1_VALIDATION_OK')
+          PY
+
       - name: Acquire PsyQ compatibility libraries
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
@@ -275,52 +314,54 @@ jobs:
           echo "Raw disc sectors: $sectors"
           test "$sectors" -le 360000
 
-      - name: Package Freeplay parity v1 checkpoint
+      - name: Package pause menu v1 checkpoint
         run: |
           mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation
-          cp upstream/funkin.bin build/release/PSXFunkin_v084_Freeplay_Parity_v1.bin
-          cat > build/release/PSXFunkin_v084_Freeplay_Parity_v1.cue <<'EOF'
-          FILE "PSXFunkin_v084_Freeplay_Parity_v1.bin" BINARY
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Pause_Menu_v1.bin
+          cat > build/release/PSXFunkin_v084_Pause_Menu_v1.cue <<'EOF'
+          FILE "PSXFunkin_v084_Pause_Menu_v1.bin" BINARY
             TRACK 01 MODE2/2352
             INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/
-          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/release/
+          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/pause_menu_v1.json build/release/
           cp build/charselect_v7_1_validation/*.png build/release/v7-1-validation/
           cp build/freeplay-v1-validation/*.png build/release/freeplay-v1-validation/
-          cat > build/release/FREEPLAY_PARITY_V1.txt <<'EOF'
-          Freeplay parity v1 checkpoint
+          cat > build/release/PAUSE_MENU_V1.txt <<'EOF'
+          Pause menu v1 checkpoint
           - Character Select v7.1 visual hierarchy and audio are frozen unchanged.
-          - Official 8-frame selected and 8-frame unselected song capsules.
-          - Official 15-frame selector and all 14 official Boyfriend DJ frames.
-          - Data-driven albums, opponent icons, BPM and rating metadata for the base weeks.
-          - Random entry, delayed looping previews, controller held-repeat, L1/R1 jumps and volatile favorites.
-          - Personal-best and clear fields intentionally remain zero until the persistent memory-card score pass.
+          - Freeplay parity v1 remains integrated unchanged.
+          - Start opens a base-Funkin-style in-song pause substate over a frozen gameplay frame.
+          - Resume restores the exact song XA position, channel, volume and loop state.
+          - Restart Song, Change Difficulty, Enable Practice Mode and Exit to Menu are implemented.
+          - Official v0.8.4 Breakfast music starts at a randomized offset and loops.
+          - Song, artist, difficulty, death count and practice metadata are shown.
           EOF
           (cd build/release && find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
-          sha256sum build/release/PSXFunkin_v084_Freeplay_Parity_v1.bin
-          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Freeplay_Parity_v1.bin
+          sha256sum build/release/PSXFunkin_v084_Pause_Menu_v1.bin
+          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Pause_Menu_v1.bin
 
-      - name: Publish Freeplay parity v1 prerelease
+      - name: Publish pause menu v1 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          TAG="freeplay-parity-v1-${SHORT}"
+          TAG="pause-menu-v1-${SHORT}"
           gh release create "$TAG" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title 'PSXFunkin Freeplay parity v1 test' \
-            --notes 'DuckStation checkpoint for the first full Freeplay parity pass. Character Select v7.1 remains frozen. This build adds official capsule/selector animation, per-song albums and icons, Random, previews, and console navigation; it is not the final release.' \
-            build/release/PSXFunkin_v084_Freeplay_Parity_v1.bin \
-            build/release/PSXFunkin_v084_Freeplay_Parity_v1.cue \
+            --title 'PSXFunkin pause menu v1 test' \
+            --notes 'DuckStation checkpoint for the first real base-Funkin pause-menu pass. It preserves Character Select v7.1 and Freeplay parity v1, adds resumable XA context, official Breakfast music, difficulty/restart/practice/menu actions, and pause metadata. This is not the final release.' \
+            build/release/PSXFunkin_v084_Pause_Menu_v1.bin \
+            build/release/PSXFunkin_v084_Pause_Menu_v1.cue \
             build/release/funkin.ps-exe \
             build/release/menu_visual_sources.json \
             build/release/erect_audio.json \
             build/release/v084_charts.json \
             build/release/freeplay_parity_v1.json \
-            build/release/FREEPLAY_PARITY_V1.txt \
+            build/release/pause_menu_v1.json \
+            build/release/PAUSE_MENU_V1.txt \
             build/release/SHA256SUMS.txt \
             build/release/v7-1-validation/*.png \
             build/release/freeplay-v1-validation/*.png
@@ -332,22 +373,22 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          STATUS_PATH="ci-status/freeplay-parity-v1-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
+          STATUS_PATH="ci-status/pause-menu-v1-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
           export SHORT STATUS_PATH
           python3 - <<'PY'
           import json, os
           from pathlib import Path
           payload={
-              'workflow':'Freeplay Parity v1',
+              'workflow':'Pause Menu v1',
               'status':os.environ['JOB_STATUS'],
               'sha':os.environ['GITHUB_SHA'],
               'run_id':os.environ['GITHUB_RUN_ID'],
               'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
           }
-          Path('/tmp/freeplay-ci-status.json').write_text(json.dumps(payload,indent=2)+'\n')
+          Path('/tmp/pause-ci-status.json').write_text(json.dumps(payload,indent=2)+'\n')
           PY
-          CONTENT="$(base64 -w0 /tmp/freeplay-ci-status.json)"
+          CONTENT="$(base64 -w0 /tmp/pause-ci-status.json)"
           gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${STATUS_PATH}" \
-            -f message="Record Freeplay parity v1 CI ${JOB_STATUS}" \
+            -f message="Record pause menu v1 CI ${JOB_STATUS}" \
             -f content="$CONTENT" \
             -f branch="full-port-completion"
