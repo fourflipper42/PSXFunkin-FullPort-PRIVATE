@@ -1,4 +1,4 @@
-name: Apply v7.1 intro tail fix
+name: Apply v7.1 active intro validation fix
 
 on:
   push:
@@ -20,21 +20,21 @@ jobs:
           ref: charselect-v7-1-cleanup
           fetch-depth: 1
 
-      - name: Apply safe intro tail sampling fix
+      - name: Replace stale intro validation with active-path validation
         run: |
-          python3 scripts/patch_v7_1_intro_tail.py
-          python3 -m py_compile scripts/build_charselect_v7_1_cleanup.py scripts/apply_charselect_v7_1_cleanup.py
-          grep -q "duration \* i / INTRO_COUNT" scripts/build_charselect_v7_1_cleanup.py
+          python3 scripts/patch_v7_1_active_intro_check.py
+          python3 -m py_compile scripts/apply_charselect_v7_1_cleanup.py
+          grep -q "native v7.1 intro bank is not the active Character Select intro" scripts/apply_charselect_v7_1_cleanup.py
           git diff --check
 
-      - name: Commit source fix
+      - name: Commit validation fix
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add scripts/build_charselect_v7_1_cleanup.py
-          git commit -m 'Keep v7.1 intro sampling inside movie duration'
+          git add scripts/apply_charselect_v7_1_cleanup.py
+          git commit -m 'Validate active v7.1 intro path instead of stale literal'
           git push origin HEAD:charselect-v7-1-cleanup
 
       - name: Dispatch v7.1 full build
