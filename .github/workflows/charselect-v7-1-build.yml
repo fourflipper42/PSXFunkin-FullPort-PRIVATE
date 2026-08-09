@@ -1,4 +1,4 @@
-name: PSXFunkin Full Port Completion - Weekend 1 v2
+name: PSXFunkin Full Port Completion - LE SSERAFIM v1
 
 on:
   push:
@@ -21,6 +21,11 @@ on:
       - 'scripts/build_weekend1_movies.py'
       - 'scripts/psxfunkin_chartc_weekend1.py'
       - 'scripts/apply_weekend1_v2.py'
+      - 'scripts/build_sserafim_assets.py'
+      - 'scripts/build_sserafim_audio.py'
+      - 'scripts/build_sserafim_charts.py'
+      - 'scripts/build_sserafim_movies.py'
+      - 'scripts/apply_sserafim_v1.py'
   workflow_dispatch:
 
 permissions:
@@ -70,7 +75,12 @@ jobs:
             scripts/build_weekend1_charts.py \
             scripts/build_weekend1_movies.py \
             scripts/psxfunkin_chartc_weekend1.py \
-            scripts/apply_weekend1_v2.py
+            scripts/apply_weekend1_v2.py \
+            scripts/build_sserafim_assets.py \
+            scripts/build_sserafim_audio.py \
+            scripts/build_sserafim_charts.py \
+            scripts/build_sserafim_movies.py \
+            scripts/apply_sserafim_v1.py
 
       - name: Install build dependencies
         run: |
@@ -148,6 +158,38 @@ jobs:
                   out=Path('official-v084')/suffix
                   out.parent.mkdir(parents=True,exist_ok=True)
                   with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
+
+              # The split asset release omits several executable-bundled collab
+              # files and the Weekend street car sheet. Recover those exact
+              # official v0.8.4 bytes from the same pinned Linux release.
+              icon_names={'icon-bf.png','icon-gf.png','icon-yunjin.png','icon-kazuha.png','icon-chaewon.png','icon-eunchae.png','icon-sakura.png'}
+              def required_asset(name):
+                  low=name.lower()
+                  base=PurePosixPath(name).name.lower()
+                  return (
+                      low.startswith('assets/sserafim/') or
+                      low.startswith('assets/shared/images/characters/sserafim/') or
+                      low.startswith('assets/data/songs/spaghetti/') or
+                      low.startswith('assets/data/characters/sserafim-') or
+                      low in {'assets/data/stages/sserafim.json','assets/data/levels/sserafim.json'} or
+                      low in {
+                          'assets/weekend1/images/phillystreets/phillycars.png',
+                          'assets/weekend1/images/phillystreets/phillycars.xml',
+                          'assets/weekend1/images/phillystreets/phillytraffic.png',
+                          'assets/weekend1/images/phillystreets/phillytraffic.xml',
+                      } or
+                      (low.startswith('assets/images/icons/') and base in icon_names)
+                  )
+              extracted=0
+              for name in z.namelist():
+                  if not required_asset(name): continue
+                  relative=PurePosixPath(name).relative_to('assets')
+                  out=Path('official-v084').joinpath(*relative.parts)
+                  out.parent.mkdir(parents=True,exist_ok=True)
+                  with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
+                  extracted+=1
+              if extracted < 60:
+                  raise SystemExit(f'official Weekend/LE SSERAFIM extraction incomplete: {extracted} files')
           PY
 
       - name: Fetch pinned PSXFunkin base-week conversion reference
@@ -465,6 +507,94 @@ jobs:
           print('OFFICIAL_WEEKEND1_V2_VALIDATION_OK')
           PY
 
+      - name: Build and apply official LE SSERAFIM collaboration v1
+        run: |
+          mkdir -p build/sserafim-v1-validation upstream/iso/movie
+          python3 scripts/build_sserafim_assets.py \
+            --root official-v084 \
+            --upstream upstream \
+            --report build/sserafim_assets_v1.json
+          python3 scripts/build_sserafim_charts.py \
+            --root official-v084 \
+            --iso-root upstream/iso \
+            --header upstream/src/sserafim_events_generated.h \
+            --report build/sserafim_charts_v1.json
+          python3 scripts/build_sserafim_audio.py \
+            --linux-zip official-assets/funkin-linux-64bit.zip \
+            --assets-root official-v084 \
+            --out upstream/iso/music \
+            --psxavenc psxavenc/build/psxavenc \
+            --header upstream/src/sserafim_audio_generated.h \
+            --report build/sserafim_audio_v1.json
+          python3 scripts/build_sserafim_movies.py \
+            --root official-v084 \
+            --stage-preview upstream/build-sserafim/background/sserafim_preview.png \
+            --out upstream/iso/movie \
+            --psxavenc psxavenc/build/psxavenc \
+            --header upstream/src/sserafim_movies_generated.h \
+            --report build/sserafim_movies_v1.json
+          python3 scripts/apply_sserafim_v1.py --upstream upstream
+          git -C upstream diff --check
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          assets=json.loads(Path('build/sserafim_assets_v1.json').read_text())
+          charts=json.loads(Path('build/sserafim_charts_v1.json').read_text())
+          audio=json.loads(Path('build/sserafim_audio_v1.json').read_text())
+          movies=json.loads(Path('build/sserafim_movies_v1.json').read_text())
+          assert assets['policy']=='authentic-v0.8.4-le-sserafim-source-frames-only'
+          assert assets['characters']=={
+              'kazuha':{'frames':12,'pages':3},
+              'sakura':{'frames':36,'pages':9},
+              'girlfriend':{'frames':28,'pages':7},
+          }
+          assert assets['extras']['yunjin']=={'pages':5,'frames':20}
+          assert assets['extras']['chaewon']=={'pages':2,'frames':5}
+          assert assets['extras']['eunchae']=={'pages':2,'frames':5}
+          assert charts['event_count']==468
+          assert charts['note_kind_codes']=={'sakura-joint':40,'sakura-bf1':41,'sakura-bf2':42}
+          assert charts['removed_non_scoreable_tail_note'] is True
+          assert audio['policy']=='official-v0.8.4-linux-embedded-spaghetti-masters'
+          assert audio['streams']['Inst.ogg']=={
+              'bytes':4062832,
+              'sha256':'086b1f38653353fdae27e0903ce8288477b6e0b3178de93c2bddce3641d78606',
+          }
+          assert audio['streams']['Voices-sserafim-sakura.ogg']=={
+              'bytes':4125963,
+              'sha256':'40a5d1e30fddac59ca83fbd48c30a34f0491cb15b7df86c8f5624e241a5c8a38',
+          }
+          assert audio['xa']['bytes'] > 0 and audio['xa']['bytes'] % 2336 == 0
+          assert movies['policy']=='official-v0.8.4-sserafim-art-and-cutscene-audio-only'
+          assert len(movies['movies'])==2
+          assert all(movie['frames'] > 0 and movie['bytes'] % 2336 == 0 for movie in movies['movies'])
+          for path in (
+              'upstream/iso/sfkaz.arc','upstream/iso/sfsaku.arc','upstream/iso/sfgf.arc',
+              'upstream/iso/sfyunj.arc','upstream/iso/sfchaw.arc','upstream/iso/sfeunc.arc',
+              'upstream/iso/sserafim/back.arc','upstream/iso/sserafim/fx.arc',
+              'upstream/iso/chart/9.1e.cht','upstream/iso/chart/9.1n.cht','upstream/iso/chart/9.1h.cht',
+              'upstream/iso/music/spag.xa','upstream/iso/movie/sfintro.str','upstream/iso/movie/sfend.str',
+          ):
+              file=Path(path); assert file.is_file() and file.stat().st_size > 0, path
+          stage=Path('upstream/src/stage.c').read_text()
+          joined='\n'.join(Path('upstream/src',name).read_text().lower() for name in (
+              'stage.c','stage.h','audio.c','audio.h','menu.c','stage/sserafim.c','stage/sserafim.h'))
+          for marker in (
+              'stageid_sf_1','xa_spaghetti','sserafim_event_count','sserafim_applyhit',
+              'sserafim_applymiss','sserafim_applycameratarget','sserafim_drawhealthicon',
+              'sserafim_intro_frames','sserafim_end_frames','movie_play("\\\\movie\\\\sfintro.str;1"',
+              'movie_play("\\\\movie\\\\sfend.str;1"','sfsakura_joint_left','sfgf_beautiful_left',
+          ):
+              assert marker in joined, marker
+          assert stage.count('Sserafim_ApplyMiss(note);')==2
+          assert stage.count('Sserafim_ApplyCameraTarget();')==2
+          assert stage.count('Sserafim_ApplyCameraZoom();')==2
+          xml=Path('upstream/funkin.xml').read_text()
+          assert '<dir name = "week9">' in xml and '<dir name = "sserafim">' in xml
+          long_names=[name for name in re.findall(r'<file name = "([^"]+)"',xml) if len(name)>12]
+          assert not long_names, long_names
+          print('OFFICIAL_LE_SSERAFIM_V1_VALIDATION_OK')
+          PY
+
       - name: Acquire PsyQ compatibility libraries
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
@@ -504,49 +634,51 @@ jobs:
           echo "Raw disc sectors: $sectors"
           test "$sectors" -le 360000
 
-      - name: Package Weekend 1 v2 checkpoint
+      - name: Package LE SSERAFIM v1 checkpoint
         run: |
-          mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation build/release/base-weeks-v1-validation build/release/console-options-v1-validation
-          cp upstream/funkin.bin build/release/PSXFunkin_v084_Weekend1_v2.bin
-          cat > build/release/PSXFunkin_v084_Weekend1_v2.cue <<'EOF'
-          FILE "PSXFunkin_v084_Weekend1_v2.bin" BINARY
+          mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation build/release/base-weeks-v1-validation build/release/console-options-v1-validation build/release/sserafim-v1-validation
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_LE_SSERAFIM_v1.bin
+          cat > build/release/PSXFunkin_v084_LE_SSERAFIM_v1.cue <<'EOF'
+          FILE "PSXFunkin_v084_LE_SSERAFIM_v1.bin" BINARY
             TRACK 01 MODE2/2352
             INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/
-          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/pause_menu_v1.json build/base_weeks_v1.json build/console_options_v1.json build/weekend1_assets_v2.json build/weekend1_charts_v2.json build/weekend1_audio_v2.json build/weekend1_movies_v2.json build/release/
+          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/pause_menu_v1.json build/base_weeks_v1.json build/console_options_v1.json build/weekend1_assets_v2.json build/weekend1_charts_v2.json build/weekend1_audio_v2.json build/weekend1_movies_v2.json build/sserafim_assets_v1.json build/sserafim_charts_v1.json build/sserafim_audio_v1.json build/sserafim_movies_v1.json build/release/
           cp build/charselect_v7_1_validation/*.png build/release/v7-1-validation/
           cp build/freeplay-v1-validation/*.png build/release/freeplay-v1-validation/
           cp build/base-weeks-v1-validation/*.png build/release/base-weeks-v1-validation/
           cp build/console-options-v1-validation/*.png build/release/console-options-v1-validation/
-          cat > build/release/WEEKEND1_V2.txt <<'EOF'
-          Official Weekend 1 v2 checkpoint
+          cp upstream/build-sserafim/background/sserafim_preview.png build/release/sserafim-v1-validation/
+          cat > build/release/LE_SSERAFIM_V1.txt <<'EOF'
+          Official LE SSERAFIM collaboration v1 checkpoint
           - Character Select v7.1 visual hierarchy and audio are frozen unchanged.
           - Freeplay parity, the real pause menu, authentic base Weeks 2/5/6, and console Options/saves remain integrated.
-          - Darnell, Lit Up, 2Hot, and Blazin' use official v0.8.4 charts, audio, characters, stages, and Freeplay metadata.
-          - Story mode includes the Darnell opening FMV, the in-engine can/gun/laugh sequence with official mixed sound effects, the 2Hot ending FMV, and the Blazin' ending FMV.
-          - FocusCamera and ZoomCamera events are converted from the official charts, including Darnell Erect/Nightmare camera data.
-          - Philly Streets includes timed traffic lights, randomized bidirectional cars, and escalating rain; Blazin' includes rain and randomized authentic lightning frames.
-          - 2Hot gun/can note events and Blazin' paired fight reactions, failure reactions, conditional taunts, uppercut states, hidden opponent notes, and centered player lane are active.
+          - Weekend 1 remains fully integrated with its four songs, official FMVs, in-engine intro/ending beats, event-driven cameras, street traffic, rain, lightning, can/gun notes, and Blazin' fight reactions.
+          - SPAGHETTI uses the exact official v0.8.4 easy/normal/hard charts and all 468 official chart events.
+          - Kazuha, Sakura, Yunjin, Chaewon, Eunchae, and the collaboration Girlfriend use authentic official source frames converted to native PS1 TIM archives.
+          - Sakura's joint/BF1/BF2 note styles and miss animations, GF's Beautiful styles, group singing handoffs, health-icon swaps, camera/zoom/bop events, diner lighting, dust, darkness, covers, flashes, pulses, door kicks, and guitar vibration are active.
+          - The exact licensed Inst and Sakura vocal Ogg streams are recovered byte-for-byte from the official v0.8.4 Linux executable and converted to resumable two-channel CD-XA.
+          - The official cutscene timeline, audio, and artwork are pre-rendered into PS1 STR intro and ending movies.
           EOF
           (cd build/release && find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
-          sha256sum build/release/PSXFunkin_v084_Weekend1_v2.bin
-          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Weekend1_v2.bin
+          sha256sum build/release/PSXFunkin_v084_LE_SSERAFIM_v1.bin
+          stat -c '%n %s bytes' build/release/PSXFunkin_v084_LE_SSERAFIM_v1.bin
 
-      - name: Publish Weekend 1 v2 prerelease
+      - name: Publish LE SSERAFIM v1 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          TAG="weekend1-v2-${SHORT}"
+          TAG="sserafim-v1-${SHORT}"
           gh release create "$TAG" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title 'PSXFunkin official Weekend 1 v2 test' \
-            --notes 'DuckStation checkpoint for the additive official Weekend 1 conversion: four songs, story FMVs, the in-engine Darnell intro, event-driven camera/zoom, 2Hot can/gun mechanics, Blazin fight mechanics, animated streets, rain, and lightning. All earlier v7.1, Freeplay, pause, base-week, and console-save checkpoints remain integrated. This is not the final release.' \
-            build/release/PSXFunkin_v084_Weekend1_v2.bin \
-            build/release/PSXFunkin_v084_Weekend1_v2.cue \
+            --title 'PSXFunkin official LE SSERAFIM collaboration v1 test' \
+            --notes 'DuckStation checkpoint for the additive official LE SSERAFIM conversion: exact SPAGHETTI charts, all official chart events, six authentic character conversions, diner effects, exact embedded official masters, and PS1 STR intro/ending movies. Weekend 1 and every earlier v7.1, Freeplay, pause, base-week, and console-save checkpoint remain integrated. This is not the final release.' \
+            build/release/PSXFunkin_v084_LE_SSERAFIM_v1.bin \
+            build/release/PSXFunkin_v084_LE_SSERAFIM_v1.cue \
             build/release/funkin.ps-exe \
             build/release/menu_visual_sources.json \
             build/release/erect_audio.json \
@@ -559,12 +691,17 @@ jobs:
             build/release/weekend1_charts_v2.json \
             build/release/weekend1_audio_v2.json \
             build/release/weekend1_movies_v2.json \
-            build/release/WEEKEND1_V2.txt \
+            build/release/sserafim_assets_v1.json \
+            build/release/sserafim_charts_v1.json \
+            build/release/sserafim_audio_v1.json \
+            build/release/sserafim_movies_v1.json \
+            build/release/LE_SSERAFIM_V1.txt \
             build/release/SHA256SUMS.txt \
             build/release/v7-1-validation/*.png \
             build/release/freeplay-v1-validation/*.png \
             build/release/base-weeks-v1-validation/*.png \
-            build/release/console-options-v1-validation/*.png
+            build/release/console-options-v1-validation/*.png \
+            build/release/sserafim-v1-validation/*.png
 
       - name: Persist CI outcome for checkpoint monitoring
         if: always()
@@ -573,22 +710,22 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          STATUS_PATH="ci-status/weekend1-v2-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
+          STATUS_PATH="ci-status/sserafim-v1-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
           export SHORT STATUS_PATH
           python3 - <<'PY'
           import json, os
           from pathlib import Path
           payload={
-              'workflow':'Official Weekend 1 v2',
+              'workflow':'Official LE SSERAFIM collaboration v1',
               'status':os.environ['JOB_STATUS'],
               'sha':os.environ['GITHUB_SHA'],
               'run_id':os.environ['GITHUB_RUN_ID'],
               'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
           }
-          Path('/tmp/weekend1-ci-status.json').write_text(json.dumps(payload,indent=2)+'\n')
+          Path('/tmp/sserafim-ci-status.json').write_text(json.dumps(payload,indent=2)+'\n')
           PY
-          CONTENT="$(base64 -w0 /tmp/weekend1-ci-status.json)"
+          CONTENT="$(base64 -w0 /tmp/sserafim-ci-status.json)"
           gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${STATUS_PATH}" \
-            -f message="Record official Weekend 1 v2 CI ${JOB_STATUS}" \
+            -f message="Record official LE SSERAFIM v1 CI ${JOB_STATUS}" \
             -f content="$CONTENT" \
             -f branch="full-port-completion"
