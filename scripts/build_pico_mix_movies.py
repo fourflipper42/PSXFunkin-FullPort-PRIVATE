@@ -27,7 +27,9 @@ def workflow_escape(text: str) -> str:
 
 
 def phase(message: str) -> None:
-    print(f"::notice title=Pico Mix movie phase::{workflow_escape(message)}", flush=True)
+    # Keep routine progress out of the finite Actions annotation list. Errors
+    # and the post-apply guard below still use annotations when they matter.
+    print(f"[Pico Mix movie] {message}", flush=True)
 
 
 def run_checked(command: list[str], label: str) -> str:
@@ -149,6 +151,121 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
     return target, metadata
 
 
+def install_post_apply_diff_guard() -> None:
+    """Install a CI-only guard after the Pico applier's main() call.
+
+    The upstream tree passed git diff --check immediately before Pico, so any
+    check failure after Pico is introduced by this phase. Git returns status 2
+    for these whitespace diagnostics. The guard removes only the exact lines
+    Git identifies as fixable whitespace defects, then re-runs the check. This
+    leaves gameplay/content semantics untouched and preserves the frozen
+    Character Select RLE assets byte-for-byte.
+    """
+    target = Path(__file__).resolve().with_name("apply_pico_mixes_v1.py")
+    marker = "# PICO_CI_POST_APPLY_DIFF_GUARD_V1"
+    source = target.read_text()
+    if marker in source:
+        return
+    guard = r'''
+
+# PICO_CI_POST_APPLY_DIFF_GUARD_V1
+if __name__ == "__main__":
+    import re as _pico_re
+    import subprocess as _pico_subprocess
+    import sys as _pico_sys
+    from pathlib import Path as _PicoPath
+
+    def _pico_escape(value):
+        return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+    _pico_args = _pico_sys.argv[1:]
+    try:
+        _pico_index = _pico_args.index("--upstream")
+        _pico_root = _PicoPath(_pico_args[_pico_index + 1])
+    except (ValueError, IndexError):
+        _pico_root = None
+
+    if _pico_root is not None:
+        def _pico_check():
+            return _pico_subprocess.run(
+                ["git", "-C", str(_pico_root), "diff", "--check"],
+                stdout=_pico_subprocess.PIPE,
+                stderr=_pico_subprocess.STDOUT,
+                text=True,
+            )
+
+        _pico_first = _pico_check()
+        if _pico_first.returncode:
+            _pico_fix_lines = {}
+            _pico_eof_files = set()
+            _pico_unknown = []
+            for _pico_item in (_pico_first.stdout or "").splitlines():
+                _pico_match = _pico_re.match(
+                    r"^(.+?):(\d+): (trailing whitespace|space before tab in indent)\.$",
+                    _pico_item,
+                )
+                if _pico_match:
+                    _pico_fix_lines.setdefault(_pico_match.group(1), set()).add(
+                        int(_pico_match.group(2))
+                    )
+                    continue
+                _pico_match = _pico_re.match(
+                    r"^(.+?):(\d+): new blank line at EOF\.$",
+                    _pico_item,
+                )
+                if _pico_match:
+                    _pico_eof_files.add(_pico_match.group(1))
+                    continue
+                if _pico_re.match(r"^.+?:\d+: ", _pico_item):
+                    _pico_unknown.append(_pico_item)
+
+            for _pico_rel, _pico_numbers in _pico_fix_lines.items():
+                _pico_path = _pico_root / _pico_rel
+                _pico_lines = _pico_path.read_text().splitlines(keepends=True)
+                for _pico_number in sorted(_pico_numbers):
+                    if not (1 <= _pico_number <= len(_pico_lines)):
+                        continue
+                    _pico_line = _pico_lines[_pico_number - 1]
+                    if _pico_line.endswith("\r\n"):
+                        _pico_body, _pico_newline = _pico_line[:-2], "\r\n"
+                    elif _pico_line.endswith("\n"):
+                        _pico_body, _pico_newline = _pico_line[:-1], "\n"
+                    else:
+                        _pico_body, _pico_newline = _pico_line, ""
+                    _pico_body = _pico_body.rstrip(" \t")
+                    _pico_indent = _pico_re.match(r"^[ \t]*", _pico_body).group(0)
+                    while " \t" in _pico_indent:
+                        _pico_indent = _pico_indent.replace(" \t", "\t")
+                    _pico_body = _pico_indent + _pico_body[len(_pico_re.match(r"^[ \t]*", _pico_body).group(0)):]
+                    _pico_lines[_pico_number - 1] = _pico_body + _pico_newline
+                _pico_path.write_text("".join(_pico_lines))
+
+            for _pico_rel in _pico_eof_files:
+                _pico_path = _pico_root / _pico_rel
+                _pico_path.write_text(_pico_path.read_text().rstrip("\r\n") + "\n")
+
+            _pico_second = _pico_check()
+            if _pico_second.returncode:
+                _pico_detail = (_pico_second.stdout or _pico_first.stdout or "git diff --check failed")[-5000:]
+                print(
+                    "::error title=Pico post-apply diff check::" + _pico_escape(_pico_detail),
+                    flush=True,
+                )
+                _pico_sys.exit(1)
+            print(
+                "::notice title=Pico apply phase::git diff --check auto-cleaned exact Pico whitespace lines",
+                flush=True,
+            )
+        else:
+            print(
+                "::notice title=Pico apply phase::git diff --check clean immediately after apply",
+                flush=True,
+            )
+'''
+    target.write_text(source + guard)
+    phase("installed post-apply diff guard")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
@@ -217,6 +334,7 @@ def main() -> None:
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
+    install_post_apply_diff_guard()
     phase("report completed")
 
 
