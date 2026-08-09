@@ -133,7 +133,7 @@ jobs:
                   matches=[n for n in z.namelist() if PurePosixPath(n).name.lower()==video_name.lower()]
                   if not matches: raise SystemExit(f'official Weekend 1 video missing: {video_name}')
                   name=sorted(matches,key=lambda n:(len(n),n))[0]
-                  out=Path('official-v084/assets/videos/videos')/video_name
+                  out=Path('official-v084/videos/videos')/video_name
                   out.parent.mkdir(parents=True,exist_ok=True)
                   with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
               for suffix in (
@@ -400,21 +400,21 @@ jobs:
         run: |
           mkdir -p build/weekend1-v2-validation upstream/iso/movie
           python3 scripts/build_weekend1_assets.py \
-            --root official-v084/assets \
+            --root official-v084 \
             --upstream upstream \
             --report build/weekend1_assets_v2.json
           python3 scripts/build_weekend1_charts.py \
-            --root official-v084/assets \
+            --root official-v084 \
             --iso-root upstream/iso \
             --report build/weekend1_charts_v2.json \
             --header upstream/src/weekend1_events_generated.h
           python3 scripts/build_weekend1_audio.py \
-            --root official-v084/assets \
+            --root official-v084 \
             --out upstream/iso/music \
             --psxavenc psxavenc/build/psxavenc \
             --report build/weekend1_audio_v2.json
           python3 scripts/build_weekend1_movies.py \
-            --root official-v084/assets \
+            --root official-v084 \
             --out upstream/iso/movie \
             --psxavenc psxavenc/build/psxavenc \
             --report build/weekend1_movies_v2.json \
@@ -455,8 +455,10 @@ jobs:
               'stagestate_weekendintro','weekend1_beginingameintro','w1_updatelightning',
               'w1_updatestreet','weekend1_applycamerazoom','weekend1_applyhit',
               'xa_darnellintro','picoplayer_pissedoff','weekend1_middlescroll',
+              'weekend1_ending_time < fixed_dec(6,1)','if (weekend1_playending())',
           ):
               assert marker in joined, marker
+          assert 'if (id == stageid_8_3)' not in joined
           xml=Path('upstream/funkin.xml').read_text()
           long_names=[name for name in re.findall(r'<file name = "([^"]+)"',xml) if len(name)>12]
           assert not long_names, long_names

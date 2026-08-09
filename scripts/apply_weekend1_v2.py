@@ -29,7 +29,7 @@ void Weekend1_Reset(StageId id);
 void Weekend1_PlayIntro(StageId id, boolean story);
 boolean Weekend1_BeginInGameIntro(StageId id, boolean story);
 boolean Weekend1_InGameIntroTick(void);
-void Weekend1_PlayEnding(void);
+boolean Weekend1_PlayEnding(void);
 void Weekend1_ExitStory(void);
 boolean Weekend1_IsStage(StageId id);
 boolean Weekend1_MiddleScroll(void);
@@ -139,6 +139,9 @@ static boolean weekend1_darnell_high_alt = false;
 static boolean weekend1_darnell_low_alt = false;
 static fixed_t weekend1_intro_time = 0;
 static u16 weekend1_intro_events = 0;
+static fixed_t weekend1_ending_time = 0;
+static u8 weekend1_ending_events = 0;
+static boolean weekend1_ending_active = false;
 
 boolean Weekend1_IsStage(StageId id)
 {
@@ -162,6 +165,9 @@ void Weekend1_Reset(StageId id)
     weekend1_pico_low_alt = false;
     weekend1_darnell_high_alt = false;
     weekend1_darnell_low_alt = false;
+    weekend1_ending_time = 0;
+    weekend1_ending_events = 0;
+    weekend1_ending_active = false;
 }
 
 static void W1_DrawSprite(Back_Weekend1 *this, const Weekend1SpriteFrame *frame,
@@ -709,7 +715,6 @@ void Weekend1_PlayIntro(StageId id, boolean story)
     const char *path = NULL;
     unsigned long frames = 0;
     if (id == StageId_8_1) { bit = 1; path = "\\MOVIE\\DARNELL.STR;1"; frames = W1_DARNELL_FRAMES; }
-    if (id == StageId_8_3) { bit = 2; path = "\\MOVIE\\2HOT.STR;1"; frames = W1_2HOT_FRAMES; }
     if (path == NULL || (weekend1_movies_seen & bit))
         return;
     Audio_StopXA();
@@ -717,13 +722,66 @@ void Weekend1_PlayIntro(StageId id, boolean story)
     weekend1_movies_seen |= bit;
 }
 
-void Weekend1_PlayEnding(void)
+static void W1_EndingEvent(u8 index)
 {
-    if (!stage.story || stage.stage_id != StageId_8_4 || (weekend1_movies_seen & 4))
+    u8 mask = 1 << index;
+    if (weekend1_ending_events & mask)
         return;
-    Audio_StopXA();
-    Movie_Play("\\MOVIE\\BLAZIN.STR;1", W1_BLAZIN_FRAMES);
-    weekend1_movies_seen |= 4;
+    weekend1_ending_events |= mask;
+    switch (index)
+    {
+        case 0:
+            stage.camera.tx = FIXED_DEC(8,1);
+            stage.camera.ty = FIXED_DEC(-28,1);
+            stage.camera.tz = FIXED_DEC(24,10);
+            stage.camera.td = FIXED_DEC(3,100);
+            break;
+        case 1:
+            W1_Set(stage.player, PicoPlayer_PissedOff);
+            break;
+        case 2:
+            W1_Set(stage.opponent, Darnell_Pissed);
+            break;
+    }
+}
+
+boolean Weekend1_PlayEnding(void)
+{
+    if (!stage.story)
+        return false;
+
+    if (stage.stage_id == StageId_8_3 && !(weekend1_movies_seen & 2))
+    {
+        if (!weekend1_ending_active)
+        {
+            weekend1_ending_active = true;
+            weekend1_ending_time = 0;
+            weekend1_ending_events = 0;
+            Audio_StopXA();
+        }
+
+        weekend1_ending_time += timer_dt;
+        if (weekend1_ending_time >= FIXED_DEC(1,1)) W1_EndingEvent(0);
+        if (weekend1_ending_time >= FIXED_DEC(2,1)) W1_EndingEvent(1);
+        if (weekend1_ending_time >= FIXED_DEC(25,10)) W1_EndingEvent(2);
+        Stage_ScrollCamera();
+
+        if (weekend1_ending_time < FIXED_DEC(6,1))
+            return true;
+
+        Movie_Play("\\MOVIE\\2HOT.STR;1", W1_2HOT_FRAMES);
+        weekend1_movies_seen |= 2;
+        weekend1_ending_active = false;
+        return false;
+    }
+
+    if (stage.stage_id == StageId_8_4 && !(weekend1_movies_seen & 4))
+    {
+        Audio_StopXA();
+        Movie_Play("\\MOVIE\\BLAZIN.STR;1", W1_BLAZIN_FRAMES);
+        weekend1_movies_seen |= 4;
+    }
+    return false;
 }
 
 void Weekend1_ExitStory(void)
@@ -834,7 +892,7 @@ def main() -> None:
     replace_once(root / "src/stage.c", "\tstage.camera.zoom = stage.camera.tz;\n\t\n\tstage.bump", "\tstage.camera.zoom = stage.camera.tz;\n\tWeekend1_ApplyCameraZoom();\n\t\n\tstage.bump", "Weekend initial camera zoom")
     replace_once(root / "src/stage.c", "\t\t\t\tif (stage.stage_id <= StageId_LastVanilla)\n", "\t\t\t\tif (!(stage.stage_def->week & 0x80))\n", "Weekend menu return routing")
     replace_once(root / "src/stage.c", "\t\t\t\tLoadScr_End();\n\t\t\t\t\n\t\t\t\tgameloop", "\t\t\t\tWeekend1_ExitStory();\n\t\t\t\tLoadScr_End();\n\t\t\t\t\n\t\t\t\tgameloop", "Weekend story exit")
-    replace_once(root / "src/stage.c", "\t\t\t\t\t\tSettings_Save();\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tstage.song_time", "\t\t\t\t\t\tSettings_Save();\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tWeekend1_PlayEnding();\n\t\t\t\tstage.song_time", "Weekend ending movie")
+    replace_once(root / "src/stage.c", "\t\t\t\t\t\tSettings_Save();\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tstage.song_time", "\t\t\t\t\t\tSettings_Save();\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif (Weekend1_PlayEnding())\n\t\t\t\t\tgoto StageWorldOnly;\n\t\t\t\tstage.song_time", "Weekend ending movie")
     replace_once(root / "src/stage.c", "\t\t\tif (stage.cur_section->flag & SECTION_FLAG_OPPFOCUS)\n\t\t\t\tStage_FocusCharacter(stage.opponent, FIXED_UNIT / 24);\n\t\t\telse\n\t\t\t\tStage_FocusCharacter(stage.player, FIXED_UNIT / 24);\n\t\t\tStage_ScrollCamera();", "\t\t\tif (stage.cur_section->flag & SECTION_FLAG_OPPFOCUS)\n\t\t\t\tStage_FocusCharacter(stage.opponent, FIXED_UNIT / 24);\n\t\t\telse\n\t\t\t\tStage_FocusCharacter(stage.player, FIXED_UNIT / 24);\n\t\t\tWeekend1_ApplyCameraTarget();\n\t\t\tStage_ScrollCamera();\n\t\t\tWeekend1_ApplyCameraZoom();", "Weekend live camera")
     replace_once(root / "src/stage.c", "\t\t\t\t\tstage.opponent->set_anim(stage.opponent, note_anims[note->type & 0x3][(note->type & NOTE_FLAG_ALT_ANIM) != 0]);", "\t\t\t\t\tif (!Weekend1_ApplyHit(note))\n\t\t\t\t\t\tstage.opponent->set_anim(stage.opponent, note_anims[note->type & 0x3][(note->type & NOTE_FLAG_ALT_ANIM) != 0]);", "Weekend opponent note hit")
     replace_once(root / "src/stage.c", "\t\t\t//Hardcoded stage stuff", "\t\t\tStageWorldOnly:;\n\t\t\t//Hardcoded stage stuff", "Weekend world-only draw label")
