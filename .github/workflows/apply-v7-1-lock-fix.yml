@@ -1,4 +1,4 @@
-name: Apply v7.1 PS1-safe ISO names
+name: Apply final v7.1 dynamic ISO name fix
 
 on:
   push:
@@ -20,23 +20,22 @@ jobs:
           ref: charselect-v7-1-cleanup
           fetch-depth: 1
 
-      - name: Apply PS1-safe ISO filenames
+      - name: Correct dynamically generated TIM names
         run: |
-          python3 scripts/patch_v7_1_iso_names.py
+          python3 scripts/patch_v7_1_dynamic_iso_names.py
           python3 -m py_compile scripts/build_charselect_v7_1_cleanup.py scripts/apply_charselect_v7_1_cleanup.py
-          grep -q "csi71.rle" scripts/build_charselect_v7_1_cleanup.py
-          grep -q "CSI71.RLE" scripts/apply_charselect_v7_1_cleanup.py
-          ! grep -q 'name = "csintro71.rle"' scripts/apply_charselect_v7_1_cleanup.py
+          grep -q "f'csl71{chr(97+i)}.tim'" scripts/build_charselect_v7_1_cleanup.py
+          grep -q "f'csc71{chr(97+i)}.tim'" scripts/build_charselect_v7_1_cleanup.py
           git diff --check
 
-      - name: Commit ISO filename fix
+      - name: Commit dynamic filename fix
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add scripts/build_charselect_v7_1_cleanup.py scripts/apply_charselect_v7_1_cleanup.py
-          git commit -m 'Use PS1-safe Character Select v7.1 ISO names'
+          git add scripts/build_charselect_v7_1_cleanup.py
+          git commit -m 'Fix dynamic Character Select v7.1 ISO filenames'
           git push origin HEAD:charselect-v7-1-cleanup
 
       - name: Dispatch v7.1 full build
