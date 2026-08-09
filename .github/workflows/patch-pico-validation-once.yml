@@ -22,26 +22,17 @@ jobs:
           from pathlib import Path
           path = Path('.github/workflows/charselect-v7-1-build.yml')
           text = path.read_text()
-          old = """          expected={
-              'picodark.arc':(30,8),'picoxmas.arc':(26,7),'picohold.arc':(26,7),
-              'picopix.arc':(30,8),'nenedark.arc':(16,4),'nenexmas.arc':(16,4),
-              'nenepix.arc':(10,3),'spookydk.arc':(15,4),'tankbldy.arc':(16,4),
-              'otis.arc':(12,3),
+          replacements = {
+              "'picodark.arc':(30,8),'picoxmas.arc':(26,7),'picohold.arc':(26,7),": "'picodark.arc':(30,8),'picoxmas.arc':(30,8),'picohold.arc':(28,7),",
+              "'nenepix.arc':(10,3),'spookydk.arc':(15,4),'tankbldy.arc':(16,4),": "'nenepix.arc':(10,3),'spookydk.arc':(15,4),'tankbldy.arc':(22,6),",
           }
-"""
-          new = """          expected={
-              'picodark.arc':(30,8),'picoxmas.arc':(30,8),'picohold.arc':(28,7),
-              'picopix.arc':(30,8),'nenedark.arc':(16,4),'nenexmas.arc':(16,4),
-              'nenepix.arc':(10,3),'spookydk.arc':(15,4),'tankbldy.arc':(22,6),
-              'otis.arc':(12,3),
-          }
-"""
-          if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one stale Pico count block, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected one stale Pico count line, found {text.count(old)}: {old}')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
           PY
           git diff --check
-          git diff -- .github/workflows/charselect-v7-1-build.yml
           git config user.name 'fourflipper42-ci'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/workflows/charselect-v7-1-build.yml
