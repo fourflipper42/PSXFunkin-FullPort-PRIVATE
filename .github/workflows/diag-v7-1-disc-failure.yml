@@ -1,0 +1,52 @@
+name: Diagnose v7.1 disc failure
+
+on:
+  push:
+    branches: [ charselect-v7-1-cleanup ]
+    paths:
+      - '.github/workflows/diag-v7-1-disc-failure.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: charselect-v7-1-cleanup
+      - name: Capture failed mkpsxiso output
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p debug/v7-1
+          gh run view 31296424114 --repo "${GITHUB_REPOSITORY}" --log-failed > /tmp/failed.log
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('/tmp/failed.log').read_text(errors='replace')
+          # Keep only the disc-build step plus a short tail, not the enormous dependency logs.
+          lines=s.splitlines()
+          hits=[]
+          for i,line in enumerate(lines):
+              low=line.lower()
+              if any(k in low for k in ('mkpsxiso','error:','fatal:','invalid','filename','iso9660','build mode2/2352 disc')):
+                  hits.extend(lines[max(0,i-4):min(len(lines),i+8)])
+          if not hits:
+              hits=lines[-120:]
+          # de-duplicate adjacent/repeated snippets while preserving order
+          out=[]
+          for line in hits:
+              if not out or line != out[-1]: out.append(line)
+          Path('debug/v7-1/disc_failure_31296424114.txt').write_text('\n'.join(out[-250:])+'\n')
+          PY
+          cat debug/v7-1/disc_failure_31296424114.txt
+      - name: Commit diagnostic
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add debug/v7-1/disc_failure_31296424114.txt
+          git commit -m 'Capture v7.1 mkpsxiso failure diagnostic'
+          git push origin HEAD:charselect-v7-1-cleanup
