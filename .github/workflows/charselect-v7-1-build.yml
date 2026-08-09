@@ -183,6 +183,7 @@ jobs:
               extracted=0
               for name in z.namelist():
                   if not required_asset(name): continue
+                  if name.endswith('/') or z.getinfo(name).is_dir(): continue
                   relative=PurePosixPath(name).relative_to('assets')
                   out=Path('official-v084').joinpath(*relative.parts)
                   out.parent.mkdir(parents=True,exist_ok=True)
