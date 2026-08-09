@@ -1,0 +1,45 @@
+name: Apply v7.1 lock page fix
+
+on:
+  push:
+    branches: [ charselect-v7-1-cleanup ]
+    paths:
+      - '.github/workflows/apply-v7-1-lock-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch-and-rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: charselect-v7-1-cleanup
+          fetch-depth: 1
+
+      - name: Apply three-page lock fix
+        run: |
+          python3 scripts/patch_v7_1_lock_pages.py
+          python3 -m py_compile scripts/build_charselect_v7_1_cleanup.py scripts/apply_charselect_v7_1_cleanup.py
+          grep -q "cslock71c.tim" scripts/build_charselect_v7_1_cleanup.py
+          grep -q "CSLOCK71C.TIM" scripts/apply_charselect_v7_1_cleanup.py
+          git diff --check
+
+      - name: Commit source fix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/build_charselect_v7_1_cleanup.py scripts/apply_charselect_v7_1_cleanup.py
+          git commit -m 'Fix v7.1 lock state texture packing'
+          git push origin HEAD:charselect-v7-1-cleanup
+
+      - name: Dispatch v7.1 full build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run charselect-v7-1-build.yml --repo "${GITHUB_REPOSITORY}" --ref charselect-v7-1-cleanup
