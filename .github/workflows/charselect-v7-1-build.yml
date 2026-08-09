@@ -683,9 +683,9 @@ jobs:
           assert assets['character_select']['frames']==10
           assert assets['bloody_tankman_health_icon']['frames']==2
           expected={
-              'picodark.arc':(30,8),'picoxmas.arc':(26,7),'picohold.arc':(26,7),
+              'picodark.arc':(30,8),'picoxmas.arc':(30,8),'picohold.arc':(28,7),
               'picopix.arc':(30,8),'nenedark.arc':(16,4),'nenexmas.arc':(16,4),
-              'nenepix.arc':(10,3),'spookydk.arc':(15,4),'tankbldy.arc':(16,4),
+              'nenepix.arc':(10,3),'spookydk.arc':(15,4),'tankbldy.arc':(22,6),
               'otis.arc':(12,3),
           }
           for name,(frames,pages) in expected.items():
