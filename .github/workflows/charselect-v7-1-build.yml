@@ -2,7 +2,7 @@ name: PSXFunkin Full Port Completion - Pause Menu v1
 
 on:
   push:
-    branches: [ full-port-completion ]
+    branches: [ __ci_hold__ ]
     paths:
       - '.github/workflows/charselect-v7-1-build.yml'
       - 'scripts/build_charselect_v7_1_cleanup.py'
