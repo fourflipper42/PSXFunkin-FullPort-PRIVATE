@@ -118,7 +118,7 @@ jobs:
                   'assets/week5/images/christmas/evilTree.png',
                   'assets/week5/images/christmas/evilSnow.png',
               ):
-                  matches=[n for n in z.namelist() if n.lower().endswith('/'+suffix.lower())]
+                  matches=[n for n in z.namelist() if n.lower().endswith(suffix.lower())]
                   if not matches: raise SystemExit(f'official Week 5 source missing: {suffix}')
                   name=sorted(matches,key=lambda n:(len(n),n))[0]
                   out=Path('official-v084')/suffix
