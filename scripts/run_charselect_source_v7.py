@@ -8,7 +8,9 @@ working conversion modules:
   named ``color``, while preserving the exported registration relative to the
   official `(230,110)` Lock.hx sprite offset,
 - portable generated coordinate tables that do not depend on PSXFunkin's s16
-  typedef being visible before the generated header is included.
+  typedef being visible before the generated header is included,
+- v7 UI/foreground declarations kept in the generated header so replacing the
+  legacy background helper block cannot accidentally erase their scope.
 """
 from __future__ import annotations
 
@@ -192,10 +194,9 @@ def source_layered_lock_frames(root: Path) -> list[Image.Image]:
 v7.lock_frames = source_layered_lock_frames
 
 
-# The generated header is included before menu.c has seen PSXFunkin's local
-# `s16` typedef. V6 already solved this exact ordering issue by emitting plain
-# standard-C `short` tables; do the same for every v7 generated coordinate and
-# source rectangle table.
+# The generated header is included after menu.c has loaded gfx.h, but before
+# the replacement helper block. Keep all v7 state that those helpers require in
+# this header so replacing the old v5/v6 background block cannot erase it.
 _original_write_header = v7.write_header
 
 
@@ -205,6 +206,24 @@ def portable_write_header(path: Path, bg_count: int, meta: dict) -> None:
     text = text.replace('static const s16 csv7_', 'static const short csv7_')
     if 'static const s16 csv7_' in text:
         raise RuntimeError('non-portable s16 v7 header type remains')
+
+    scope = '''
+/* v7 declarations deliberately live here: apply_charselect_source_v7 replaces
+ * the old helper region that previously contained the v5 foreground constants
+ * and v6 UI texture declarations. */
+#define MENU_CS_HQ_FG_VRAM_X 576
+#define MENU_CS_HQ_FG_VRAM_Y 256
+#define MENU_CS_HQ_FG_CLUT_X 704
+#define MENU_CS_HQ_FG_CLUT_Y 510
+
+static Gfx_Tex menu_cs_grid_v7[3];
+static Gfx_Tex menu_cs_ctrl_v7[2];
+
+'''
+    marker = '\n#endif\n'
+    if text.count(marker) != 1:
+        raise RuntimeError(f'unexpected v7 header guard count {text.count(marker)}')
+    text = text.replace(marker, '\n' + scope + '#endif\n', 1)
     path.write_text(text)
 
 
