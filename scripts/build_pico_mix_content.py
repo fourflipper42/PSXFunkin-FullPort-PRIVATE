@@ -192,14 +192,48 @@ def write_audio_header(path: Path, durations: list[int]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--iso-root", type=Path, required=True)
-    parser.add_argument("--psxavenc", type=Path, required=True)
+
+    # Current direct interface.
+    parser.add_argument("--iso-root", type=Path)
+    parser.add_argument("--psxavenc", type=Path)
     parser.add_argument("--ffmpeg", type=Path, default=Path("ffmpeg"))
     parser.add_argument("--ffprobe", type=Path, default=Path("ffprobe"))
-    parser.add_argument("--event-header", type=Path, required=True)
-    parser.add_argument("--audio-header", type=Path, required=True)
-    parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--event-header", type=Path)
+    parser.add_argument("--audio-header", type=Path)
+    parser.add_argument("--report", type=Path)
+
+    # Compatibility interface used by the full-port-completion workflow.
+    # Keep this deterministic so the CI pipeline and direct script interface
+    # cannot silently drift apart again.
+    parser.add_argument("--upstream", type=Path)
+    parser.add_argument("--encoder", type=Path)
+    parser.add_argument("--pico-mix-report", type=Path)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+
+    if args.iso_root is None and args.upstream is not None:
+        args.iso_root = args.upstream / "iso"
+    if args.psxavenc is None:
+        args.psxavenc = args.encoder
+    if args.event_header is None and args.upstream is not None:
+        args.event_header = args.upstream / "src/pico_mix_events_generated.h"
+    if args.audio_header is None and args.upstream is not None:
+        args.audio_header = args.upstream / "src/pico_mix_audio_generated.h"
+    if args.report is None:
+        args.report = args.output
+
+    missing = [
+        name for name, value in (
+            ("--iso-root/--upstream", args.iso_root),
+            ("--psxavenc/--encoder", args.psxavenc),
+            ("--event-header", args.event_header),
+            ("--audio-header", args.audio_header),
+            ("--report/--output", args.report),
+        ) if value is None
+    ]
+    if missing:
+        parser.error("missing required Pico content destinations: " + ", ".join(missing))
+
     chartc = load_chartc()
     chart_out = args.iso_root / "chart"
     music_out = args.iso_root / "music"
