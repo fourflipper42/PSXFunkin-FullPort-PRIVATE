@@ -1,4 +1,4 @@
-name: PSXFunkin Full Port Completion - Console Options and Saves v1
+name: PSXFunkin Full Port Completion - Weekend 1 v2
 
 on:
   push:
@@ -15,6 +15,12 @@ on:
       - 'scripts/apply_base_weeks_v1.py'
       - 'scripts/build_console_options_v1.py'
       - 'scripts/apply_console_options_v1.py'
+      - 'scripts/build_weekend1_assets.py'
+      - 'scripts/build_weekend1_audio.py'
+      - 'scripts/build_weekend1_charts.py'
+      - 'scripts/build_weekend1_movies.py'
+      - 'scripts/psxfunkin_chartc_weekend1.py'
+      - 'scripts/apply_weekend1_v2.py'
   workflow_dispatch:
 
 permissions:
@@ -58,7 +64,13 @@ jobs:
             scripts/build_base_weeks_v1.py \
             scripts/apply_base_weeks_v1.py \
             scripts/build_console_options_v1.py \
-            scripts/apply_console_options_v1.py
+            scripts/apply_console_options_v1.py \
+            scripts/build_weekend1_assets.py \
+            scripts/build_weekend1_audio.py \
+            scripts/build_weekend1_charts.py \
+            scripts/build_weekend1_movies.py \
+            scripts/psxfunkin_chartc_weekend1.py \
+            scripts/apply_weekend1_v2.py
 
       - name: Install build dependencies
         run: |
@@ -117,6 +129,13 @@ jobs:
               out=Path('official-v084/assets/shared/music/breakfast.ogg')
               out.parent.mkdir(parents=True,exist_ok=True)
               with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
+              for video_name in ('darnellCutscene.mp4','2hotCutscene.mp4','blazinCutscene.mp4'):
+                  matches=[n for n in z.namelist() if PurePosixPath(n).name.lower()==video_name.lower()]
+                  if not matches: raise SystemExit(f'official Weekend 1 video missing: {video_name}')
+                  name=sorted(matches,key=lambda n:(len(n),n))[0]
+                  out=Path('official-v084/assets/videos/videos')/video_name
+                  out.parent.mkdir(parents=True,exist_ok=True)
+                  with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
               for suffix in (
                   'assets/week5/images/christmas/evilBG.png',
                   'assets/week5/images/christmas/evilTree.png',
@@ -377,6 +396,73 @@ jobs:
           print('CONSOLE_OPTIONS_AND_SAVES_V1_VALIDATION_OK')
           PY
 
+      - name: Build and apply official Weekend 1 v2
+        run: |
+          mkdir -p build/weekend1-v2-validation upstream/iso/movie
+          python3 scripts/build_weekend1_assets.py \
+            --root official-v084/assets \
+            --upstream upstream \
+            --report build/weekend1_assets_v2.json
+          python3 scripts/build_weekend1_charts.py \
+            --root official-v084/assets \
+            --iso-root upstream/iso \
+            --report build/weekend1_charts_v2.json \
+            --header upstream/src/weekend1_events_generated.h
+          python3 scripts/build_weekend1_audio.py \
+            --root official-v084/assets \
+            --out upstream/iso/music \
+            --psxavenc psxavenc/build/psxavenc \
+            --report build/weekend1_audio_v2.json
+          python3 scripts/build_weekend1_movies.py \
+            --root official-v084/assets \
+            --out upstream/iso/movie \
+            --psxavenc psxavenc/build/psxavenc \
+            --report build/weekend1_movies_v2.json \
+            --header upstream/src/weekend1_movies_generated.h
+          python3 scripts/apply_weekend1_v2.py --upstream upstream
+          git -C upstream diff --check
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          assets=json.loads(Path('build/weekend1_assets_v2.json').read_text())
+          charts=json.loads(Path('build/weekend1_charts_v2.json').read_text())
+          audio=json.loads(Path('build/weekend1_audio_v2.json').read_text())
+          movies=json.loads(Path('build/weekend1_movies_v2.json').read_text())
+          assert assets['policy']=='authentic-v0.8.4-source-frames-only'
+          assert [(c['name'],c['frames']) for c in assets['characters']]==[
+              ('pico',47),('nene',24),('darnell',30),('picobl',42),('darnbl',36)]
+          assert assets['stage_fx']['street']['pages']==3
+          assert assets['stage_fx']['blazin']['pages']==4
+          nene=json.loads(Path('upstream/build-weekend1/nene/manifest.json').read_text())
+          darnbl=json.loads(Path('upstream/build-weekend1/darnbl/manifest.json').read_text())
+          assert nene['vram'][:2] != darnbl['vram'][:2], (nene['vram'],darnbl['vram'])
+          assert len(charts['charts'])==14 and len(charts['event_tables'])==5
+          assert any(e['zoom'] for e in charts['event_tables'])
+          assert audio['week8.xa']['bytes'] % 2336 == 0
+          assert audio['darnin.xa']['bytes'] % 2336 == 0 and audio['darnin.xa']['official_sfx_mix']
+          assert len(movies)==3 and all(m['frames'] > 0 and m['bytes'] % 2336 == 0 for m in movies)
+          for path in (
+              'upstream/iso/picoplay.arc','upstream/iso/nene.arc','upstream/iso/darnell.arc',
+              'upstream/iso/picobl.arc','upstream/iso/darnbl.arc',
+              'upstream/iso/week8/back.arc','upstream/iso/week8/blazin.arc',
+              'upstream/iso/week8/streetfx.arc','upstream/iso/week8/blazinfx.arc',
+              'upstream/iso/music/week8.xa','upstream/iso/music/darnin.xa',
+              'upstream/iso/movie/darnell.str','upstream/iso/movie/2hot.str','upstream/iso/movie/blazin.str',
+          ):
+              file=Path(path); assert file.is_file() and file.stat().st_size > 0, path
+          joined='\n'.join(Path('upstream/src',name).read_text().lower() for name in ('stage.c','stage.h','audio.c','audio.h','stage/weekend1.c','stage/weekend1.h'))
+          for marker in (
+              'stagestate_weekendintro','weekend1_beginingameintro','w1_updatelightning',
+              'w1_updatestreet','weekend1_applycamerazoom','weekend1_applyhit',
+              'xa_darnellintro','picoplayer_pissedoff','weekend1_middlescroll',
+          ):
+              assert marker in joined, marker
+          xml=Path('upstream/funkin.xml').read_text()
+          long_names=[name for name in re.findall(r'<file name = "([^"]+)"',xml) if len(name)>12]
+          assert not long_names, long_names
+          print('OFFICIAL_WEEKEND1_V2_VALIDATION_OK')
+          PY
+
       - name: Acquire PsyQ compatibility libraries
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
@@ -416,49 +502,49 @@ jobs:
           echo "Raw disc sectors: $sectors"
           test "$sectors" -le 360000
 
-      - name: Package console Options and saves v1 checkpoint
+      - name: Package Weekend 1 v2 checkpoint
         run: |
           mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation build/release/base-weeks-v1-validation build/release/console-options-v1-validation
-          cp upstream/funkin.bin build/release/PSXFunkin_v084_Console_Options_v1.bin
-          cat > build/release/PSXFunkin_v084_Console_Options_v1.cue <<'EOF'
-          FILE "PSXFunkin_v084_Console_Options_v1.bin" BINARY
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Weekend1_v2.bin
+          cat > build/release/PSXFunkin_v084_Weekend1_v2.cue <<'EOF'
+          FILE "PSXFunkin_v084_Weekend1_v2.bin" BINARY
             TRACK 01 MODE2/2352
             INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/
-          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/pause_menu_v1.json build/base_weeks_v1.json build/console_options_v1.json build/release/
+          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/pause_menu_v1.json build/base_weeks_v1.json build/console_options_v1.json build/weekend1_assets_v2.json build/weekend1_charts_v2.json build/weekend1_audio_v2.json build/weekend1_movies_v2.json build/release/
           cp build/charselect_v7_1_validation/*.png build/release/v7-1-validation/
           cp build/freeplay-v1-validation/*.png build/release/freeplay-v1-validation/
           cp build/base-weeks-v1-validation/*.png build/release/base-weeks-v1-validation/
           cp build/console-options-v1-validation/*.png build/release/console-options-v1-validation/
-          cat > build/release/CONSOLE_OPTIONS_V1.txt <<'EOF'
-          Console Options and saves v1 checkpoint
+          cat > build/release/WEEKEND1_V2.txt <<'EOF'
+          Official Weekend 1 v2 checkpoint
           - Character Select v7.1 visual hierarchy and audio are frozen unchanged.
-          - Freeplay parity v1 remains integrated unchanged.
-          - The real pause menu v1 remains integrated and MIPS-compiled.
-          - Authentic base Weeks 2, 5, and 6 v1 remain integrated.
-          - Options now expose music volume, audio sync, input style, ghost tapping, note direction, reduced flashing, and screen X/Y calibration.
-          - Settings, favorites, high scores, and song completion persist in a one-block PlayStation Memory Card save.
-          - The Memory Card browser icon is converted from the official v0.8.4 Boyfriend health icon.
+          - Freeplay parity, the real pause menu, authentic base Weeks 2/5/6, and console Options/saves remain integrated.
+          - Darnell, Lit Up, 2Hot, and Blazin' use official v0.8.4 charts, audio, characters, stages, and Freeplay metadata.
+          - Story mode includes the Darnell opening FMV, the in-engine can/gun/laugh sequence with official mixed sound effects, the 2Hot ending FMV, and the Blazin' ending FMV.
+          - FocusCamera and ZoomCamera events are converted from the official charts, including Darnell Erect/Nightmare camera data.
+          - Philly Streets includes timed traffic lights, randomized bidirectional cars, and escalating rain; Blazin' includes rain and randomized authentic lightning frames.
+          - 2Hot gun/can note events and Blazin' paired fight reactions, failure reactions, conditional taunts, uppercut states, hidden opponent notes, and centered player lane are active.
           EOF
           (cd build/release && find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
-          sha256sum build/release/PSXFunkin_v084_Console_Options_v1.bin
-          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Console_Options_v1.bin
+          sha256sum build/release/PSXFunkin_v084_Weekend1_v2.bin
+          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Weekend1_v2.bin
 
-      - name: Publish console Options and saves v1 prerelease
+      - name: Publish Weekend 1 v2 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          TAG="console-options-v1-${SHORT}"
+          TAG="weekend1-v2-${SHORT}"
           gh release create "$TAG" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title 'PSXFunkin console Options and saves v1 test' \
-            --notes 'DuckStation checkpoint for the console-native Options and PlayStation Memory Card pass. It preserves Character Select v7.1, Freeplay parity v1, the real pause menu, and authentic base Weeks 2/5/6 while replacing placeholder Freeplay records with persistent high scores, completion, and favorites. This is not the final release.' \
-            build/release/PSXFunkin_v084_Console_Options_v1.bin \
-            build/release/PSXFunkin_v084_Console_Options_v1.cue \
+            --title 'PSXFunkin official Weekend 1 v2 test' \
+            --notes 'DuckStation checkpoint for the additive official Weekend 1 conversion: four songs, story FMVs, the in-engine Darnell intro, event-driven camera/zoom, 2Hot can/gun mechanics, Blazin fight mechanics, animated streets, rain, and lightning. All earlier v7.1, Freeplay, pause, base-week, and console-save checkpoints remain integrated. This is not the final release.' \
+            build/release/PSXFunkin_v084_Weekend1_v2.bin \
+            build/release/PSXFunkin_v084_Weekend1_v2.cue \
             build/release/funkin.ps-exe \
             build/release/menu_visual_sources.json \
             build/release/erect_audio.json \
@@ -467,7 +553,11 @@ jobs:
             build/release/pause_menu_v1.json \
             build/release/base_weeks_v1.json \
             build/release/console_options_v1.json \
-            build/release/CONSOLE_OPTIONS_V1.txt \
+            build/release/weekend1_assets_v2.json \
+            build/release/weekend1_charts_v2.json \
+            build/release/weekend1_audio_v2.json \
+            build/release/weekend1_movies_v2.json \
+            build/release/WEEKEND1_V2.txt \
             build/release/SHA256SUMS.txt \
             build/release/v7-1-validation/*.png \
             build/release/freeplay-v1-validation/*.png \
@@ -481,22 +571,22 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          STATUS_PATH="ci-status/console-options-v1-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
+          STATUS_PATH="ci-status/weekend1-v2-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
           export SHORT STATUS_PATH
           python3 - <<'PY'
           import json, os
           from pathlib import Path
           payload={
-              'workflow':'Console Options and Saves v1',
+              'workflow':'Official Weekend 1 v2',
               'status':os.environ['JOB_STATUS'],
               'sha':os.environ['GITHUB_SHA'],
               'run_id':os.environ['GITHUB_RUN_ID'],
               'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
           }
-          Path('/tmp/console-options-ci-status.json').write_text(json.dumps(payload,indent=2)+'\n')
+          Path('/tmp/weekend1-ci-status.json').write_text(json.dumps(payload,indent=2)+'\n')
           PY
-          CONTENT="$(base64 -w0 /tmp/console-options-ci-status.json)"
+          CONTENT="$(base64 -w0 /tmp/weekend1-ci-status.json)"
           gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${STATUS_PATH}" \
-            -f message="Record console Options and saves v1 CI ${JOB_STATUS}" \
+            -f message="Record official Weekend 1 v2 CI ${JOB_STATUS}" \
             -f content="$CONTENT" \
             -f branch="full-port-completion"
