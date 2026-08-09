@@ -2,7 +2,7 @@ name: PSXFunkin Full Port Completion - Pause Menu v1
 
 on:
   push:
-    branches: [ __ci_hold__ ]
+    branches: [ full-port-completion ]
     paths:
       - '.github/workflows/charselect-v7-1-build.yml'
       - 'scripts/build_charselect_v7_1_cleanup.py'
@@ -253,7 +253,7 @@ jobs:
             --out upstream/iso/music/pause.xa \
             --psxavenc psxavenc/build/psxavenc \
             --font-template upstream/iso/font/boldfont.tim \
-            --font-out upstream/iso/font/pausefont.tim \
+            --font-out upstream/iso/font/pausef.tim \
             --report build/pause_menu_v1.json
           python3 scripts/apply_pause_menu_v1.py upstream
           git -C upstream diff --check
@@ -265,13 +265,13 @@ jobs:
           assert report['source_sha256']=='ef98010b857f8dcd5083417a6ebfe81ad473b47f2e331e5e5403e0f3bba935d8'
           assert report['xa_bytes'] > 0 and report['xa_bytes'] % 2336 == 0
           assert report['pause_font']['clut']==[256,511,16,1]
-          for path in ('upstream/iso/music/pause.xa','upstream/iso/font/pausefont.tim'):
+          for path in ('upstream/iso/music/pause.xa','upstream/iso/font/pausef.tim'):
               assert Path(path).is_file() and Path(path).stat().st_size > 0, path
           joined='\n'.join(Path('upstream/src',name).read_text().lower() for name in ('stage.c','stage.h','audio.c','audio.h','gfx.c','gfx.h','font.c','font.h'))
           for marker in ('stagestate_pause','audio_savexa','audio_restorexa','audio_playxa_offset','stage_pausedraw','enable practice mode'):
               assert marker in joined, marker
           assert 'pause.xa' in Path('upstream/funkin.xml').read_text().lower()
-          assert 'pausefont.tim' in Path('upstream/funkin.xml').read_text().lower()
+          assert 'pausef.tim' in Path('upstream/funkin.xml').read_text().lower()
           print('PAUSE_MENU_V1_VALIDATION_OK')
           PY
 
