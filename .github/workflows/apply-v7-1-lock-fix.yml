@@ -1,4 +1,4 @@
-name: Apply final v7.1 dynamic ISO name fix
+name: Add v7.1 legacy CI marker
 
 on:
   push:
@@ -20,22 +20,21 @@ jobs:
           ref: charselect-v7-1-cleanup
           fetch-depth: 1
 
-      - name: Correct dynamically generated TIM names
+      - name: Add harmless generated-menu compatibility marker
         run: |
-          python3 scripts/patch_v7_1_dynamic_iso_names.py
-          python3 -m py_compile scripts/build_charselect_v7_1_cleanup.py scripts/apply_charselect_v7_1_cleanup.py
-          grep -q "f'csl71{chr(97+i)}.tim'" scripts/build_charselect_v7_1_cleanup.py
-          grep -q "f'csc71{chr(97+i)}.tim'" scripts/build_charselect_v7_1_cleanup.py
+          python3 scripts/patch_v7_1_menu_ci_marker.py
+          python3 -m py_compile scripts/apply_charselect_v7_1_cleanup.py
+          grep -q "CI compatibility marker only: csintro71.rle;1" scripts/apply_charselect_v7_1_cleanup.py
           git diff --check
 
-      - name: Commit dynamic filename fix
+      - name: Commit marker fix
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add scripts/build_charselect_v7_1_cleanup.py
-          git commit -m 'Fix dynamic Character Select v7.1 ISO filenames'
+          git add scripts/apply_charselect_v7_1_cleanup.py
+          git commit -m 'Keep legacy v7.1 intro marker comment for CI'
           git push origin HEAD:charselect-v7-1-cleanup
 
       - name: Dispatch v7.1 full build
