@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Launch the source-correct Character Select v7 asset builder.
 
-This adapter supplies two source-specific behaviors without modifying the older
+This adapter supplies source-specific behavior without changing the older
 working conversion modules:
-- direct Sparrow sampling for one-shot selector effects,
-- Lock.hx-compatible tinting of only the Animate layer named ``color``.
+- direct Sparrow sampling for selector effects,
+- Lock.hx-compatible tinting of only Animate leaves descended from a layer
+  named ``color``, while preserving the complete exported lock hierarchy.
 """
 from __future__ import annotations
 
+import math
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -55,57 +57,119 @@ def _flat_color(image: Image.Image, rgb: tuple[int, int, int]) -> Image.Image:
     return out
 
 
+def _collect_tagged(asset, symbol_name: str, frame_no: int, parent, out, inherited_color=False, depth=0):
+    """Source-order traversal that retains whether a leaf is under `color`."""
+    mod = _builder_mod
+    if depth > 32:
+        raise RuntimeError(f'lock Animate recursion too deep in {asset.folder}')
+    symbol = asset.symbols[symbol_name]
+    duration = max(1, mod.symbol_duration(symbol))
+    frame_no %= duration
+    for layer in reversed(symbol.get('TL', {}).get('L', [])):
+        fr = mod.active_frame(layer, frame_no)
+        if fr is None:
+            continue
+        tagged_color = inherited_color or str(layer.get('LN', '')).lower() == 'color'
+        # v7 validated Animate rule: layers reverse, elements forward.
+        for element in fr.get('E', []):
+            if 'ASI' in element:
+                asi = element['ASI']
+                name = str(asi.get('N', ''))
+                if name in asset.sprites:
+                    out.append((name, mod.mat_mul(parent, mod.element_matrix(asi)), tagged_color))
+            elif 'SI' in element:
+                si = element['SI']
+                child = str(si.get('SN', ''))
+                if child not in asset.symbols:
+                    continue
+                first = int(si.get('FF', 0) or 0)
+                child_frame = frame_no + first if si.get('ST', 'G') == 'G' else first
+                _collect_tagged(
+                    asset, child, child_frame,
+                    mod.mat_mul(parent, mod.element_matrix(si)), out,
+                    tagged_color, depth + 1,
+                )
+    return out
+
+
+def _render_tagged(asset, frame_no: int, rgb: tuple[int, int, int]):
+    mod = _builder_mod
+    leaves = _collect_tagged(asset, asset.root_symbol, frame_no, asset.stage_matrix, [])
+    if not leaves:
+        raise RuntimeError('full official lock hierarchy rendered no leaves')
+    bounds = []
+    for name, matrix, _tagged in leaves:
+        sp = asset.sprites[name]
+        for x, y in ((0,0),(sp.w,0),(0,sp.h),(sp.w,sp.h)):
+            bounds.append(mod.point(matrix, x, y))
+    min_x = math.floor(min(x for x, _ in bounds)); min_y = math.floor(min(y for _, y in bounds))
+    max_x = math.ceil(max(x for x, _ in bounds)); max_y = math.ceil(max(y for _, y in bounds))
+    width = max(1, max_x - min_x); height = max(1, max_y - min_y)
+    canvas = Image.new('RGBA', (width, height), (0,0,0,0))
+    tagged_count = 0
+    for name, matrix, tagged in leaves:
+        sp = asset.sprites[name]
+        crop = sp.image.crop((sp.x, sp.y, sp.x + sp.w, sp.y + sp.h))
+        if sp.rotated:
+            crop = crop.transpose(Image.Transpose.ROTATE_90)
+        if tagged:
+            crop = _flat_color(crop, rgb); tagged_count += 1
+        a,b,c,d,tx,ty = matrix
+        det = a*d - b*c
+        if abs(det) < 1e-9:
+            continue
+        ia, ic = d/det, -c/det
+        ib, id_ = -b/det, a/det
+        ox = ia*(min_x-tx) + ic*(min_y-ty)
+        oy = ib*(min_x-tx) + id_*(min_y-ty)
+        warped = crop.transform(
+            (width,height), Image.Transform.AFFINE,
+            (ia,ic,ox,ib,id_,oy), resample=Image.Resampling.BICUBIC,
+        )
+        canvas.alpha_composite(warped)
+    if tagged_count == 0:
+        raise RuntimeError('full lock hierarchy contained no leaves under `color` layer')
+    return canvas, min_x, min_y, tagged_count
+
+
 def source_layered_lock_frames(root: Path) -> list[Image.Image]:
-    """Recreate Lock.hx: tint only the Animate layer named ``color``."""
+    """Recreate Lock.hx on the full exported LOCKED movie hierarchy."""
     if _builder_mod is None:
         raise RuntimeError('v7 builder module was not captured before lock rendering')
     mod = _builder_mod
     asset = mod.load_optional_anim(root, 'lock')
-    if asset is None or 'lock' not in asset.symbols:
-        raise RuntimeError('official Animate lock/color-layer source missing')
+    if asset is None:
+        raise RuntimeError('official Animate lock source missing')
 
-    symbol = asset.symbols['lock']
-    timeline = symbol.get('TL', {})
-    original_layers = timeline.get('L', [])
-    if not original_layers or not any(str(x.get('LN', '')).lower() == 'color' for x in original_layers):
-        raise RuntimeError('official lock symbol has no color layer')
-
-    original_stage = asset.stage_matrix
-    pieces = []
+    # Lock.hx plays the prefix/label `LOCKED`. Use the builder's label resolver
+    # if the export carries it; otherwise frame zero is the idle start.
     try:
-        # The nested ``lock`` symbol is rendered in its own coordinate system;
-        # the root stage matrix belongs to the outer exported movie clip.
-        asset.stage_matrix = mod.IDENTITY
-        for layer in reversed(original_layers):
-            timeline['L'] = [layer]
-            image, ox, oy = mod.render_symbol(asset, 0, 'lock')
-            if image.getchannel('A').getbbox() is not None:
-                pieces.append((str(layer.get('LN', '')), image.convert('RGBA'), ox, oy))
-    finally:
-        timeline['L'] = original_layers
-        asset.stage_matrix = original_stage
+        frame_no = mod.sample_frame(asset, 0, 1, 'LOCKED')
+    except Exception:
+        frame_no = 0
 
-    if not pieces:
-        raise RuntimeError('official lock color/drop/outline layers rendered empty')
-    min_x = min(ox for _name, _im, ox, _oy in pieces)
-    min_y = min(oy for _name, _im, _ox, oy in pieces)
-    max_x = max(ox + im.width for _name, im, ox, _oy in pieces)
-    max_y = max(oy + im.height for _name, im, _ox, oy in pieces)
-    width = max_x - min_x
-    height = max_y - min_y
-    if width < 20 or height < 20 or width > 220 or height > 220:
-        raise RuntimeError(f'implausible source lock bounds {(width, height)}')
-
-    result = []
+    rendered = []
+    meta = None
     for rgb in LOCK_RGB:
-        canvas = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        for layer_name, image, ox, oy in pieces:
-            draw = _flat_color(image, rgb) if layer_name.lower() == 'color' else image
-            canvas.alpha_composite(draw, (ox - min_x, oy - min_y))
-        result.append(canvas)
-    print('v7 source lock layers:', [(n, im.size, ox, oy) for n, im, ox, oy in pieces])
-    print('v7 logical lock size:', result[0].size)
-    return result
+        image, ox, oy, tagged_count = _render_tagged(asset, frame_no, rgb)
+        bbox = image.getchannel('A').getbbox()
+        if bbox is None:
+            raise RuntimeError('full official lock hierarchy was transparent')
+        # Keep the exported logical registration rather than trimming each tint
+        # independently; all nine grid slots must share identical geometry.
+        rendered.append(image)
+        meta = (image.size, ox, oy, tagged_count, bbox)
+
+    width, height = rendered[0].size
+    # The shipped Sparrow lock frame is 122x133. Animate bounds can include
+    # extra registration/FX space, but a 67x73 primitive is specifically rejected.
+    if width < 95 or height < 100 or width > 360 or height > 360:
+        raise RuntimeError(f'v7 full lock hierarchy bounds still implausible: {meta}')
+    if any(im.size != rendered[0].size for im in rendered):
+        raise RuntimeError('v7 lock variants changed geometry after tint')
+
+    print('v7 full lock hierarchy:', meta, 'frame', frame_no, 'root', asset.root_symbol)
+    return rendered
 
 
 v7.lock_frames = source_layered_lock_frames
