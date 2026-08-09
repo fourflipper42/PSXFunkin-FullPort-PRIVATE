@@ -207,7 +207,16 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--upstream',type=Path,required=True); ap.add_argument('--report',type=Path,required=True); a=ap.parse_args(); root=a.root; up=a.upstream; builddir=up/'build-weekend1'; shutil.rmtree(builddir,ignore_errors=True); builddir.mkdir(parents=True); charsrc=up/'src/character'; records=[]
     p=merge_components(root,builddir/'pico','picoplay',[('pico/basic-animations','pb'),('pico/playable-animations','px'),('pico/death','pd')],'pico')
     mp={'idle':lbl(p,'pb','Idle'),'left':lbl(p,'pb','Left'),'down':lbl(p,'pb','Down'),'up':lbl(p,'pb','Up'),'right':lbl(p,'pb','Right'),'death_intro':lbl(p,'pd','Death Intro'),'death_loop':lbl(p,'pd','Death Loop'),'death_confirm':lbl(p,'pd','Death Confirm')}
-    custom=[('Shoot',lbl(p,'px','Shoot'),False,0),('ShootReturn',lbl(p,'px','Shoot and Return'),False,0),('GunReload',lbl(p,'px','Gun Reload'),False,0),('Hit',lbl(p,'px','Hit'),False,0),('Hey',lbl(p,'px','Hey'),False,0),('Cheer',lbl(p,'px','Cheer'),False,0),('PissedOff',lbl(p,'px','Pissed Off'),False,0)]
+    custom=[
+      ('Miss_Left',lbl(p,'px','Left Miss'),False,0),('Miss_Down',lbl(p,'px','Down Miss'),False,0),
+      ('Miss_Up',lbl(p,'px','Up Miss'),False,0),('Miss_Right',lbl(p,'px','Right Miss'),False,0),
+      ('Hey',lbl(p,'px','Hey'),False,0),('Cheer',lbl(p,'px','Cheer'),False,0),
+      ('BurpShit',lbl(p,'px','*BURP* ... Shit'),False,0),('BurpSmile',lbl(p,'px','Burp Smile'),False,0),
+      ('BurpCensor',lbl(p,'px','Burp Censor'),False,0),
+      ('Shoot',lbl(p,'px','Shoot'),False,0),('ShootReturn',lbl(p,'px','Shoot and Return'),False,0),
+      ('GunReload',lbl(p,'px','Gun Reload'),False,0),('Hit',lbl(p,'px','Hit'),False,0),
+      ('PissedOff',lbl(p,'px','Pissed Off'),False,0),
+    ]
     write_char_module(charsrc,'Char_PicoPlayer_New','\\\\CHAR\\\\PICOPLAY.ARC;1',p,'player',mp,custom,3,(-50,-65,100)); shutil.copyfile(builddir/'pico/main.arc',up/'iso'/'picoplay.arc')
     n=merge_components(root,builddir/'nene','nene',[('nene','ne')],'nene'); idle=lbl(n,'ne','Idle'); fawn=lbl(n,'ne','Fawn'); mn={'idle':idle,'left':idle,'down':fawn or idle,'up':idle,'right':idle}; custom=[('KnifeRaise',lbl(n,'ne','Knife Raise'),False,0),('KnifeIdle',lbl(n,'ne','Idle (holding Knife)'),True,None),('KnifeLower',lbl(n,'ne','Knife Lower'),False,0),('Laugh',lbl(n,'ne','Laugh'),False,0),('Cheer',lbl(n,'ne','Cheer'),False,0),('HairBlow',lbl(n,'ne','Hair Blow'),True,None)]
     write_char_module(charsrc,'Char_Nene_New','\\\\CHAR\\\\NENE.ARC;1',n,'character',mn,custom,4,(0,-50,100)); shutil.copyfile(builddir/'nene/main.arc',up/'iso'/'nene.arc')

@@ -1,4 +1,4 @@
-name: PSXFunkin Full Port Completion - LE SSERAFIM v1
+name: PSXFunkin Full Port Completion - Pico Mixes v1
 
 on:
   push:
@@ -26,6 +26,10 @@ on:
       - 'scripts/build_sserafim_charts.py'
       - 'scripts/build_sserafim_movies.py'
       - 'scripts/apply_sserafim_v1.py'
+      - 'scripts/build_pico_mix_assets.py'
+      - 'scripts/build_pico_mix_content.py'
+      - 'scripts/build_pico_mix_movies.py'
+      - 'scripts/apply_pico_mixes_v1.py'
   workflow_dispatch:
 
 permissions:
@@ -80,7 +84,11 @@ jobs:
             scripts/build_sserafim_audio.py \
             scripts/build_sserafim_charts.py \
             scripts/build_sserafim_movies.py \
-            scripts/apply_sserafim_v1.py
+            scripts/apply_sserafim_v1.py \
+            scripts/build_pico_mix_assets.py \
+            scripts/build_pico_mix_content.py \
+            scripts/build_pico_mix_movies.py \
+            scripts/apply_pico_mixes_v1.py
 
       - name: Install build dependencies
         run: |
@@ -139,7 +147,7 @@ jobs:
               out=Path('official-v084/assets/shared/music/breakfast.ogg')
               out.parent.mkdir(parents=True,exist_ok=True)
               with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
-              for video_name in ('darnellCutscene.mp4','2hotCutscene.mp4','blazinCutscene.mp4'):
+              for video_name in ('darnellCutscene.mp4','2hotCutscene.mp4','blazinCutscene.mp4','stressPicoCutscene.mkv'):
                   matches=[n for n in z.namelist() if PurePosixPath(n).name.lower()==video_name.lower()]
                   if not matches: raise SystemExit(f'official Weekend 1 video missing: {video_name}')
                   name=sorted(matches,key=lambda n:(len(n),n))[0]
@@ -162,7 +170,7 @@ jobs:
               # The split asset release omits several executable-bundled collab
               # files and the Weekend street car sheet. Recover those exact
               # official v0.8.4 bytes from the same pinned Linux release.
-              icon_names={'icon-bf.png','icon-gf.png','icon-yunjin.png','icon-kazuha.png','icon-chaewon.png','icon-eunchae.png','icon-sakura.png'}
+              icon_names={'icon-bf.png','icon-gf.png','icon-yunjin.png','icon-kazuha.png','icon-chaewon.png','icon-eunchae.png','icon-sakura.png','icon-tankman-bloody.png'}
               def required_asset(name):
                   low=name.lower()
                   base=PurePosixPath(name).name.lower()
@@ -171,12 +179,42 @@ jobs:
                       low.startswith('assets/shared/images/characters/sserafim/') or
                       low.startswith('assets/data/songs/spaghetti/') or
                       low.startswith('assets/data/characters/sserafim-') or
+                      low.startswith('assets/data/songs/bopeebo/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/fresh/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/dadbattle/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/spookeez/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/south/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/pico/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/philly-nice/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/blammed/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/cocoa/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/eggnog/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/senpai/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/roses/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/ugh/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/guns/') and low.endswith('-pico.json') or
+                      low.startswith('assets/data/songs/stress/') and low.endswith('-pico.json') or
+                      (low.startswith('assets/songs/') and ('-pico.ogg' in low)) or
+                      low.startswith('assets/shared/images/characters/pico-dark/') or
+                      low.startswith('assets/shared/images/characters/pico-christmas/') or
+                      low.startswith('assets/shared/images/characters/pico-holding-nene/') or
+                      low.startswith('assets/shared/images/characters/nene-dark/') or
+                      low.startswith('assets/shared/images/characters/nene-christmas/') or
+                      low.startswith('assets/shared/images/characters/picopixel/') or
+                      low.startswith('assets/shared/images/characters/nenepixel/') or
+                      low.startswith('assets/shared/images/characters/spooky_dark/') or
+                      low.startswith('assets/shared/images/characters/tankman/bloody/') or
+                      low.startswith('assets/shared/images/characters/otis/') or
+                      low.startswith('assets/week7/images/erect/cutscene/tankmanending/') or
+                      low == 'assets/week7/sounds/erect/endcutscene.ogg' or
                       low in {'assets/data/stages/sserafim.json','assets/data/levels/sserafim.json'} or
                       low in {
                           'assets/weekend1/images/phillystreets/phillycars.png',
                           'assets/weekend1/images/phillystreets/phillycars.xml',
                           'assets/weekend1/images/phillystreets/phillytraffic.png',
                           'assets/weekend1/images/phillystreets/phillytraffic.xml',
+                          'assets/weekend1/images/phillyblazin/lightning.png',
+                          'assets/weekend1/images/phillyblazin/lightning.xml',
                       } or
                       (low.startswith('assets/images/icons/') and base in icon_names)
                   )
@@ -192,6 +230,14 @@ jobs:
               if extracted < 60:
                   raise SystemExit(f'official Weekend/LE SSERAFIM extraction incomplete: {extracted} files')
           PY
+          test -s official-v084/data/songs/stress/stress-chart-pico.json
+          test -s official-v084/songs/stress/Inst-pico.ogg
+          test -s official-v084/shared/images/characters/pico-dark/Animation.json
+          test -s official-v084/shared/images/characters/tankman/bloody/Animation.json
+          test -s official-v084/images/icons/icon-tankman-bloody.png
+          test -s official-v084/week7/images/erect/cutscene/tankmanEnding/Animation.json
+          test -s official-v084/week7/sounds/erect/endCutscene.ogg
+          test -s official-v084/videos/videos/stressPicoCutscene.mkv
 
       - name: Fetch pinned PSXFunkin base-week conversion reference
         run: |
@@ -596,6 +642,114 @@ jobs:
           print('OFFICIAL_LE_SSERAFIM_V1_VALIDATION_OK')
           PY
 
+      - name: Build and apply all official Pico Mixes v1
+        run: |
+          mkdir -p build/pico-mixes-v1-validation
+          sha256sum upstream/iso/menu/cschar8.rle upstream/iso/menu/csfg8.rle > /tmp/charselect-v7-1-frozen.sha256
+          python3 scripts/build_pico_mix_assets.py \
+            --root official-v084 --upstream upstream \
+            --charselect-builder scripts/build_v084_charselect_full.py \
+            --charselect-report build/menu_visual_sources.json \
+            --report build/pico_mix_assets_v1.json \
+            --validation-dir build/pico-mixes-v1-validation
+          python3 scripts/build_pico_mix_content.py \
+            --root official-v084 --iso-root upstream/iso \
+            --psxavenc psxavenc/build/psxavenc \
+            --event-header upstream/src/pico_mix_events_generated.h \
+            --audio-header upstream/src/pico_mix_audio_generated.h \
+            --report build/pico_mix_content_v1.json
+          python3 scripts/build_pico_mix_movies.py \
+            --source official-v084/videos/videos/stressPicoCutscene.mkv \
+            --out upstream/iso/movie/pstrs.str \
+            --ending-atlas official-v084/week7/images/erect/cutscene/tankmanEnding \
+            --ending-audio official-v084/week7/sounds/erect/endCutscene.ogg \
+            --ending-out upstream/iso/movie/pstrend.str \
+            --psxavenc psxavenc/build/psxavenc \
+            --header upstream/src/pico_mix_movies_generated.h \
+            --report build/pico_mix_movies_v1.json
+          python3 scripts/apply_pico_mixes_v1.py --upstream upstream
+          sha256sum -c /tmp/charselect-v7-1-frozen.sha256
+          git -C upstream diff --check
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          assets=json.loads(Path('build/pico_mix_assets_v1.json').read_text())
+          content=json.loads(Path('build/pico_mix_content_v1.json').read_text())
+          movies=json.loads(Path('build/pico_mix_movies_v1.json').read_text())
+          assert assets['policy']=='authentic-v0.8.4-pico-mix-and-freeplay-source-frames-only'
+          assert assets['freeplay']['idle_frames']==42
+          assert assets['freeplay']['stream_bytes']==193536
+          assert assets['character_select']['slot']==3
+          assert assets['character_select']['frames']==10
+          assert assets['bloody_tankman_health_icon']['frames']==2
+          expected={
+              'picodark.arc':(30,8),'picoxmas.arc':(26,7),'picohold.arc':(26,7),
+              'picopix.arc':(30,8),'nenedark.arc':(16,4),'nenexmas.arc':(16,4),
+              'nenepix.arc':(10,3),'spookydk.arc':(15,4),'tankbldy.arc':(16,4),
+              'otis.arc':(12,3),
+          }
+          for name,(frames,pages) in expected.items():
+              assert assets['characters'][name]['frames']==frames, name
+              assert assets['characters'][name]['pages']==pages, name
+          assert len(content['songs'])==15
+          assert len(content['charts'])==45
+          assert content['events']['total']==1172
+          assert len(content['durations_centiseconds'])==15
+          assert len(content['audio'])==4
+          assert all(row['bytes'] > 0 and row['bytes'] % 2336 == 0 for row in content['audio'])
+          assert movies['policy']=='official-v0.8.4-stress-pico-cutscene-only'
+          assert movies['frames'] > 0 and movies['bytes'] % 2336 == 0
+          assert movies['ending']['frames'] > 0 and movies['ending']['bytes'] % 2336 == 0
+          for index in range(1,16):
+              for suffix in 'enh':
+                  path=Path(f'upstream/iso/chart/10.{index}{suffix}.cht')
+                  assert path.is_file() and path.stat().st_size > 0, path
+          for path in (
+              'upstream/iso/music/picomix0.xa','upstream/iso/music/picomix1.xa',
+              'upstream/iso/music/picomix2.xa','upstream/iso/music/picomix3.xa',
+              'upstream/iso/menu/fppico.bin','upstream/iso/menu/fppico.tim',
+              'upstream/iso/menu/fpbgp.tim','upstream/iso/menu/fpanimp.tim',
+              'upstream/iso/menu/cspico.rle','upstream/iso/menu/cspc71a.tim',
+              'upstream/iso/menu/cspc71b.tim','upstream/iso/movie/pstrs.str',
+              'upstream/iso/movie/pstrend.str','upstream/iso/stage/pmblood.tim',
+          ):
+              file=Path(path); assert file.is_file() and file.stat().st_size > 0, path
+          menu=Path('upstream/src/menu.c').read_text()
+          stage=Path('upstream/src/stage.c').read_text()
+          joined='\n'.join(Path('upstream/src',name).read_text().lower() for name in (
+              'stage.c','stage.h','audio.c','audio.h','menu.c','stage/picomix.c','stage/picomix.h'))
+          for marker in (
+              'stageid_pm_bopeebo','stageid_pm_stress','xa_pm_bopeebo','xa_pm_stress',
+              'picomix_applyhit','picomix_applymiss','picomix_playmissdirection',
+              'picomix_applycameratarget','pico_stress_intro_frames','pico_stress_end_frames',
+              'picomix_drawhealthicon','picomix_exit','menu_fp_pico_songs',
+              'fppico.bin;1','cspico.rle;1','cspico_name_x',
+          ):
+              assert marker in joined, marker
+          assert stage.count('PicoMix_ApplyMiss(note);')==2
+          assert stage.count('PicoMix_ApplyCameraTarget();')==2
+          assert stage.count('PicoMix_ApplyCameraZoom();')==2
+          assert stage.count('PicoMix_DrawHealthIcon(-1)')==1
+          assert 'menu_freeplay_player = menu_cs_grid == 3 ? MenuPlayer_Pico' in menu
+          assert 'i==3 || i==4' in menu
+          assert 'menu_fp_songs[Menu_FreeplaySongIndex(option)].text' in menu
+          assert 'menu_freeplay_player == MenuPlayer_Boyfriend || menu_freeplay_player == MenuPlayer_Pico' in menu
+          runtime=Path('upstream/src/stage/picomix.c').read_text()
+          assert 's16 step = stage.song_step;' in runtime
+          assert 'pm_scroll_to = (event->flags & 1)' in runtime
+          assert 'pm_stress_session_active' in runtime
+          stagedef=Path('upstream/src/stagedef_disc1.h').read_text()
+          assert '{FIXED_DEC(15,10),FIXED_DEC(18,10),FIXED_DEC(23,10)}' in stagedef
+          assert '{FIXED_DEC(25,10),FIXED_DEC(29,10),FIXED_DEC(32,10)}' in stagedef
+          for source in Path('upstream/src/character').glob('pico*.c'):
+              assert 'IO_Read("\\\\CHAR\\\\' in source.read_text(), source
+          xml=Path('upstream/funkin.xml').read_text()
+          assert '<dir name = "week10">' in xml and 'pmblood.tim' in xml
+          long_names=[name for name in re.findall(r'<file name = "([^"]+)"',xml) if len(name)>12]
+          assert not long_names, long_names
+          print('OFFICIAL_PICO_MIXES_V1_VALIDATION_OK')
+          PY
+
       - name: Acquire PsyQ compatibility libraries
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
@@ -635,25 +789,31 @@ jobs:
           echo "Raw disc sectors: $sectors"
           test "$sectors" -le 360000
 
-      - name: Package LE SSERAFIM v1 checkpoint
+      - name: Package Pico Mixes v1 checkpoint
         run: |
-          mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation build/release/base-weeks-v1-validation build/release/console-options-v1-validation build/release/sserafim-v1-validation
-          cp upstream/funkin.bin build/release/PSXFunkin_v084_LE_SSERAFIM_v1.bin
-          cat > build/release/PSXFunkin_v084_LE_SSERAFIM_v1.cue <<'EOF'
-          FILE "PSXFunkin_v084_LE_SSERAFIM_v1.bin" BINARY
+          mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation build/release/base-weeks-v1-validation build/release/console-options-v1-validation build/release/sserafim-v1-validation build/release/pico-mixes-v1-validation
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Pico_Mixes_v1.bin
+          cat > build/release/PSXFunkin_v084_Pico_Mixes_v1.cue <<'EOF'
+          FILE "PSXFunkin_v084_Pico_Mixes_v1.bin" BINARY
             TRACK 01 MODE2/2352
             INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/
-          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/pause_menu_v1.json build/base_weeks_v1.json build/console_options_v1.json build/weekend1_assets_v2.json build/weekend1_charts_v2.json build/weekend1_audio_v2.json build/weekend1_movies_v2.json build/sserafim_assets_v1.json build/sserafim_charts_v1.json build/sserafim_audio_v1.json build/sserafim_movies_v1.json build/release/
+          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/pause_menu_v1.json build/base_weeks_v1.json build/console_options_v1.json build/weekend1_assets_v2.json build/weekend1_charts_v2.json build/weekend1_audio_v2.json build/weekend1_movies_v2.json build/sserafim_assets_v1.json build/sserafim_charts_v1.json build/sserafim_audio_v1.json build/sserafim_movies_v1.json build/pico_mix_assets_v1.json build/pico_mix_content_v1.json build/pico_mix_movies_v1.json build/release/
           cp build/charselect_v7_1_validation/*.png build/release/v7-1-validation/
           cp build/freeplay-v1-validation/*.png build/release/freeplay-v1-validation/
           cp build/base-weeks-v1-validation/*.png build/release/base-weeks-v1-validation/
           cp build/console-options-v1-validation/*.png build/release/console-options-v1-validation/
           cp upstream/build-sserafim/background/sserafim_preview.png build/release/sserafim-v1-validation/
-          cat > build/release/LE_SSERAFIM_V1.txt <<'EOF'
-          Official LE SSERAFIM collaboration v1 checkpoint
+          cp build/pico-mixes-v1-validation/*.png build/release/pico-mixes-v1-validation/
+          cat > build/release/PICO_MIXES_V1.txt <<'EOF'
+          Official Pico Mixes v1 checkpoint
           - Character Select v7.1 visual hierarchy and audio are frozen unchanged.
+          - Pico is unlocked in official Character Select position 3 with authentic Pico/Nene Chill animations, Pico PixelatedIcon, nametag, and selection states.
+          - Pico Freeplay has its official 42-frame DJ, Pico background/capsules/selectors, and a character-filtered catalog.
+          - All 15 official Pico Mix easy/normal/hard charts, masters, vocals, camera/zoom/bop/scroll events, special animations, misses, note kinds, and stage variants are integrated.
+          - Dark, Christmas, Pixel, and Stress use authentic Pico/Nene variants; Spooky Dark, bloody Tankman, and Otis are authentic source conversions.
+          - Stress includes the official opening video and the official ending Animate/audio timeline as PS1 STR cutscenes.
           - Freeplay parity, the real pause menu, authentic base Weeks 2/5/6, and console Options/saves remain integrated.
           - Weekend 1 remains fully integrated with its four songs, official FMVs, in-engine intro/ending beats, event-driven cameras, street traffic, rain, lightning, can/gun notes, and Blazin' fight reactions.
           - SPAGHETTI uses the exact official v0.8.4 easy/normal/hard charts and all 468 official chart events.
@@ -663,23 +823,23 @@ jobs:
           - The official cutscene timeline, audio, and artwork are pre-rendered into PS1 STR intro and ending movies.
           EOF
           (cd build/release && find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
-          sha256sum build/release/PSXFunkin_v084_LE_SSERAFIM_v1.bin
-          stat -c '%n %s bytes' build/release/PSXFunkin_v084_LE_SSERAFIM_v1.bin
+          sha256sum build/release/PSXFunkin_v084_Pico_Mixes_v1.bin
+          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Pico_Mixes_v1.bin
 
-      - name: Publish LE SSERAFIM v1 prerelease
+      - name: Publish Pico Mixes v1 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          TAG="sserafim-v1-${SHORT}"
+          TAG="pico-mixes-v1-${SHORT}"
           gh release create "$TAG" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title 'PSXFunkin official LE SSERAFIM collaboration v1 test' \
-            --notes 'DuckStation checkpoint for the additive official LE SSERAFIM conversion: exact SPAGHETTI charts, all official chart events, six authentic character conversions, diner effects, exact embedded official masters, and PS1 STR intro/ending movies. Weekend 1 and every earlier v7.1, Freeplay, pause, base-week, and console-save checkpoint remain integrated. This is not the final release.' \
-            build/release/PSXFunkin_v084_LE_SSERAFIM_v1.bin \
-            build/release/PSXFunkin_v084_LE_SSERAFIM_v1.cue \
+            --title 'PSXFunkin official Pico Mixes v1 test' \
+            --notes 'DuckStation checkpoint for all 15 official Pico Mixes, authentic Pico/Nene Character Select and Freeplay variants, per-song events and character variants, and the complete Stress Pico cutscenes. LE SSERAFIM, Weekend 1, and every earlier v7.1, Freeplay, pause, base-week, and console-save checkpoint remain integrated. This is not the final release.' \
+            build/release/PSXFunkin_v084_Pico_Mixes_v1.bin \
+            build/release/PSXFunkin_v084_Pico_Mixes_v1.cue \
             build/release/funkin.ps-exe \
             build/release/menu_visual_sources.json \
             build/release/erect_audio.json \
@@ -696,13 +856,17 @@ jobs:
             build/release/sserafim_charts_v1.json \
             build/release/sserafim_audio_v1.json \
             build/release/sserafim_movies_v1.json \
-            build/release/LE_SSERAFIM_V1.txt \
+            build/release/pico_mix_assets_v1.json \
+            build/release/pico_mix_content_v1.json \
+            build/release/pico_mix_movies_v1.json \
+            build/release/PICO_MIXES_V1.txt \
             build/release/SHA256SUMS.txt \
             build/release/v7-1-validation/*.png \
             build/release/freeplay-v1-validation/*.png \
             build/release/base-weeks-v1-validation/*.png \
             build/release/console-options-v1-validation/*.png \
-            build/release/sserafim-v1-validation/*.png
+            build/release/sserafim-v1-validation/*.png \
+            build/release/pico-mixes-v1-validation/*.png
 
       - name: Persist CI outcome for checkpoint monitoring
         if: always()
@@ -711,13 +875,13 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          STATUS_PATH="ci-status/sserafim-v1-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
+          STATUS_PATH="ci-status/pico-mixes-v1-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
           export SHORT STATUS_PATH
           python3 - <<'PY'
           import json, os
           from pathlib import Path
           payload={
-              'workflow':'Official LE SSERAFIM collaboration v1',
+              'workflow':'Official Pico Mixes v1',
               'status':os.environ['JOB_STATUS'],
               'sha':os.environ['GITHUB_SHA'],
               'run_id':os.environ['GITHUB_RUN_ID'],
@@ -727,6 +891,6 @@ jobs:
           PY
           CONTENT="$(base64 -w0 /tmp/sserafim-ci-status.json)"
           gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${STATUS_PATH}" \
-            -f message="Record official LE SSERAFIM v1 CI ${JOB_STATUS}" \
+            -f message="Record official Pico Mixes v1 CI ${JOB_STATUS}" \
             -f content="$CONTENT" \
             -f branch="full-port-completion"
