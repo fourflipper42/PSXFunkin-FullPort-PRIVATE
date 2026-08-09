@@ -12,6 +12,7 @@ import argparse
 import json
 import math
 import struct
+import sys
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -19,6 +20,23 @@ from PIL import Image
 
 import build_v084_menu_visual_assets as base
 import replace_freeplay_bf_with_official_dj as dj
+
+
+def _github_actions_excepthook(exc_type, exc, tb):
+    """Surface imported Pico asset failures through check annotations."""
+    print(
+        f"::error title=Pico asset builder failure::{exc_type.__name__}: {exc}",
+        file=sys.stderr,
+        flush=True,
+    )
+    sys.__excepthook__(exc_type, exc, tb)
+
+
+# build_pico_mix_assets imports this module before doing any conversion work.
+# Raw Actions logs for the private workflow are currently unavailable through
+# the connector, so make any uncaught Python exception visible in the check's
+# annotation API without changing build behavior.
+sys.excepthook = _github_actions_excepthook
 
 FRAME_W = 96
 FRAME_H = 96
