@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert the official Stress Pico Mix opening cutscene to PS1 STR."""
+"""Convert the official Stress Pico Mix opening and ending cutscenes to PS1 STR."""
 from __future__ import annotations
 
 import argparse
