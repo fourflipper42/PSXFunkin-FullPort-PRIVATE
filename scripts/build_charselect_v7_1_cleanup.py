@@ -33,7 +33,7 @@ RECORD_BYTES = 512 + W * H
 
 # Complete v7.1 live VRAM map. Coordinates are VRAM words for texture images.
 LOCK_CLUT = (0, 509)
-LOCK_PAGES = ((768, 0, 128), (832, 0, 128))
+LOCK_PAGES = ((768, 0, 128), (832, 0, 128), (960, 0, 128))
 CTRL_CLUT = (256, 511)  # crucially NOT font CLUT (0,511)
 CTRL_PAGES = ((448, 256, 128), (512, 256, 128))
 FONT_CLUT_RECT = (0, 511, 16, 1)
@@ -148,25 +148,26 @@ def build_lock_atlas(mod, root: Path, cursor_positions: list[list[int]], cursor_
     clicked = lock_frame_number(mod, asset, 'clicked', selected)
     frame_nums = (idle, selected, clicked)
 
-    atlas = Image.new('RGBA', (256, 128), (0, 0, 0, 0))
+    atlas = Image.new('RGBA', (384, 128), (0, 0, 0, 0))
     src = [[[0,0,1,1] for _ in range(9)] for _ in range(3)]
     dst = [[0,0,1,1] for _ in range(9)]
     cw, ch = cursor_size
 
     for state, frame_no in enumerate(frame_nums):
-        page = state >> 1
+        # One full 128x128 texture page per authored lock state. Selected/clicked
+        # frames are substantially larger than idle and must not share a page.
+        page = state
         base_x = 128 * page
-        row_base = (state & 1) * 58
         for index, color in enumerate(LOCK_COLORS):
             im, _ox, _oy, _tagged = v7run._render_tagged(asset, frame_no, color)
             im = alpha_crop(im)
             sw = max(1, round(im.width / 3)); sh = max(1, round(im.height / 3))
             im = im.resize((sw, sh), Image.Resampling.LANCZOS)
             col = index % 3; row = index // 3
-            slot_x = base_x + col * 40 + 4
-            slot_y = row_base + row * 18
-            if state == 2:
-                slot_y = row * 38 + 4
+            if sw > 40 or sh > 40:
+                raise RuntimeError(f'lock state exceeds 40x40 page cell state={state} index={index} size={im.size}')
+            slot_x = base_x + col * 42 + 1
+            slot_y = row * 42 + 1
             if slot_x + sw > base_x + 128 or slot_y + sh > 128:
                 raise RuntimeError(f'lock atlas overflow state={state} index={index} size={im.size}')
             atlas.alpha_composite(im, (slot_x, slot_y))
@@ -307,7 +308,7 @@ def main():
     lclut,lpix=rgba8(lock_atlas,mod.base.psx_color)
     cclut,cpix=rgba8(controls,mod.base.psx_color)
     for i,(vx,vy,_pw) in enumerate(LOCK_PAGES):
-        data=tim8_page(lclut,lpix,256,128,i*128,128,vx,vy,*LOCK_CLUT)
+        data=tim8_page(lclut,lpix,384,128,i*128,128,vx,vy,*LOCK_CLUT)
         (menu/f'cslock71{chr(97+i)}.tim').write_bytes(data)
     for i,(vx,vy,_pw) in enumerate(CTRL_PAGES):
         data=tim8_page(cclut,cpix,256,240,i*128,128,vx,vy,*CTRL_CLUT)
@@ -339,7 +340,7 @@ def main():
     controls.save(val/'controls_v71.png'); lock_atlas.save(val/'locks_v71.png')
     intro_frames[0].save(val/'intro_00.png'); intro_frames[len(intro_frames)//2].save(val/'intro_mid.png'); intro_frames[-1].save(val/'intro_last.png')
 
-    image_rects=[('intro_bg',(448,0,160,240)),('lock0',(768,0,64,128)),('lock1',(832,0,64,128)),
+    image_rects=[('intro_bg',(448,0,160,240)),('lock0',(768,0,64,128)),('lock1',(832,0,64,128)),('lock2',(960,0,64,128)),
                  ('ctrl0',(448,256,64,240)),('ctrl1',(512,256,64,240)),('char',(768,256,160,240)),('fg',(576,256,160,240))]
     clut_rects=[('grid',(*LOCK_CLUT,256,1)),('ctrl',(*CTRL_CLUT,256,1)),('bg',(704,509,256,1)),('char',(448,510,256,1)),('fg',(704,510,256,1))]
     for name,r in image_rects:
@@ -349,7 +350,7 @@ def main():
 
     cleanup={
       'policy':'v7.1 focused cleanup; BF/GF/foreground hierarchy frozen from v7',
-      'locks':{'mode':'per-cell sprites centered on canonical cursor cells','frame_numbers':lock_frames,'files':['cslock71a.tim','cslock71b.tim'],'dst':lock_dst},
+      'locks':{'mode':'per-cell sprites centered on canonical cursor cells','frame_numbers':lock_frames,'files':['cslock71a.tim','cslock71b.tim','cslock71c.tim'],'dst':lock_dst},
       'controls':{**control_meta,'clut':[CTRL_CLUT[0],CTRL_CLUT[1]],'files':['csctrl71a.tim','csctrl71b.tim']},
       'intro':{'file':'csintro71.rle','frames':INTRO_COUNT,'packed_bytes':len(intro_bank),'duration':intro_duration,'source_size':list(intro_source_size),'policy':'resize official video to 1280x720, center 960x720 4:3 crop, then 320x240 8bpp'},
       'font_vram':{'image':list(FONT_IMAGE_RECT),'clut':list(FONT_CLUT_RECT),'control_clut_relocated_to':[CTRL_CLUT[0],CTRL_CLUT[1]],'audit':'pass'},

@@ -39,17 +39,19 @@ def main():
 {
 	IO_Data l0 = IO_Read("\\MENU\\CSLOCK71A.TIM;1");
 	IO_Data l1 = IO_Read("\\MENU\\CSLOCK71B.TIM;1");
+	IO_Data l2 = IO_Read("\\MENU\\CSLOCK71C.TIM;1");
 	IO_Data c0 = IO_Read("\\MENU\\CSCTRL71A.TIM;1");
 	IO_Data c1 = IO_Read("\\MENU\\CSCTRL71B.TIM;1");
-	if (l0 == NULL || l1 == NULL || c0 == NULL || c1 == NULL)
+	if (l0 == NULL || l1 == NULL || l2 == NULL || c0 == NULL || c1 == NULL)
 	{
-		if (l0 != NULL) Mem_Free(l0); if (l1 != NULL) Mem_Free(l1);
+		if (l0 != NULL) Mem_Free(l0); if (l1 != NULL) Mem_Free(l1); if (l2 != NULL) Mem_Free(l2);
 		if (c0 != NULL) Mem_Free(c0); if (c1 != NULL) Mem_Free(c1);
 		sprintf(error_msg, "[Menu_UploadCSHQUI] v7.1 UI TIM missing");
 		ErrorLock(); return;
 	}
 	Gfx_LoadTex(&menu_cs_grid_v7[0], l0, GFX_LOADTEX_FREE);
 	Gfx_LoadTex(&menu_cs_grid_v7[1], l1, GFX_LOADTEX_FREE);
+	Gfx_LoadTex(&menu_cs_grid_v7[2], l2, GFX_LOADTEX_FREE);
 	Gfx_LoadTex(&menu_cs_ctrl_v7[0], c0, GFX_LOADTEX_FREE);
 	Gfx_LoadTex(&menu_cs_ctrl_v7[1], c1, GFX_LOADTEX_FREE);
 }
@@ -76,8 +78,8 @@ static void Menu_CSDrawV71Lock(u8 variant, u8 index)
 {
 	s16 sx=csv71_lock_src_x[variant][index], sy=csv71_lock_src_y[variant][index];
 	s16 sw=csv71_lock_src_w[variant][index], sh=csv71_lock_src_h[variant][index];
-	u8 page=(sx>=128)?1:0;
-	RECT src={sx-(page?128:0),sy,sw,sh};
+	u8 page=(u8)(sx / 128);
+	RECT src={sx-(page * 128),sy,sw,sh};
 	RECT dst={csv71_lock_dst_x[index],csv71_lock_dst_y[index],csv71_lock_dst_w[index],csv71_lock_dst_h[index]};
 	Gfx_DrawTex(&menu_cs_grid_v7[page],&src,&dst);
 }
@@ -197,7 +199,7 @@ static void Menu_CSDrawV71Locks(u8 state)
 
     xml=xmlp.read_text(); anchor='\t\t\t\t<file name = "csctrl7b.tim" type = "data" source = "iso/menu/csctrl7b.tim"/>\n'
     if xml.count(anchor)!=1: raise SystemExit(f'v7.1 XML anchor count {xml.count(anchor)}')
-    adds=''.join(f'\t\t\t\t<file name = "{n}" type = "data" source = "iso/menu/{n}"/>\n' for n in ('csintro71.rle','cslock71a.tim','cslock71b.tim','csctrl71a.tim','csctrl71b.tim'))
+    adds=''.join(f'\t\t\t\t<file name = "{n}" type = "data" source = "iso/menu/{n}"/>\n' for n in ('csintro71.rle','cslock71a.tim','cslock71b.tim','cslock71c.tim','csctrl71a.tim','csctrl71b.tim'))
     xmlp.write_text(xml.replace(anchor,anchor+adds,1))
 
     low=text.lower()
