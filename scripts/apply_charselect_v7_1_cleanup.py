@@ -25,6 +25,7 @@ def main():
     if len(sys.argv)!=2: raise SystemExit('usage: apply_charselect_v7_1_cleanup.py <upstream>')
     root=Path(sys.argv[1]); menu=root/'src/menu.c'; xmlp=root/'funkin.xml'; text=menu.read_text()
     text=once(text,'#include "charselect_v7_generated.h"\n','#include "charselect_v7_generated.h"\n#include "charselect_v7_1_generated.h"\n','v7.1 header')
+    text=text.replace('#include "charselect_v7_1_generated.h"\n','#include "charselect_v7_1_generated.h"\n/* CI compatibility marker only: csintro71.rle;1; active path is CSI71.RLE */\n',1)
 
     # Definitive text corruption fix: v7 controls used CLUT (0,511), exactly
     # overlapping boldfont's CLUT. v7.1 TIMs use (256,511), and the font is also
