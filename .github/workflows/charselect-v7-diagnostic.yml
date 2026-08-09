@@ -1,0 +1,64 @@
+name: Character Select v7 Source Diagnostic
+
+on:
+  push:
+    branches: [ charselect-full-checkpoint ]
+    paths:
+      - '.github/workflows/charselect-v7-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch official v0.8.4 visual assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p official-assets official-v084
+          gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets \
+            --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip'
+          unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
+      - name: Inspect Character Select Animate hierarchy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          root=Path('official-v084/images/charSelect')
+          print('ROOT', root, root.exists())
+          targets=['bfChill','gfChill','lockedChill','crowd','charSelectStage','charSelectSpeakers','barThing']
+          for target in targets:
+              print('\n===',target,'===')
+              matches=[p for p in root.rglob('*') if target.lower() in str(p.relative_to(root)).lower()]
+              for p in matches[:80]:
+                  if p.is_file():
+                      print('FILE',p.relative_to(root),p.stat().st_size)
+              # inspect Animate JSON files nearest target
+              dirs=sorted({p.parent for p in matches if p.is_file() and p.suffix.lower()=='.json'},key=lambda p:len(str(p)))
+              for d in dirs[:3]:
+                  print('DIR',d.relative_to(root))
+                  for jp in sorted(d.glob('*.json')):
+                      try: data=json.loads(jp.read_text())
+                      except Exception as e:
+                          print('JSONERR',jp.name,e); continue
+                      print('JSON',jp.name,'type',type(data).__name__,'keys',list(data)[:20] if isinstance(data,dict) else 'len='+str(len(data)))
+                      if isinstance(data,dict):
+                          for k in ('AN','SD','MD','animation','symbols','symbolInstances','layers','frames','meta','ATLAS','SPRITES'):
+                              if k in data:
+                                  v=data[k]
+                                  print(' KEY',k,'type',type(v).__name__,'len',len(v) if hasattr(v,'__len__') else '-')
+                                  s=repr(v)
+                                  print('  SAMPLE',s[:3000])
+                      print()
+
+          # Also print all immediate charSelect directory entries to expose real asset names.
+          print('\n=== TOP LEVEL ===')
+          for p in sorted(root.iterdir()):
+              print(('DIR ' if p.is_dir() else 'FILE'),p.name, p.stat().st_size if p.is_file() else '')
+          PY
