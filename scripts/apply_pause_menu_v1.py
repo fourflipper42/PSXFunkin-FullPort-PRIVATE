@@ -243,7 +243,7 @@ static void Stage_PauseOpen(void)
 	stage_pause_just_opened = true;
 	stage_pause_animf = animf_count;
 	Stage_PauseResetLayout(true);
-	FontData_LoadPath(&stage_pause_font, "\\FONT\\PAUSEFONT.TIM;1");
+	FontData_LoadPath(&stage_pause_font, "\\FONT\\PAUSEF.TIM;1");
 	Audio_SaveXA();
 	Audio_PlayXA_Offset("\\MUSIC\\PAUSE.XA;1", 0x30, 0, true, RandomRange(0, 30 * 75));
 	stage.state = StageState_Pause;
@@ -664,7 +664,7 @@ void FontData_Load(FontData *this, Font font)
         xml,
         '\t\t\t\t<file name = "boldfont.tim" type = "data" source = "iso/font/boldfont.tim"/>\n',
         '\t\t\t\t<file name = "boldfont.tim" type = "data" source = "iso/font/boldfont.tim"/>\n'
-        '\t\t\t\t<file name = "pausefont.tim" type = "data" source = "iso/font/pausefont.tim"/>\n',
+        '\t\t\t\t<file name = "pausef.tim" type = "data" source = "iso/font/pausef.tim"/>\n',
         "pause font disc entry",
     )
     once(
@@ -688,7 +688,7 @@ void FontData_Load(FontData *this, Font font)
         "enable practice mode",
         "exit to menu",
         "pause.xa;1",
-        "pausefont.tim;1",
+        "pausef.tim;1",
         "fontdata_loadpath",
     )
     for marker in required:
