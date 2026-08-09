@@ -311,10 +311,10 @@ def main():
     cclut,cpix=rgba8(controls,mod.base.psx_color)
     for i,(vx,vy,_pw) in enumerate(LOCK_PAGES):
         data=tim8_page(lclut,lpix,384,128,i*128,128,vx,vy,*LOCK_CLUT)
-        (menu/f'cslock71{chr(97+i)}.tim').write_bytes(data)
+        (menu/f'csl71{chr(97+i)}.tim').write_bytes(data)
     for i,(vx,vy,_pw) in enumerate(CTRL_PAGES):
         data=tim8_page(cclut,cpix,256,240,i*128,128,vx,vy,*CTRL_CLUT)
-        (menu/f'csctrl71{chr(97+i)}.tim').write_bytes(data)
+        (menu/f'csc71{chr(97+i)}.tim').write_bytes(data)
 
     intro_records,intro_frames,intro_duration,intro_source_size=extract_intro(args.intro_video,mod.base.psx_color)
     intro_bank=q2_pack(intro_records); (menu/'csi71.rle').write_bytes(intro_bank)
