@@ -45,8 +45,8 @@ const char *Settings_StatusText(void);
 u32 Settings_GetHighScore(u8 song, u8 difficulty);
 u8 Settings_GetCompletion(u8 song, u8 difficulty);
 void Settings_RecordResult(u8 song, u8 difficulty, s32 score);
-u32 Settings_GetFavorites(void);
-void Settings_SetFavorites(u32 favorites);
+u64 Settings_GetFavorites(void);
+void Settings_SetFavorites(u64 favorites);
 
 #endif
 '''
@@ -83,7 +83,7 @@ typedef struct
 	u16 size;
 	u32 checksum;
 	GameSettings options;
-	u32 favorites;
+	u64 favorites;
 	s32 high_scores[SETTINGS_SCORE_SLOTS][SETTINGS_DIFF_SLOTS];
 	u8 completion[SETTINGS_SCORE_SLOTS][SETTINGS_DIFF_SLOTS];
 } SettingsPayload;
@@ -301,12 +301,12 @@ void Settings_RecordResult(u8 song, u8 difficulty, s32 score)
 	settings_payload.completion[song][difficulty] = 1;
 }
 
-u32 Settings_GetFavorites(void)
+u64 Settings_GetFavorites(void)
 {
 	return settings_payload.favorites;
 }
 
-void Settings_SetFavorites(u32 favorites)
+void Settings_SetFavorites(u64 favorites)
 {
 	settings_payload.favorites = favorites;
 }
@@ -536,7 +536,7 @@ def main() -> None:
     text = replace_once(text, '#include "audio.h"\n', '#include "audio.h"\n#include "settings.h"\n', "menu settings include")
     start, end = find_case(text, '\t\tcase MenuPage_Options:\n', '\t\tcase MenuPage_Stage:\n')
     text = text[:start] + OPTIONS_CASE + text[end:]
-    text = replace_once(text, 'static u32 menu_fp_favorites = 0;', 'static u32 menu_fp_favorites = 0;', "favorite marker")
+    text = replace_once(text, 'static u32 menu_fp_favorites = 0;', 'static u64 menu_fp_favorites = 0;', "64-bit favorites")
     text = replace_once(text, '\t\t\t\tmenu_fp_hold_direction = 0;\n\t\t\t\tmenu_fp_hold_frames = 0;', '\t\t\t\tmenu_fp_hold_direction = 0;\n\t\t\t\tmenu_fp_hold_frames = 0;\n\t\t\t\tmenu_fp_favorites = Settings_GetFavorites();', "load favorites")
     text = replace_once(
         text,
@@ -544,12 +544,13 @@ def main() -> None:
         '\t\t\t\t\tmenu_fp_favorites ^= (1u << Menu_FreeplaySongIndex(menu.select));',
         '\t\t\t\tif ((pad_state.press & PAD_SQUARE) && menu.select != MENU_FP_RANDOM_OPTION)\n'
         '\t\t\t\t{\n'
-        '\t\t\t\t\tmenu_fp_favorites ^= (1u << Menu_FreeplaySongIndex(menu.select));\n'
+        '\t\t\t\t\tmenu_fp_favorites ^= ((u64)1 << Menu_FreeplaySongIndex(menu.select));\n'
         '\t\t\t\t\tSettings_SetFavorites(menu_fp_favorites);\n'
         '\t\t\t\t\tSettings_Save();\n'
         '\t\t\t\t}',
         "toggle favorite",
     )
+    text = replace_once(text, '(menu_fp_favorites & (1u << Menu_FreeplaySongIndex(menu.select)))', '(menu_fp_favorites & ((u64)1 << Menu_FreeplaySongIndex(menu.select)))', "favorite display")
     text = replace_once(text, '\t\t\t\t\tmenu_freeplay_song = menu.select;\n\t\t\t\t\tmenu_freeplay_diff = menu.page_param.stage.diff;\n\t\t\t\t\tmenu.next_page = MenuPage_Main;', '\t\t\t\t\tmenu_freeplay_song = menu.select;\n\t\t\t\t\tmenu_freeplay_diff = menu.page_param.stage.diff;\n\t\t\t\t\tSettings_Save();\n\t\t\t\t\tmenu.next_page = MenuPage_Main;', "save freeplay exit")
     text = replace_once(text, 'static s16 Menu_FreeplayDrawNumber(u16 value, s16 x, s16 y, u8 width, u8 height)\n{\n\tu8 digits[5];', 'static s16 Menu_FreeplayDrawNumber(u32 value, s16 x, s16 y, u8 width, u8 height)\n{\n\tu8 digits[8];', "wide score digits")
     text = replace_once(text, 'Menu_FreeplayDrawNumber(0, 244, 40, 7, 11);', 'Menu_FreeplayDrawNumber(Settings_GetHighScore(song->stage, menu.page_param.stage.diff), 244, 40, 7, 11);', "personal best")
