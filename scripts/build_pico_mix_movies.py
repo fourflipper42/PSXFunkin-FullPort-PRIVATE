@@ -31,6 +31,24 @@ def phase(message: str) -> None:
     print(f"::notice title=Pico Mix movie phase::{message}", flush=True)
 
 
+def run_psxavenc(command: list[str], label: str) -> None:
+    """Run psxavenc while preserving its diagnostics for GitHub Actions."""
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if result.returncode != 0:
+        output = (result.stdout or "").strip()
+        if len(output) > 12000:
+            output = output[-12000:]
+        raise RuntimeError(
+            f"{label} failed with exit code {result.returncode}"
+            + (f"\n{output}" if output else "\npsxavenc produced no diagnostic output")
+        )
+
+
 def encoded_frame_count(path: Path) -> int:
     data = path.read_bytes()
     if len(data) % SECTOR:
@@ -51,16 +69,17 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
     atlas_frames = atlas.timeline_length(atlas.root["TL"])
     frame_count = math.ceil((320 / 24) * FPS)
 
-    # Keep the handoff to psxavenc deliberately simple. The previous H.264/AAC
-    # MP4 intermediate rendered and muxed correctly in ffmpeg but psxavenc
-    # exited before decoding it. An AVI containing uncompressed BGR24 video and
-    # PCM audio avoids depending on H.264/AAC decoders in the psxavenc build.
+    # psxavenc's libavcodec handoff is intentionally kept to independent,
+    # conventional frames. H.264/AAC introduced delayed-frame decoding and the
+    # rawvideo AVI path reached psxavenc but was rejected while opening/decoding
+    # the ending. High-quality MJPEG + PCM avoids both failure modes; the final
+    # PS1 MDEC encode is far more lossy than this temporary intermediate.
     silent = temporary / "stress-pico-ending-silent.avi"
     process = subprocess.Popen([
         str(ffmpeg), "-y", "-loglevel", "error", "-f", "rawvideo",
         "-pix_fmt", "rgb24", "-s", "320x240", "-r", str(FPS), "-i", "-",
-        "-an", "-c:v", "rawvideo", "-pix_fmt", "bgr24", "-r", str(FPS),
-        str(silent),
+        "-an", "-c:v", "mjpeg", "-q:v", "2", "-pix_fmt", "yuvj420p",
+        "-r", str(FPS), str(silent),
     ], stdin=subprocess.PIPE)
     assert process.stdin is not None
     for output_frame in range(frame_count):
@@ -116,11 +135,11 @@ def main() -> None:
     args.ending_out.parent.mkdir(parents=True, exist_ok=True)
 
     phase("opening STR encode started")
-    subprocess.run([
+    run_psxavenc([
         str(args.psxavenc), "-q", "-t", "str", "-v", "v2",
         "-f", "37800", "-b", "4", "-c", "2", "-s", "320x240",
         "-r", "15", "-x", "2", str(args.source), str(args.out),
-    ], check=True)
+    ], "opening STR encode")
     frames = encoded_frame_count(args.out)
     phase("opening STR encode completed")
 
@@ -129,11 +148,11 @@ def main() -> None:
             args.ending_atlas, args.ending_audio, args.ffmpeg, Path(directory)
         )
         phase("ending STR encode started")
-        subprocess.run([
+        run_psxavenc([
             str(args.psxavenc), "-q", "-t", "str", "-v", "v2",
             "-f", "37800", "-b", "4", "-c", "2", "-s", "320x240",
             "-r", str(FPS), "-x", "2", str(ending_source), str(args.ending_out),
-        ], check=True)
+        ], "ending STR encode")
     ending_frames = encoded_frame_count(args.ending_out)
     phase("ending STR encode completed")
 
