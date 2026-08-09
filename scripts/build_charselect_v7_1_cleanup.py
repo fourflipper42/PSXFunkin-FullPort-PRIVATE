@@ -243,8 +243,10 @@ def extract_intro(video: Path, psx_color) -> tuple[list[bytes], list[Image.Image
     with tempfile.TemporaryDirectory() as td:
         td=Path(td)
         for i in range(INTRO_COUNT):
-            t = duration * i / max(1, INTRO_COUNT-1)
-            if i == INTRO_COUNT-1: t=max(0.0,duration-0.03)
+            # Sample uniformly inside the movie rather than exactly at/near EOF.
+            # Some v0.8.4 introSelect encodes do not return a decoded frame in the
+            # final few tens of milliseconds. 23/24 still captures the visual tail.
+            t = duration * i / INTRO_COUNT
             out=td/f'i{i:02d}.png'
             subprocess.run(['ffmpeg','-v','error','-y','-ss',f'{t:.6f}','-i',str(video),'-frames:v','1',str(out)], check=True)
             im=Image.open(out).convert('RGBA')
