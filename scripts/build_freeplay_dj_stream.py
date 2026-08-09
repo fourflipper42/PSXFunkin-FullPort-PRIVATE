@@ -60,11 +60,13 @@ PICO_RELEASE_FILES = (
     "assets/images/freeplay/icons/picopixel.png",
     "assets/images/freeplay/icons/picopixel.xml",
     "assets/images/charSelect/picoNametag.png",
+    "assets/shared/images/characters/spooky_dark.png",
+    "assets/shared/images/characters/spooky_dark.xml",
 )
 
 
 def recover_official_pico_sources() -> list[str]:
-    """Recover missing Pico UI atlases from the already pinned v0.8.4 ZIP.
+    """Recover missing Pico UI/character sources from the pinned v0.8.4 ZIP.
 
     Official release ZIPs may wrap ``assets/`` in a top-level directory. Match
     canonical v0.8.4 paths by case-insensitive suffix, like the proven Weekend
@@ -179,7 +181,7 @@ def recover_official_pico_sources() -> list[str]:
 _RECOVERED_PICO_SOURCES = recover_official_pico_sources()
 if _RECOVERED_PICO_SOURCES:
     print(
-        "Recovered official Pico v0.8.4 menu sources from pinned Linux archive: "
+        "Recovered official Pico v0.8.4 sources from pinned Linux archive: "
         f"{len(_RECOVERED_PICO_SOURCES)} files"
     )
 
@@ -193,6 +195,9 @@ def pack_4bpp(indices: list[int], width: int, height: int) -> bytes:
     for y in range(height):
         row = indices[y * width:(y + 1) * width]
         for x in range(0, width, 4):
+            word = row[x] | (row[x + 1] << 4) | (row[x + 2] << 8) | (row[x + 1] << 12)
+            # Correct the fourth nibble below; keeping the explicit expression
+            # here makes the 4-pixel/16-bit packing order obvious.
             word = row[x] | (row[x + 1] << 4) | (row[x + 2] << 8) | (row[x + 3] << 12)
             out += struct.pack("<H", word)
     return bytes(out)
@@ -302,8 +307,6 @@ def main() -> None:
         raise SystemExit(f"DJ stream size mismatch: {stream.stat().st_size} != {expected_stream}")
 
     report = json.loads(args.report.read_text())
-    # Preserve the old sample_frames field so the existing visual-check workflow
-    # can distinguish this lineage while the runtime now consumes all 14 frames.
     report["outputs"]["fpchar.tim"] = {
         "template": "title",
         "size": [256, 256],
