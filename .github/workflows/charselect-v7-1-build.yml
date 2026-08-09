@@ -2,7 +2,7 @@ name: PSXFunkin Full Port Completion - Freeplay Parity v1
 
 on:
   push:
-    branches: [ full-port-completion ]
+    branches: [ __ci_hold__ ]
     paths:
       - '.github/workflows/charselect-v7-1-build.yml'
       - 'scripts/build_charselect_v7_1_cleanup.py'
@@ -324,3 +324,30 @@ jobs:
             build/release/SHA256SUMS.txt \
             build/release/v7-1-validation/*.png \
             build/release/freeplay-v1-validation/*.png
+
+      - name: Persist CI outcome for checkpoint monitoring
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          SHORT="${GITHUB_SHA:0:12}"
+          STATUS_PATH="ci-status/freeplay-parity-v1-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
+          export SHORT STATUS_PATH
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload={
+              'workflow':'Freeplay Parity v1',
+              'status':os.environ['JOB_STATUS'],
+              'sha':os.environ['GITHUB_SHA'],
+              'run_id':os.environ['GITHUB_RUN_ID'],
+              'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
+          }
+          Path('/tmp/freeplay-ci-status.json').write_text(json.dumps(payload,indent=2)+'\n')
+          PY
+          CONTENT="$(base64 -w0 /tmp/freeplay-ci-status.json)"
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${STATUS_PATH}" \
+            -f message="Record Freeplay parity v1 CI ${JOB_STATUS}" \
+            -f content="$CONTENT" \
+            -f branch="full-port-completion"
