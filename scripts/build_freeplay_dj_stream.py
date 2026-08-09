@@ -12,7 +12,8 @@ import argparse
 import json
 import math
 import struct
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
 
 from PIL import Image
 
@@ -22,6 +23,103 @@ import replace_freeplay_bf_with_official_dj as dj
 FRAME_W = 96
 FRAME_H = 96
 FRAME_COUNT = 14
+
+# The split assets-v084 archives predate several Pico menu/Character Select
+# files even though they are shipped in the SHA-pinned official v0.8.4 Linux
+# release used by CI. Recover only those exact official bytes before the Pico
+# builder imports/uses them; never synthesize or substitute artwork.
+PICO_RELEASE_TREES = (
+    "assets/images/freeplay/freeplay-pico",
+    "assets/images/charSelect/picoChill",
+    "assets/images/charSelect/neneChill",
+)
+PICO_RELEASE_FILES = (
+    "assets/images/freeplay/freeplayBGweek1-pico.png",
+    "assets/images/freeplay/freeplayCapsule/capsule/freeplayCapsule_pico.png",
+    "assets/images/freeplay/freeplayCapsule/capsule/freeplayCapsule_pico.xml",
+    "assets/images/freeplay/freeplaySelector/freeplaySelector_pico.png",
+    "assets/images/freeplay/freeplaySelector/freeplaySelector_pico.xml",
+    "assets/images/freeplay/icons/picopixel.png",
+    "assets/images/freeplay/icons/picopixel.xml",
+    "assets/images/charSelect/picoNametag.png",
+)
+
+
+def recover_official_pico_sources() -> list[str]:
+    """Recover missing Pico UI atlases from the already pinned v0.8.4 ZIP."""
+    workspace = Path.cwd()
+    root = workspace / "official-v084"
+    archive = workspace / "official-assets/funkin-linux-64bit.zip"
+    if not root.is_dir() or not archive.is_file():
+        return []
+
+    recovered: list[str] = []
+    with zipfile.ZipFile(archive) as zf:
+        files = {
+            info.filename.lower(): info
+            for info in zf.infolist()
+            if not info.is_dir()
+        }
+
+        def extract(info: zipfile.ZipInfo, target: Path) -> None:
+            data = zf.read(info)
+            if not data:
+                raise RuntimeError(
+                    "official Pico source is empty in pinned v0.8.4 archive: "
+                    f"{info.filename}"
+                )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            recovered.append(info.filename)
+
+        for source in PICO_RELEASE_FILES:
+            relative = PurePosixPath(source).relative_to("assets")
+            target = root.joinpath(*relative.parts)
+            if target.is_file() and target.stat().st_size > 0:
+                continue
+            info = files.get(source.lower())
+            if info is None:
+                raise RuntimeError(
+                    "official Pico source missing from pinned v0.8.4 archive: "
+                    f"{source}"
+                )
+            extract(info, target)
+
+        for source in PICO_RELEASE_TREES:
+            relative = PurePosixPath(source).relative_to("assets")
+            target_dir = root.joinpath(*relative.parts)
+            required = (
+                target_dir / "Animation.json",
+                target_dir / "spritemap1.json",
+                target_dir / "spritemap1.png",
+            )
+            if all(path.is_file() and path.stat().st_size > 0 for path in required):
+                continue
+            prefix = source.lower().rstrip("/") + "/"
+            matches = [info for low, info in files.items() if low.startswith(prefix)]
+            if not matches:
+                raise RuntimeError(
+                    "official Pico Animate atlas missing from pinned v0.8.4 archive: "
+                    f"{source}"
+                )
+            for info in sorted(matches, key=lambda row: row.filename.lower()):
+                suffix = PurePosixPath(info.filename).relative_to(source)
+                extract(info, target_dir.joinpath(*suffix.parts))
+            if not all(path.is_file() and path.stat().st_size > 0 for path in required):
+                raise RuntimeError(
+                    "official Pico Animate atlas incomplete after recovery: "
+                    f"{source}"
+                )
+
+    return recovered
+
+
+_RECOVERED_PICO_SOURCES = recover_official_pico_sources()
+if _RECOVERED_PICO_SOURCES:
+    print(
+        "Recovered official Pico v0.8.4 menu sources from pinned Linux archive: "
+        f"{len(_RECOVERED_PICO_SOURCES)} files"
+    )
 
 
 def pack_4bpp(indices: list[int], width: int, height: int) -> bytes:
