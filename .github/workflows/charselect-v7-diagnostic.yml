@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Install Pillow
+        run: sudo apt-get update -qq && sudo apt-get install -y python3-pil
       - name: Fetch official v0.8.4 visual assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -27,44 +29,62 @@ jobs:
       - name: Inspect renderer and exact Character Select sources
         run: |
           gzip -dc ci/charselect/build_v084_charselect_full.py.gz > /tmp/csbuilder.py
-          echo '=== BUILDER FUNCTIONS ==='
-          grep -n '^def ' /tmp/csbuilder.py || true
-          echo '=== RENDER/TRAVERSAL CODE ==='
-          grep -n -E 'render|collect|leaf|element|paste_anim|build_character|timeline|symbols' /tmp/csbuilder.py | head -120 || true
+          echo '=== COLLECT/RENDER SOURCE ==='
+          sed -n '250,330p' /tmp/csbuilder.py
+          echo '=== LIVE SCENE SOURCE ==='
+          sed -n '388,452p' /tmp/csbuilder.py
           python3 - <<'PY'
           from pathlib import Path
-          import json, re
-          from PIL import Image
+          import json, importlib.util, sys, shutil, math
+          from PIL import Image, ImageChops, ImageStat
 
           root=Path('official-v084/images/charSelect')
-          for rel in ['bfIcon.png','bfIcon.xml','boyfriendNametag.png','lockedNametag.png','charSelector.png','locks.png','locks.xml','placement.png','charSelectTemp.png']:
+          for rel in ['bfChill.png','bfIcon.png','bfIcon.xml','boyfriendNametag.png','lockedNametag.png','charSelector.png','locks.png','locks.xml','placement.png','charSelectTemp.png']:
               p=root/rel
               print('\n===',rel,'===')
               print('exists',p.exists(),'bytes',p.stat().st_size if p.exists() else None)
               if p.suffix.lower()=='.png' and p.exists():
                   im=Image.open(p)
-                  print('size',im.size,'mode',im.mode)
+                  print('size',im.size,'mode',im.mode,'bbox',im.convert('RGBA').getbbox())
               elif p.exists():
-                  text=p.read_text(encoding='utf-8-sig')
-                  print(text[:8000])
+                  print(p.read_text(encoding='utf-8-sig')[:12000])
 
           for target in ['lock','bfChill','gfChill']:
               p=root/target/'Animation.json'
               data=json.loads(p.read_text(encoding='utf-8-sig'))
               print('\n=== ANIMATE SUMMARY',target,'===')
-              print('AN',data.get('AN',{}).get('SN'),data.get('AN',{}).get('STI'))
               symbols=data.get('SD',{}).get('S',[])
-              print('symbols',len(symbols))
-              for s in symbols[:20]:
+              for s in symbols[:40]:
                   print('symbol',s.get('SN'),'layers',[l.get('LN') for l in s.get('TL',{}).get('L',[])])
 
-          # Print exact source around the builder's hierarchy traversal functions.
-          text=Path('/tmp/csbuilder.py').read_text()
-          lines=text.splitlines()
-          for needle in ['def collect_symbol_leaves','def render_bta_frame','def paste_anim','def build_character_overlay','def load_optional_anim']:
-              for i,line in enumerate(lines):
-                  if line.startswith(needle):
-                      print('\n===',needle,'line',i+1,'===')
-                      print('\n'.join(lines[i:min(len(lines),i+180)]))
-                      break
+          # Compare current reversed-element renderer with natural element order against bfChill.png.
+          def load(name,path):
+              spec=importlib.util.spec_from_file_location(name,path)
+              m=importlib.util.module_from_spec(spec); sys.modules[name]=m; spec.loader.exec_module(m); return m
+          current=load('cs_current','/tmp/csbuilder.py')
+          forward_path='/tmp/csbuilder_forward.py'
+          txt=Path('/tmp/csbuilder.py').read_text()
+          old='for element in reversed(fr.get("E", [])):'
+          assert old in txt
+          Path(forward_path).write_text(txt.replace(old,'for element in fr.get("E", []):'))
+          forward=load('cs_forward',forward_path)
+          ref=Image.open(root/'bfChill.png').convert('RGBA')
+          def crop(im):
+              b=im.getbbox(); return im.crop(b) if b else im
+          refc=crop(ref)
+          print('\nBF reference crop',refc.size)
+          for label,m in [('reversed',current),('forward',forward)]:
+              a=m.load_animate(root/'bfChill')
+              im,ox,oy=m.render_symbol(a,0)
+              c=crop(im.convert('RGBA'))
+              # Normalize each candidate to reference dimensions only for structural RMSE comparison.
+              n=c.resize(refc.size,Image.Resampling.LANCZOS)
+              # ignore fully transparent pixels by compositing both on black and white, average errors
+              errs=[]
+              for bg in [(0,0,0,255),(255,255,255,255)]:
+                  rb=Image.new('RGBA',refc.size,bg); rb.alpha_composite(refc)
+                  nb=Image.new('RGBA',refc.size,bg); nb.alpha_composite(n)
+                  st=ImageStat.Stat(ImageChops.difference(rb.convert('RGB'),nb.convert('RGB')))
+                  errs.append(sum(v*v for v in st.rms)**0.5)
+              print(label,'render',im.size,'offset',ox,oy,'crop',c.size,'rmse',sum(errs)/len(errs))
           PY
