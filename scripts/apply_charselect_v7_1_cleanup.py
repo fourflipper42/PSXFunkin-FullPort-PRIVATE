@@ -207,7 +207,7 @@ static void Menu_CSDrawV71Locks(u8 state)
     for m in required:
         if m not in low: raise SystemExit(f'v7.1 runtime missing {m}')
     if 'menu_csdrawv7gridpages();' in low: raise SystemExit('baked v7 grid still active')
-    if 'csanim.rle;1' in low: raise SystemExit('old low-resolution intro still active')
+    if 'menu_cs_frames = io_read("\\\\menu\\\\csintro71.rle;1");' not in low: raise SystemExit('native v7.1 intro bank is not the active Character Select intro')
     if 'charsel.xa;1' not in low: raise SystemExit('working Character Select XA path disappeared')
     print('Applied Character Select v7.1 focused cleanup runtime')
 
