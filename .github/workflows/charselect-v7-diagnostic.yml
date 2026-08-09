@@ -24,41 +24,47 @@ jobs:
           gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets \
             --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip'
           unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
-      - name: Inspect Character Select Animate hierarchy
+      - name: Inspect renderer and exact Character Select sources
         run: |
+          gzip -dc ci/charselect/build_v084_charselect_full.py.gz > /tmp/csbuilder.py
+          echo '=== BUILDER FUNCTIONS ==='
+          grep -n '^def ' /tmp/csbuilder.py || true
+          echo '=== RENDER/TRAVERSAL CODE ==='
+          grep -n -E 'render|collect|leaf|element|paste_anim|build_character|timeline|symbols' /tmp/csbuilder.py | head -120 || true
           python3 - <<'PY'
           from pathlib import Path
-          import json
+          import json, re
+          from PIL import Image
 
           root=Path('official-v084/images/charSelect')
-          print('ROOT', root, root.exists())
-          targets=['bfChill','gfChill','lockedChill','crowd','charSelectStage','charSelectSpeakers','barThing']
-          for target in targets:
-              print('\n===',target,'===')
-              matches=[p for p in root.rglob('*') if target.lower() in str(p.relative_to(root)).lower()]
-              for p in matches[:80]:
-                  if p.is_file():
-                      print('FILE',p.relative_to(root),p.stat().st_size)
-              # inspect Animate JSON files nearest target
-              dirs=sorted({p.parent for p in matches if p.is_file() and p.suffix.lower()=='.json'},key=lambda p:len(str(p)))
-              for d in dirs[:3]:
-                  print('DIR',d.relative_to(root))
-                  for jp in sorted(d.glob('*.json')):
-                      try: data=json.loads(jp.read_text())
-                      except Exception as e:
-                          print('JSONERR',jp.name,e); continue
-                      print('JSON',jp.name,'type',type(data).__name__,'keys',list(data)[:20] if isinstance(data,dict) else 'len='+str(len(data)))
-                      if isinstance(data,dict):
-                          for k in ('AN','SD','MD','animation','symbols','symbolInstances','layers','frames','meta','ATLAS','SPRITES'):
-                              if k in data:
-                                  v=data[k]
-                                  print(' KEY',k,'type',type(v).__name__,'len',len(v) if hasattr(v,'__len__') else '-')
-                                  s=repr(v)
-                                  print('  SAMPLE',s[:3000])
-                      print()
+          for rel in ['bfIcon.png','bfIcon.xml','boyfriendNametag.png','lockedNametag.png','charSelector.png','locks.png','locks.xml','placement.png','charSelectTemp.png']:
+              p=root/rel
+              print('\n===',rel,'===')
+              print('exists',p.exists(),'bytes',p.stat().st_size if p.exists() else None)
+              if p.suffix.lower()=='.png' and p.exists():
+                  im=Image.open(p)
+                  print('size',im.size,'mode',im.mode)
+              elif p.exists():
+                  text=p.read_text(encoding='utf-8-sig')
+                  print(text[:8000])
 
-          # Also print all immediate charSelect directory entries to expose real asset names.
-          print('\n=== TOP LEVEL ===')
-          for p in sorted(root.iterdir()):
-              print(('DIR ' if p.is_dir() else 'FILE'),p.name, p.stat().st_size if p.is_file() else '')
+          for target in ['lock','bfChill','gfChill']:
+              p=root/target/'Animation.json'
+              data=json.loads(p.read_text(encoding='utf-8-sig'))
+              print('\n=== ANIMATE SUMMARY',target,'===')
+              print('AN',data.get('AN',{}).get('SN'),data.get('AN',{}).get('STI'))
+              symbols=data.get('SD',{}).get('S',[])
+              print('symbols',len(symbols))
+              for s in symbols[:20]:
+                  print('symbol',s.get('SN'),'layers',[l.get('LN') for l in s.get('TL',{}).get('L',[])])
+
+          # Print exact source around the builder's hierarchy traversal functions.
+          text=Path('/tmp/csbuilder.py').read_text()
+          lines=text.splitlines()
+          for needle in ['def collect_symbol_leaves','def render_bta_frame','def paste_anim','def build_character_overlay','def load_optional_anim']:
+              for i,line in enumerate(lines):
+                  if line.startswith(needle):
+                      print('\n===',needle,'line',i+1,'===')
+                      print('\n'.join(lines[i:min(len(lines),i+180)]))
+                      break
           PY
