@@ -277,5 +277,12 @@ jobs:
             --prerelease \
             --title 'PSXFunkin Character Select Source v7 test' \
             --notes 'DuckStation test checkpoint for the structural Character Select v7 renderer. Working Character Select audio and the confirmed font-safe VRAM fix are frozen; visuals are rebuilt from the official v0.8.4 scene hierarchy and coordinate system. This is not a final release.' \
-            build/release/* \
-            build/release/v7-validation/*
+            build/release/PSXFunkin_v084_Character_Select_Source_v7.bin \
+            build/release/PSXFunkin_v084_Character_Select_Source_v7.cue \
+            build/release/funkin.ps-exe \
+            build/release/menu_visual_sources.json \
+            build/release/erect_audio.json \
+            build/release/v084_charts.json \
+            build/release/CHARSELECT_SOURCE_V7.txt \
+            build/release/SHA256SUMS.txt \
+            build/release/v7-validation/*.png
