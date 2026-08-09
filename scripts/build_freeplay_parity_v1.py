@@ -25,6 +25,10 @@ ANIM_VRAM = (448, 0)
 ANIM_CLUT = (64, 481)
 CAPSULE_SIZE = (104, 24)
 SELECTOR_SIZE = (16, 30)
+DIGIT_SIZE = (9, 14)
+DIGIT_Y = 208
+BPM_SIZE = (25, 14)
+BPM_POS = (96, DIGIT_Y)
 
 META_SIZE = (256, 256)
 META_VRAM = (512, 0)
@@ -98,6 +102,19 @@ def first_frame(png: Path, xml: Path) -> Image.Image:
     if node is None:
         raise RuntimeError(f"no SubTexture in {xml}")
     return atlas_frames(png, xml, node.attrib.get("name", ""))[0]
+
+
+def named_frame(png: Path, xml: Path, name: str) -> Image.Image:
+    source = Image.open(png).convert("RGBA")
+    for node in ET.parse(xml).getroot().findall("SubTexture"):
+        if node.attrib.get("name") != name:
+            continue
+        x = int(float(node.attrib["x"]))
+        y = int(float(node.attrib["y"]))
+        w = int(float(node.attrib["width"]))
+        h = int(float(node.attrib["height"]))
+        return source.crop((x, y, x + w, y + h))
+    raise RuntimeError(f"frame {name!r} missing from {xml}")
 
 
 def palette_for(images: list[Image.Image], color_count: int) -> list[tuple[int, int, int]]:
@@ -228,6 +245,16 @@ def main() -> None:
         y = (index // 3) * SELECTOR_SIZE[1]
         anim.alpha_composite(base.fit(frame, SELECTOR_SIZE), (x, y))
 
+    digit_png = freeplay / "freeplayCapsule/smallnumbers.png"
+    digit_xml = freeplay / "freeplayCapsule/smallnumbers.xml"
+    bpm_png = freeplay / "freeplayCapsule/bpmtext.png"
+    used.update((digit_png, digit_xml, bpm_png))
+    digit_names = ("ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE")
+    for digit, name in enumerate(digit_names):
+        frame = named_frame(digit_png, digit_xml, f"{name}0000")
+        anim.alpha_composite(base.fit(frame, DIGIT_SIZE), (digit * DIGIT_SIZE[0], DIGIT_Y))
+    anim.alpha_composite(base.fit(Image.open(bpm_png).convert("RGBA"), BPM_SIZE), BPM_POS)
+
     metadata = Image.new("RGBA", META_SIZE, (0, 0, 0, 0))
     metadata_entries: list[dict[str, object]] = []
 
@@ -271,6 +298,8 @@ def main() -> None:
             "selectors": 15,
             "capsule_cell": [*CAPSULE_SIZE],
             "selector_cell": [*SELECTOR_SIZE],
+            "digit_cell": [0, DIGIT_Y, *DIGIT_SIZE],
+            "bpm_rect": [*BPM_POS, *BPM_SIZE],
         },
         "metadata": {
             "file": meta_path.name,
