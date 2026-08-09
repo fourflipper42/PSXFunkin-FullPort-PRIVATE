@@ -66,6 +66,10 @@ def mix_song(ffmpeg: Path, song_dir: Path, voices: list[str], target: Path) -> N
 
 
 core["mix_song"] = mix_song
+# runpy.run_path() returns a copy of the executed globals mapping. The function
+# object keeps the original mapping in __globals__, so bind the resolver there
+# as well or main() will continue calling the unwrapped core mix_song().
+core["main"].__globals__["mix_song"] = mix_song
 
 
 def workflow_escape(text: str) -> str:
