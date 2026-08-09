@@ -469,6 +469,20 @@ def main() -> None:
         "Freeplay page",
     )
 
+    # Some earlier menu generators preserve indentation on otherwise blank
+    # lines. Clean only the newly owned Freeplay region so diff --check is
+    # deterministic without touching the frozen Character Select case.
+    freeplay_start = text.find("typedef struct\n{\n\tStageId stage;")
+    new_cs_start = text.find("\t\tcase MenuPage_CharacterSelect:")
+    new_cs_end = text.find("\t\tcase MenuPage_Mods:", new_cs_start)
+    if freeplay_start < 0 or new_cs_start < 0:
+        raise SystemExit("could not isolate generated Freeplay region")
+    freeplay_region = text[freeplay_start:new_cs_start]
+    freeplay_region = "".join(
+        "\n" if line.endswith("\n") and not line[:-1].strip() else line
+        for line in freeplay_region.splitlines(keepends=True)
+    )
+    text = text[:freeplay_start] + freeplay_region + text[new_cs_start:]
     new_cs_start = text.find("\t\tcase MenuPage_CharacterSelect:")
     new_cs_end = text.find("\t\tcase MenuPage_Mods:", new_cs_start)
     if text[new_cs_start:new_cs_end] != frozen_character_select:
