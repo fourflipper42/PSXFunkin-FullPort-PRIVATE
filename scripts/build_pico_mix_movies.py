@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Convert the official Stress Pico Mix opening and ending cutscenes to PS1 STR."""
-# CI trigger for the Pico asset exception-annotation probe.
+# CI trigger after fixing the official Spooky Dark flat Sparrow asset staging.
 from __future__ import annotations
 
 import argparse
