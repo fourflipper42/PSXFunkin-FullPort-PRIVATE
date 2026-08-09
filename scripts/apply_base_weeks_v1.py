@@ -35,6 +35,41 @@ def copy_adapted(reference: Path, destination: Path) -> None:
     text = text.replace("if(stage.prefs.lowquality ==false)", "if (1)")
     text = text.replace("if (stage.prefs.lowquality ==false)", "if (1)")
     text = text.replace("character->pad_held", "pad_state.held")
+    if destination.name == "xmasbf.c":
+        # The conversion reference uses four standalone PlayerAnim_*Miss enum
+        # values. cuckydev t0.12 stores the same miss poses in the standard
+        # CharAnim_*Alt slots, exactly like its native Boyfriend module. Move
+        # the authentic Christmas miss scripts into those slots and remove the
+        # four reference-only array entries so PlayerAnim_Peace/death indices
+        # retain the engine ABI expected by stage.c.
+        text = text.replace(
+            "\t{0, (const u8[]){ASCR_CHGANI, CharAnim_Idle}},       //CharAnim_LeftAlt\n",
+            "\t{1, (const u8[]){ 5, 13, 13, 14, ASCR_BACK, 1}},     //CharAnim_LeftAlt / miss\n",
+        )
+        text = text.replace(
+            "\t{0, (const u8[]){ASCR_CHGANI, CharAnim_Idle}},       //CharAnim_DownAlt\n",
+            "\t{1, (const u8[]){ 7, 15, 15, 16, ASCR_BACK, 1}},     //CharAnim_DownAlt / miss\n",
+        )
+        text = text.replace(
+            "\t{0, (const u8[]){ASCR_CHGANI, CharAnim_Idle}},       //CharAnim_UpAlt\n",
+            "\t{1, (const u8[]){ 9, 17, 17, 18, ASCR_BACK, 1}},     //CharAnim_UpAlt / miss\n",
+        )
+        text = text.replace(
+            "\t{0, (const u8[]){ASCR_CHGANI, CharAnim_Idle}},       //CharAnim_RightAlt\n",
+            "\t{1, (const u8[]){11, 19, 19, 20, ASCR_BACK, 1}},     //CharAnim_RightAlt / miss\n",
+        )
+        text = re.sub(
+            r"\n\s*\{1, \(const u8\[\]\)\{ 5, 13, 13, 14, ASCR_BACK, 1\}\},\s*//PlayerAnim_LeftMiss\n"
+            r"\s*\{1, \(const u8\[\]\)\{ 7, 15, 15, 16, ASCR_BACK, 1\}\},\s*//PlayerAnim_DownMiss\n"
+            r"\s*\{1, \(const u8\[\]\)\{ 9, 17, 17, 18, ASCR_BACK, 1\}\},\s*//PlayerAnim_UpMiss\n"
+            r"\s*\{1, \(const u8\[\]\)\{11, 19, 19, 20, ASCR_BACK, 1\}\},\s*//PlayerAnim_RightMiss\n",
+            "\n",
+            text,
+        )
+        text = text.replace("PlayerAnim_LeftMiss", "CharAnim_LeftAlt")
+        text = text.replace("PlayerAnim_DownMiss", "CharAnim_DownAlt")
+        text = text.replace("PlayerAnim_UpMiss", "CharAnim_UpAlt")
+        text = text.replace("PlayerAnim_RightMiss", "CharAnim_RightAlt")
     text = text.replace(
         "\t//Perform idle dance\n"
         "\tif ((pad_state.held & (INPUT_LEFT | INPUT_DOWN | INPUT_UP | INPUT_RIGHT)) == 0)\n"
