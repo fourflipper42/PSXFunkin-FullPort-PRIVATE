@@ -1,0 +1,49 @@
+name: One-shot Pico validation count patch
+
+on:
+  push:
+    branches: [ full-port-completion ]
+    paths:
+      - '.github/workflows/patch-pico-validation-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: full-port-completion
+      - name: Patch stale Pico archive counts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/charselect-v7-1-build.yml')
+          text = path.read_text()
+          old = """          expected={
+              'picodark.arc':(30,8),'picoxmas.arc':(26,7),'picohold.arc':(26,7),
+              'picopix.arc':(30,8),'nenedark.arc':(16,4),'nenexmas.arc':(16,4),
+              'nenepix.arc':(10,3),'spookydk.arc':(15,4),'tankbldy.arc':(16,4),
+              'otis.arc':(12,3),
+          }
+"""
+          new = """          expected={
+              'picodark.arc':(30,8),'picoxmas.arc':(30,8),'picohold.arc':(28,7),
+              'picopix.arc':(30,8),'nenedark.arc':(16,4),'nenexmas.arc':(16,4),
+              'nenepix.arc':(10,3),'spookydk.arc':(15,4),'tankbldy.arc':(22,6),
+              'otis.arc':(12,3),
+          }
+"""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale Pico count block, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          git diff -- .github/workflows/charselect-v7-1-build.yml
+          git config user.name 'fourflipper42-ci'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/charselect-v7-1-build.yml
+          git commit -m 'Fix Pico archive validation counts'
+          git push origin HEAD:full-port-completion
