@@ -26,65 +26,72 @@ jobs:
           gh release download assets-v084 --repo "${GITHUB_REPOSITORY}" --dir official-assets \
             --pattern 'Shared.Shaders.Scripts.Music.Images.and.Data.zip'
           unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
-      - name: Inspect renderer and exact Character Select sources
+      - name: Compare Animate hierarchy traversal orders
         run: |
           gzip -dc ci/charselect/build_v084_charselect_full.py.gz > /tmp/csbuilder.py
-          echo '=== COLLECT/RENDER SOURCE ==='
-          sed -n '250,330p' /tmp/csbuilder.py
-          echo '=== LIVE SCENE SOURCE ==='
-          sed -n '388,452p' /tmp/csbuilder.py
           python3 - <<'PY'
           from pathlib import Path
-          import json, importlib.util, sys, shutil, math
+          import importlib.util, sys
           from PIL import Image, ImageChops, ImageStat
 
+          sys.path.insert(0, str(Path('scripts').resolve()))
           root=Path('official-v084/images/charSelect')
-          for rel in ['bfChill.png','bfIcon.png','bfIcon.xml','boyfriendNametag.png','lockedNametag.png','charSelector.png','locks.png','locks.xml','placement.png','charSelectTemp.png']:
-              p=root/rel
-              print('\n===',rel,'===')
-              print('exists',p.exists(),'bytes',p.stat().st_size if p.exists() else None)
-              if p.suffix.lower()=='.png' and p.exists():
-                  im=Image.open(p)
-                  print('size',im.size,'mode',im.mode,'bbox',im.convert('RGBA').getbbox())
-              elif p.exists():
-                  print(p.read_text(encoding='utf-8-sig')[:12000])
+          src=Path('/tmp/csbuilder.py').read_text()
+          layer_rev='for layer in reversed(symbol.get("TL", {}).get("L", [])):'
+          layer_fwd='for layer in symbol.get("TL", {}).get("L", []):'
+          elem_rev='for element in reversed(fr.get("E", [])):'
+          elem_fwd='for element in fr.get("E", []):'
+          assert layer_rev in src and elem_rev in src
 
-          for target in ['lock','bfChill','gfChill']:
-              p=root/target/'Animation.json'
-              data=json.loads(p.read_text(encoding='utf-8-sig'))
-              print('\n=== ANIMATE SUMMARY',target,'===')
-              symbols=data.get('SD',{}).get('S',[])
-              for s in symbols[:40]:
-                  print('symbol',s.get('SN'),'layers',[l.get('LN') for l in s.get('TL',{}).get('L',[])])
-
-          # Compare current reversed-element renderer with natural element order against bfChill.png.
-          def load(name,path):
-              spec=importlib.util.spec_from_file_location(name,path)
+          def load(name,text):
+              p=Path('/tmp')/(name+'.py'); p.write_text(text)
+              spec=importlib.util.spec_from_file_location(name,p)
               m=importlib.util.module_from_spec(spec); sys.modules[name]=m; spec.loader.exec_module(m); return m
-          current=load('cs_current','/tmp/csbuilder.py')
-          forward_path='/tmp/csbuilder_forward.py'
-          txt=Path('/tmp/csbuilder.py').read_text()
-          old='for element in reversed(fr.get("E", [])):'
-          assert old in txt
-          Path(forward_path).write_text(txt.replace(old,'for element in fr.get("E", []):'))
-          forward=load('cs_forward',forward_path)
+
+          variants={}
+          for lr in (True,False):
+              for er in (True,False):
+                  text=src
+                  if not lr: text=text.replace(layer_rev,layer_fwd)
+                  if not er: text=text.replace(elem_rev,elem_fwd)
+                  name=f"cs_l{'r' if lr else 'f'}_e{'r' if er else 'f'}"
+                  variants[(lr,er)]=load(name,text)
+
           ref=Image.open(root/'bfChill.png').convert('RGBA')
-          def crop(im):
-              b=im.getbbox(); return im.crop(b) if b else im
-          refc=crop(ref)
-          print('\nBF reference crop',refc.size)
-          for label,m in [('reversed',current),('forward',forward)]:
+          def crop_alpha(im):
+              a=im.getchannel('A')
+              b=a.getbbox()
+              return im.crop(b) if b else im
+          refc=crop_alpha(ref)
+          print('BF_REFERENCE',ref.size,refc.size)
+
+          results=[]
+          for (lr,er),m in variants.items():
               a=m.load_animate(root/'bfChill')
-              im,ox,oy=m.render_symbol(a,0)
-              c=crop(im.convert('RGBA'))
-              # Normalize each candidate to reference dimensions only for structural RMSE comparison.
-              n=c.resize(refc.size,Image.Resampling.LANCZOS)
-              # ignore fully transparent pixels by compositing both on black and white, average errors
-              errs=[]
-              for bg in [(0,0,0,255),(255,255,255,255)]:
-                  rb=Image.new('RGBA',refc.size,bg); rb.alpha_composite(refc)
-                  nb=Image.new('RGBA',refc.size,bg); nb.alpha_composite(n)
-                  st=ImageStat.Stat(ImageChops.difference(rb.convert('RGB'),nb.convert('RGB')))
-                  errs.append(sum(v*v for v in st.rms)**0.5)
-              print(label,'render',im.size,'offset',ox,oy,'crop',c.size,'rmse',sum(errs)/len(errs))
+              # Test several frames. bfChill.png is only a static guide, so frame 0 is the primary comparison.
+              frame_errors=[]
+              for fr in (0,1,2,3):
+                  im,ox,oy=m.render_symbol(a,fr)
+                  c=crop_alpha(im.convert('RGBA'))
+                  n=c.resize(refc.size,Image.Resampling.LANCZOS)
+                  errs=[]
+                  for bg in [(0,0,0,255),(255,255,255,255)]:
+                      rb=Image.new('RGBA',refc.size,bg); rb.alpha_composite(refc)
+                      nb=Image.new('RGBA',refc.size,bg); nb.alpha_composite(n)
+                      st=ImageStat.Stat(ImageChops.difference(rb.convert('RGB'),nb.convert('RGB')))
+                      errs.append(sum(v*v for v in st.rms)**0.5)
+                  frame_errors.append(sum(errs)/len(errs))
+                  if fr==0:
+                      c.save(f'/tmp/traversal_l{"r" if lr else "f"}_e{"r" if er else "f"}.png')
+                      print('VARIANT',lr,er,'render',im.size,'offset',ox,oy,'crop',c.size,'frame0_rmse',frame_errors[-1])
+              results.append((frame_errors[0],lr,er,frame_errors))
+          print('ORDERED_RESULTS')
+          for r in sorted(results): print(r)
+
+          # Basic source metadata needed by v7.
+          print('BF_ICON_XML')
+          print((root/'bfIcon.xml').read_text(encoding='utf-8-sig'))
+          print('NAMETAG',Image.open(root/'boyfriendNametag.png').size)
+          print('SELECTOR',Image.open(root/'charSelector.png').size)
+          print('PLACEMENT',Image.open(root/'placement.png').size)
           PY
