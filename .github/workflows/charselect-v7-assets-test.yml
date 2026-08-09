@@ -31,8 +31,9 @@ jobs:
       - name: Expand Character Select source renderer
         run: |
           gzip -dc ci/charselect/build_v084_charselect_full.py.gz > scripts/build_v084_charselect_full.py
+          gzip -dc ci/charselect/apply_v084_charselect_full.py.gz > scripts/apply_v084_charselect_full.py
           python3 scripts/fix_charselect_intro_extraction.py scripts/build_v084_charselect_full.py
-          python3 scripts/fix_charselect_parity_v3.py scripts/build_v084_charselect_full.py scripts/apply_v084_charselect_full.py || true
+          python3 scripts/fix_charselect_parity_v3.py scripts/build_v084_charselect_full.py scripts/apply_v084_charselect_full.py
           python3 -m py_compile \
             scripts/build_v084_charselect_full.py \
             scripts/build_charselect_quality_v4.py \
