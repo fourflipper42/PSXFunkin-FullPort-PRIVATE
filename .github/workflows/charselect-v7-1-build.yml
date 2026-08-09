@@ -1,4 +1,4 @@
-name: PSXFunkin Full Port Completion - Pause Menu v1
+name: PSXFunkin Full Port Completion - Base Weeks 2 5 6 v1
 
 on:
   push:
@@ -11,6 +11,8 @@ on:
       - 'scripts/apply_freeplay_parity_v1.py'
       - 'scripts/build_pause_audio.py'
       - 'scripts/apply_pause_menu_v1.py'
+      - 'scripts/build_base_weeks_v1.py'
+      - 'scripts/apply_base_weeks_v1.py'
   workflow_dispatch:
 
 permissions:
@@ -50,7 +52,9 @@ jobs:
             scripts/build_freeplay_parity_v1.py \
             scripts/apply_freeplay_parity_v1.py \
             scripts/build_pause_audio.py \
-            scripts/apply_pause_menu_v1.py
+            scripts/apply_pause_menu_v1.py \
+            scripts/build_base_weeks_v1.py \
+            scripts/apply_base_weeks_v1.py
 
       - name: Install build dependencies
         run: |
@@ -109,7 +113,30 @@ jobs:
               out=Path('official-v084/assets/shared/music/breakfast.ogg')
               out.parent.mkdir(parents=True,exist_ok=True)
               with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
+              for suffix in (
+                  'assets/week5/images/christmas/evilBG.png',
+                  'assets/week5/images/christmas/evilTree.png',
+                  'assets/week5/images/christmas/evilSnow.png',
+              ):
+                  matches=[n for n in z.namelist() if n.lower().endswith('/'+suffix.lower())]
+                  if not matches: raise SystemExit(f'official Week 5 source missing: {suffix}')
+                  name=sorted(matches,key=lambda n:(len(n),n))[0]
+                  out=Path('official-v084')/suffix
+                  out.parent.mkdir(parents=True,exist_ok=True)
+                  with z.open(name) as src, out.open('wb') as dst: shutil.copyfileobj(src,dst)
           PY
+
+      - name: Fetch pinned PSXFunkin base-week conversion reference
+        run: |
+          curl -fL --retry 3 --retry-delay 3 \
+            https://codeload.github.com/Nintendo-Bro385/PSXFunkin-Flop-Engine/tar.gz/b3f4c5ff0f7656af8ed17498de6b6d7b7a8d967e \
+            -o /tmp/psx-week-reference.tar.gz
+          echo '5853b706dc2b54677f9f659f206d0ce2eb7ca2c4aa88b66a492d50134a7bfbe0  /tmp/psx-week-reference.tar.gz' | sha256sum -c -
+          mkdir -p psx-week-reference
+          tar -xzf /tmp/psx-week-reference.tar.gz -C psx-week-reference --strip-components=1
+          test -s psx-week-reference/iso/week5/back0.png
+          test -s psx-week-reference/iso/week6/back3.png
+          test -s psx-week-reference/src/character/spirit.c
 
       - name: Build PS1 XA encoder
         run: |
@@ -275,6 +302,42 @@ jobs:
           print('PAUSE_MENU_V1_VALIDATION_OK')
           PY
 
+      - name: Build and apply authentic base Weeks 2 5 and 6 v1
+        run: |
+          mkdir -p build/base-weeks-v1-validation
+          python3 scripts/build_base_weeks_v1.py \
+            --reference-root psx-week-reference \
+            --official-root official-v084 \
+            --upstream upstream \
+            --report build/base_weeks_v1.json \
+            --validation-dir build/base-weeks-v1-validation
+          python3 scripts/apply_base_weeks_v1.py upstream --reference-root psx-week-reference
+          git -C upstream diff --check
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          report=json.loads(Path('build/base_weeks_v1.json').read_text())
+          assert report['policy']=='authentic-funkin-art-only-no-generated-art'
+          assert report['reference']['commit']=='b3f4c5ff0f7656af8ed17498de6b6d7b7a8d967e'
+          assert report['converted_tim_count']==45
+          assert len(report['christmas_parents']['mapping'])==20
+          assert report['christmas_parents']['archive_bytes'] < 200000
+          for path in (
+              'upstream/iso/monster/main.arc', 'upstream/iso/week5/back.arc',
+              'upstream/iso/week5/evil.tim', 'upstream/iso/xmasp/main.arc',
+              'upstream/iso/week6/back.arc', 'upstream/iso/week6/back3.tim',
+              'upstream/iso/gf/weeb.arc', 'upstream/iso/spirit/main.arc',
+          ):
+              file=Path(path); assert file.is_file() and file.stat().st_size > 0, path
+          stagedef=Path('upstream/src/stagedef_disc1.h').read_text().lower()
+          for marker in ('char_monster_new','back_week5_new','back_week5evil_new','char_xmasp_new','back_week6_new','char_gfweeb_new','char_senpaim_new','char_spirit_new'):
+              assert marker in stagedef, marker
+          xml=Path('upstream/funkin.xml').read_text()
+          long_names=[name for name in re.findall(r'<file name = "([^"]+)"',xml) if len(name)>12]
+          assert not long_names, long_names
+          print('BASE_WEEKS_2_5_6_V1_VALIDATION_OK')
+          PY
+
       - name: Acquire PsyQ compatibility libraries
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
@@ -314,57 +377,60 @@ jobs:
           echo "Raw disc sectors: $sectors"
           test "$sectors" -le 360000
 
-      - name: Package pause menu v1 checkpoint
+      - name: Package base Weeks 2 5 6 v1 checkpoint
         run: |
-          mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation
-          cp upstream/funkin.bin build/release/PSXFunkin_v084_Pause_Menu_v1.bin
-          cat > build/release/PSXFunkin_v084_Pause_Menu_v1.cue <<'EOF'
-          FILE "PSXFunkin_v084_Pause_Menu_v1.bin" BINARY
+          mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation build/release/base-weeks-v1-validation
+          cp upstream/funkin.bin build/release/PSXFunkin_v084_Base_Weeks_v1.bin
+          cat > build/release/PSXFunkin_v084_Base_Weeks_v1.cue <<'EOF'
+          FILE "PSXFunkin_v084_Base_Weeks_v1.bin" BINARY
             TRACK 01 MODE2/2352
             INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/
-          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/pause_menu_v1.json build/release/
+          cp build/menu_visual_sources.json build/erect_audio.json build/v084_charts.json build/freeplay_parity_v1.json build/pause_menu_v1.json build/base_weeks_v1.json build/release/
           cp build/charselect_v7_1_validation/*.png build/release/v7-1-validation/
           cp build/freeplay-v1-validation/*.png build/release/freeplay-v1-validation/
-          cat > build/release/PAUSE_MENU_V1.txt <<'EOF'
-          Pause menu v1 checkpoint
+          cp build/base-weeks-v1-validation/*.png build/release/base-weeks-v1-validation/
+          cat > build/release/BASE_WEEKS_V1.txt <<'EOF'
+          Base Weeks 2, 5, and 6 v1 checkpoint
           - Character Select v7.1 visual hierarchy and audio are frozen unchanged.
           - Freeplay parity v1 remains integrated unchanged.
-          - Start opens a base-Funkin-style in-song pause substate over a frozen gameplay frame.
-          - Resume restores the exact song XA position, channel, volume and loop state.
-          - Restart Song, Change Difficulty, Enable Practice Mode and Exit to Menu are implemented.
-          - Official v0.8.4 Breakfast music starts at a randomized offset and loops.
-          - Song, artist, difficulty, death count and practice metadata are shown.
+          - The real pause menu v1 remains integrated and MIPS-compiled.
+          - Week 2 gains Monster and visual lightning using the existing authentic mansion pages.
+          - Week 5 gains the layered mall, Santa, Christmas BF/GF/Parents, Christmas Monster, and official Winter Horrorland art.
+          - Week 6 gains school/evil-school stages, background freaks, pixel GF, angry Senpai, and Spirit with a semi-transparent ghost.
+          - Christmas Parents retains all 20 authentic frames in a compact 2 MiB-RAM-safe archive.
           EOF
           (cd build/release && find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
-          sha256sum build/release/PSXFunkin_v084_Pause_Menu_v1.bin
-          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Pause_Menu_v1.bin
+          sha256sum build/release/PSXFunkin_v084_Base_Weeks_v1.bin
+          stat -c '%n %s bytes' build/release/PSXFunkin_v084_Base_Weeks_v1.bin
 
-      - name: Publish pause menu v1 prerelease
+      - name: Publish base Weeks 2 5 6 v1 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          TAG="pause-menu-v1-${SHORT}"
+          TAG="base-weeks-v1-${SHORT}"
           gh release create "$TAG" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title 'PSXFunkin pause menu v1 test' \
-            --notes 'DuckStation checkpoint for the first real base-Funkin pause-menu pass. It preserves Character Select v7.1 and Freeplay parity v1, adds resumable XA context, official Breakfast music, difficulty/restart/practice/menu actions, and pause metadata. This is not the final release.' \
-            build/release/PSXFunkin_v084_Pause_Menu_v1.bin \
-            build/release/PSXFunkin_v084_Pause_Menu_v1.cue \
+            --title 'PSXFunkin base Weeks 2 5 6 v1 test' \
+            --notes 'DuckStation checkpoint for the authentic Week 2, Week 5, and Week 6 restoration. It preserves Character Select v7.1, Freeplay parity v1, and the real pause menu; adds missing stages and character variants; and remains a work-in-progress rather than the final release.' \
+            build/release/PSXFunkin_v084_Base_Weeks_v1.bin \
+            build/release/PSXFunkin_v084_Base_Weeks_v1.cue \
             build/release/funkin.ps-exe \
             build/release/menu_visual_sources.json \
             build/release/erect_audio.json \
             build/release/v084_charts.json \
             build/release/freeplay_parity_v1.json \
             build/release/pause_menu_v1.json \
-            build/release/PAUSE_MENU_V1.txt \
+            build/release/base_weeks_v1.json \
+            build/release/BASE_WEEKS_V1.txt \
             build/release/SHA256SUMS.txt \
             build/release/v7-1-validation/*.png \
-            build/release/freeplay-v1-validation/*.png
+            build/release/freeplay-v1-validation/*.png \
+            build/release/base-weeks-v1-validation/*.png
 
       - name: Persist CI outcome for checkpoint monitoring
         if: always()
@@ -373,22 +439,22 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           SHORT="${GITHUB_SHA:0:12}"
-          STATUS_PATH="ci-status/pause-menu-v1-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
+          STATUS_PATH="ci-status/base-weeks-v1-${SHORT}-attempt-${GITHUB_RUN_ATTEMPT}.json"
           export SHORT STATUS_PATH
           python3 - <<'PY'
           import json, os
           from pathlib import Path
           payload={
-              'workflow':'Pause Menu v1',
+              'workflow':'Base Weeks 2 5 6 v1',
               'status':os.environ['JOB_STATUS'],
               'sha':os.environ['GITHUB_SHA'],
               'run_id':os.environ['GITHUB_RUN_ID'],
               'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],
           }
-          Path('/tmp/pause-ci-status.json').write_text(json.dumps(payload,indent=2)+'\n')
+          Path('/tmp/base-weeks-ci-status.json').write_text(json.dumps(payload,indent=2)+'\n')
           PY
-          CONTENT="$(base64 -w0 /tmp/pause-ci-status.json)"
+          CONTENT="$(base64 -w0 /tmp/base-weeks-ci-status.json)"
           gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${STATUS_PATH}" \
-            -f message="Record pause menu v1 CI ${JOB_STATUS}" \
+            -f message="Record base Weeks 2 5 6 v1 CI ${JOB_STATUS}" \
             -f content="$CONTENT" \
             -f branch="full-port-completion"
