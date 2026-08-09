@@ -32,6 +32,26 @@ def interleave(out:Path, paths:list[Path], silence:list[bytes]):
     out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
     return count*8
 
+def make_darnell_intro_mix(ffmpeg:Path,root:Path,out:Path):
+    sources=[
+      (root/'weekend1/music/darnellCanCutscene/darnellCanCutscene.ogg',0),
+      (root/'weekend1/sounds/Darnell_Lighter.ogg',5000),
+      (root/'weekend1/sounds/Gun_Prep.ogg',6000),
+      (root/'weekend1/sounds/Kick_Can_UP.ogg',6400),
+      (root/'weekend1/sounds/Kick_Can_FORWARD.ogg',6900),
+      (root/'weekend1/sounds/shot1.ogg',7100),
+      (root/'weekend1/sounds/cutscene/darnell_laugh.ogg',7900),
+      (root/'weekend1/sounds/cutscene/nene_laugh.ogg',8200),
+    ]
+    cmd=[ffmpeg,'-y','-loglevel','error']
+    for path,_ in sources: cmd += ['-i',path]
+    filters=[]; labels=[]
+    for i,(_,delay) in enumerate(sources):
+        label=f'a{i}'; filters.append(f'[{i}:a]adelay={delay}|{delay}[{label}]'); labels.append(f'[{label}]')
+    filters.append(''.join(labels)+f'amix=inputs={len(labels)}:duration=longest:normalize=0[mix]')
+    cmd += ['-filter_complex',';'.join(filters),'-map','[mix]','-ar','18900','-ac','2',out]
+    run(cmd)
+
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--out',type=Path,required=True); ap.add_argument('--psxavenc',type=Path,required=True); ap.add_argument('--ffmpeg',type=Path,default=Path('ffmpeg')); ap.add_argument('--report',type=Path,required=True); a=ap.parse_args()
  a.out.mkdir(parents=True,exist_ok=True); rep={}
@@ -48,5 +68,8 @@ def main():
   for song,base in assignments:
    pfull=t/f'{song}-full.xa'; pinst=t/f'{song}-inst.xa'; enc(a.psxavenc,t/f'{song}-full.wav',pfull,base); enc(a.psxavenc,t/f'{song}-inst.wav',pinst,base+1); mapping[base]=pfull; mapping[base+1]=pinst
   name='week8.xa'; total=interleave(a.out/name,mapping,sil); rep[name]={'physical_sectors':total,'bytes':(a.out/name).stat().st_size,'sample_rate':18900,'channels':8}
+  intro_wav=t/'darnell-intro.wav'; make_darnell_intro_mix(a.ffmpeg,a.root,intro_wav)
+  intro_xa=a.out/'darnin.xa'; enc(a.psxavenc,intro_wav,intro_xa,0)
+  rep['darnin.xa']={'bytes':intro_xa.stat().st_size,'sample_rate':18900,'channel':0,'official_sfx_mix':True}
  a.report.parent.mkdir(parents=True,exist_ok=True); a.report.write_text(json.dumps(rep,indent=2)+'\n'); print(json.dumps(rep,indent=2))
 if __name__=='__main__': main()
