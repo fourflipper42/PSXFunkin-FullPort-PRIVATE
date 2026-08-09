@@ -5,7 +5,8 @@ This adapter supplies source-specific behavior without changing the older
 working conversion modules:
 - direct Sparrow sampling for selector effects,
 - Lock.hx-compatible tinting of only Animate leaves descended from a layer
-  named ``color``, while preserving the complete exported lock hierarchy.
+  named ``color``, while preserving the exported registration relative to the
+  official `(230,110)` Lock.hx sprite offset.
 """
 from __future__ import annotations
 
@@ -24,6 +25,10 @@ LOCK_RGB = (
     (0x20, 0xEC, 0xCD), (0x20, 0xC8, 0xD4), (0x20, 0x9B, 0xDD),
     (0x20, 0x9B, 0xDD), (0x23, 0x62, 0xC9), (0x24, 0x3F, 0xB9),
 )
+LOCK_OFFSET_X = 230
+LOCK_OFFSET_Y = 110
+LOCK_LOGICAL_W = 122
+LOCK_LOGICAL_H = 133
 _builder_mod = None
 
 
@@ -96,7 +101,7 @@ def _render_tagged(asset, frame_no: int, rgb: tuple[int, int, int]):
     mod = _builder_mod
     leaves = _collect_tagged(asset, asset.root_symbol, frame_no, asset.stage_matrix, [])
     if not leaves:
-        raise RuntimeError('full official lock hierarchy rendered no leaves')
+        raise RuntimeError('official lock hierarchy rendered no leaves')
     bounds = []
     for name, matrix, _tagged in leaves:
         sp = asset.sprites[name]
@@ -120,55 +125,65 @@ def _render_tagged(asset, frame_no: int, rgb: tuple[int, int, int]):
             continue
         ia, ic = d/det, -c/det
         ib, id_ = -b/det, a/det
-        ox = ia*(min_x-tx) + ic*(min_y-ty)
-        oy = ib*(min_x-tx) + id_*(min_y-ty)
+        rx = ia*(min_x-tx) + ic*(min_y-ty)
+        ry = ib*(min_x-tx) + id_*(min_y-ty)
         warped = crop.transform(
             (width,height), Image.Transform.AFFINE,
-            (ia,ic,ox,ib,id_,oy), resample=Image.Resampling.BICUBIC,
+            (ia,ic,rx,ib,id_,ry), resample=Image.Resampling.BICUBIC,
         )
         canvas.alpha_composite(warped)
     if tagged_count == 0:
-        raise RuntimeError('full lock hierarchy contained no leaves under `color` layer')
+        raise RuntimeError('lock hierarchy contained no leaves under `color` layer')
     return canvas, min_x, min_y, tagged_count
 
 
 def source_layered_lock_frames(root: Path) -> list[Image.Image]:
-    """Recreate Lock.hx on the full exported LOCKED movie hierarchy."""
+    """Recreate Lock.hx tint + registration for each canonical grid cell."""
     if _builder_mod is None:
         raise RuntimeError('v7 builder module was not captured before lock rendering')
     mod = _builder_mod
     asset = mod.load_optional_anim(root, 'lock')
     if asset is None:
         raise RuntimeError('official Animate lock source missing')
-
-    # Lock.hx plays the prefix/label `LOCKED`. Use the builder's label resolver
-    # if the export carries it; otherwise frame zero is the idle start.
     try:
         frame_no = mod.sample_frame(asset, 0, 1, 'LOCKED')
     except Exception:
         frame_no = 0
 
-    rendered = []
-    meta = None
+    raw = []
+    geometry = None
     for rgb in LOCK_RGB:
         image, ox, oy, tagged_count = _render_tagged(asset, frame_no, rgb)
         bbox = image.getchannel('A').getbbox()
         if bbox is None:
-            raise RuntimeError('full official lock hierarchy was transparent')
-        # Keep the exported logical registration rather than trimming each tint
-        # independently; all nine grid slots must share identical geometry.
-        rendered.append(image)
-        meta = (image.size, ox, oy, tagged_count, bbox)
+            raise RuntimeError('official lock hierarchy was transparent')
+        if image.width < 45 or image.height < 55 or image.width > 180 or image.height > 180:
+            raise RuntimeError(f'implausible visible lock bounds: {(image.size, ox, oy, bbox)}')
+        raw.append(image)
+        geometry = (image.size, ox, oy, tagged_count, bbox)
 
-    width, height = rendered[0].size
-    # The shipped Sparrow lock frame is 122x133. Animate bounds can include
-    # extra registration/FX space, but a 67x73 primitive is specifically rejected.
-    if width < 95 or height < 100 or width > 360 or height > 360:
-        raise RuntimeError(f'v7 full lock hierarchy bounds still implausible: {meta}')
-    if any(im.size != rendered[0].size for im in rendered):
-        raise RuntimeError('v7 lock variants changed geometry after tint')
+    # Flixel draws a sprite at x - offset.x plus the Animate registration.
+    # Preserve that difference inside a transparent logical canvas so build_grid
+    # can place every lock at the same exact source grid x/y.
+    reg_x = geometry[1] - LOCK_OFFSET_X
+    reg_y = geometry[2] - LOCK_OFFSET_Y
+    if not (-32 <= reg_x <= 96 and -32 <= reg_y <= 128):
+        raise RuntimeError(f'implausible Lock.hx registration delta {(reg_x, reg_y)} from {geometry}')
+    pad_left = max(0, reg_x)
+    pad_top = max(0, reg_y)
+    canvas_w = max(LOCK_LOGICAL_W, pad_left + raw[0].width)
+    canvas_h = max(LOCK_LOGICAL_H, pad_top + raw[0].height)
+    if canvas_w > 180 or canvas_h > 180:
+        raise RuntimeError(f'v7 registered lock canvas too large {(canvas_w, canvas_h)}')
 
-    print('v7 full lock hierarchy:', meta, 'frame', frame_no, 'root', asset.root_symbol)
+    rendered = []
+    for image in raw:
+        canvas = Image.new('RGBA', (canvas_w, canvas_h), (0,0,0,0))
+        canvas.alpha_composite(image, (pad_left, pad_top))
+        rendered.append(canvas)
+
+    print('v7 registered lock:', geometry, 'frame', frame_no, 'root', asset.root_symbol,
+          'registration_delta', (reg_x,reg_y), 'canvas', (canvas_w,canvas_h))
     return rendered
 
 
