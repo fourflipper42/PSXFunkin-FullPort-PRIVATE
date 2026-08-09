@@ -9,6 +9,7 @@ import math
 import struct
 import subprocess
 import tempfile
+import traceback
 from pathlib import Path
 
 from PIL import Image
@@ -20,6 +21,14 @@ from animateatlas_flatten import AnimateAtlas, render_leaves
 SECTOR = 2336
 STR_MAGIC = b"\x60\x01\x01\x80"
 FPS = 15
+
+
+def workflow_escape(text: str) -> str:
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def phase(message: str) -> None:
+    print(f"::notice title=Pico Mix movie phase::{message}", flush=True)
 
 
 def encoded_frame_count(path: Path) -> int:
@@ -37,6 +46,7 @@ def encoded_frame_count(path: Path) -> int:
 
 
 def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -> Path:
+    phase("ending atlas render started")
     atlas = AnimateAtlas(atlas_path)
     atlas_frames = atlas.timeline_length(atlas.root["TL"])
     frame_count = math.ceil((320 / 24) * FPS)
@@ -67,12 +77,16 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
     process.stdin.close()
     if process.wait() != 0:
         raise RuntimeError("ffmpeg failed while rendering Stress Pico ending")
+    phase("ending atlas render completed")
+
     target = temporary / "stress-pico-ending.mp4"
+    phase("ending audio mux started")
     subprocess.run([
         str(ffmpeg), "-y", "-loglevel", "error", "-i", str(silent), "-i", str(audio),
         "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac",
         "-t", f"{frame_count / FPS:.6f}", str(target),
     ], check=True)
+    phase("ending audio mux completed")
     return target
 
 
@@ -94,22 +108,29 @@ def main() -> None:
         raise RuntimeError(f"official Stress Pico Mix ending audio missing: {args.ending_audio}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.ending_out.parent.mkdir(parents=True, exist_ok=True)
+
+    phase("opening STR encode started")
     subprocess.run([
         str(args.psxavenc), "-q", "-t", "str", "-v", "v2",
         "-f", "37800", "-b", "4", "-c", "2", "-s", "320x240",
         "-r", "15", "-x", "2", str(args.source), str(args.out),
     ], check=True)
     frames = encoded_frame_count(args.out)
+    phase("opening STR encode completed")
+
     with tempfile.TemporaryDirectory() as directory:
         ending_source = build_ending(
             args.ending_atlas, args.ending_audio, args.ffmpeg, Path(directory)
         )
+        phase("ending STR encode started")
         subprocess.run([
             str(args.psxavenc), "-q", "-t", "str", "-v", "v2",
             "-f", "37800", "-b", "4", "-c", "2", "-s", "320x240",
             "-r", str(FPS), "-x", "2", str(ending_source), str(args.ending_out),
         ], check=True)
     ending_frames = encoded_frame_count(args.ending_out)
+    phase("ending STR encode completed")
+
     args.header.parent.mkdir(parents=True, exist_ok=True)
     args.header.write_text(
         "#ifndef _PICO_MIX_MOVIES_GENERATED_H\n"
@@ -135,7 +156,19 @@ def main() -> None:
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
+    phase("report completed")
 
 
 if __name__ == "__main__":
-    main()
+    phase("movie builder started")
+    try:
+        main()
+    except BaseException as exc:
+        detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        print(
+            f"::error title=Pico Mix movie failure::{workflow_escape(detail)}",
+            flush=True,
+        )
+        raise
+    else:
+        phase("movie builder completed")
