@@ -52,7 +52,8 @@ def sample_count(name: str, duration: int) -> int:
 def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
           vram_x: int = 0, vram_y: int = 0,
           clut_x: int = 0, clut_y: int = 0,
-          profile: str = "all") -> dict[str, Any]:
+          profile: str = "all",
+          sample_counts: dict[str, int] | None = None) -> dict[str, Any]:
     atlas = AnimateAtlas(atlas_dir)
     all_labels = atlas.labels()
     allowed = PROFILE_LABELS.get(profile)
@@ -63,8 +64,11 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
             raise ValueError(f"{profile} profile labels missing from source atlas: {missing}")
     selected: list[dict[str, Any]] = []
     for label in labels:
+        count = sample_count(label["name"], label["duration"])
+        if sample_counts is not None and label["name"] in sample_counts:
+            count = min(sample_counts[label["name"]], label["duration"])
         for sequence_index, frame in enumerate(evenly_sample(
-                label["start"], label["duration"], sample_count(label["name"], label["duration"]))):
+                label["start"], label["duration"], count)):
             selected.append({"label": label["name"], "source_frame": frame,
                              "sequence_index": sequence_index})
 
