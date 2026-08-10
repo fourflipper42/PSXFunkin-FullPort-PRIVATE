@@ -1,0 +1,58 @@
+name: Compile-test ISO9660 lookup fallback
+
+on:
+  push:
+    branches: [full-port-completion]
+    paths:
+      - '.github/workflows/test-iso9660-fallback-compile.yml'
+      - 'scripts/apply_iso9660_lookup_fallback.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install compiler dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl unzip gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu
+
+      - name: Fetch exact upstream baseline
+        run: |
+          curl -fL --retry 3 --retry-delay 2 \
+            https://codeload.github.com/cuckydev/PSXFunkin/tar.gz/850e0207479d8fb658bdc7637f6bfbc28a2b4066 \
+            -o /tmp/upstream.tar.gz
+          mkdir upstream
+          tar -xzf /tmp/upstream.tar.gz -C upstream --strip-components=1
+
+      - name: Apply and validate lookup fallback
+        run: |
+          python3 -m py_compile scripts/apply_iso9660_lookup_fallback.py
+          python3 scripts/apply_iso9660_lookup_fallback.py --upstream upstream
+          grep -q 'IO_ISOSearchFile' upstream/src/io.c
+          grep -q 'CdSearchFile(file, (char\*)path)' upstream/src/io.c
+
+      - name: Acquire PsyQ compatibility libraries
+        run: |
+          mkdir -p /tmp/psyq upstream/mips/psyq
+          curl -fL --retry 3 --retry-delay 2 http://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip -o /tmp/psyq.zip
+          unzip -q /tmp/psyq.zip -d /tmp/psyq
+          INC="$(find /tmp/psyq -type d -name include -print -quit)"
+          LIB="$(find /tmp/psyq -type d -name lib -print -quit)"
+          test -n "$INC"; test -n "$LIB"
+          cp -a "$INC" upstream/mips/psyq/include
+          cp -a "$LIB" upstream/mips/psyq/lib
+
+      - name: Compile patched IO and full baseline
+        working-directory: upstream
+        run: |
+          make clean || true
+          make -j2
+          test -s funkin.ps-exe
+          sha256sum funkin.ps-exe
