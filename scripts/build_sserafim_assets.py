@@ -68,7 +68,7 @@ def merge_one(root: Path, out: Path, name: str, atlas_subdir: str, prefix: str,
     component = out / "component"
     manifest = build_pages(
         root / "shared/images/characters" / atlas_subdir,
-        component, prefix, 4, vram_x, 0, clut_x, 480, "all",
+        component, prefix, 4, vram_x, 0, clut_x, 480, "all", selection,
     )
     manifest = trim_manifest(manifest, component, selection, prefix, vram_x, clut_x)
     pages = []
