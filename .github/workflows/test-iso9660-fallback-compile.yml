@@ -37,6 +37,15 @@ jobs:
           python3 scripts/apply_iso9660_lookup_fallback.py --upstream upstream
           grep -q 'IO_ISOSearchFile' upstream/src/io.c
           grep -q 'CdSearchFile(file, (char\*)path)' upstream/src/io.c
+          grep -q 'IO_SearchFile(&file, str->FileName)' upstream/src/strplay.c
+          grep -q 'IO_SearchFile(&file, path)' upstream/src/movie.c
+
+          # This diagnostic compiles the untouched t0.12 menu, which predates
+          # the full-port CharacterSelect page enum. The production pipeline
+          # adds that enum before applying this helper. Alias only that later
+          # enum to an existing page here so this job remains an independent
+          # compile test of IO_SearchFile + Movie_Play + strplay.c.
+          sed -i 's/MenuPage_CharacterSelect/MenuPage_Main/g' upstream/src/menu.c
 
       - name: Acquire PsyQ compatibility libraries
         run: |
@@ -49,7 +58,7 @@ jobs:
           cp -a "$INC" upstream/mips/psyq/include
           cp -a "$LIB" upstream/mips/psyq/lib
 
-      - name: Compile patched IO and full baseline
+      - name: Compile patched IO movie and full baseline
         working-directory: upstream
         run: |
           make clean || true
