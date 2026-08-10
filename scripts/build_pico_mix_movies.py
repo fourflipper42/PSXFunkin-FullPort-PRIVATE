@@ -148,15 +148,15 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
 
 
 def install_post_apply_guard() -> None:
-    """Install focused Pico corrections and named validation diagnostics."""
+    """Install focused Pico corrections and final runtime-repair validation."""
     target = Path(__file__).resolve().with_name("apply_pico_mixes_v1.py")
-    marker = "# PICO_CI_POST_APPLY_GUARD_V3"
+    marker = "# PICO_CI_POST_APPLY_GUARD_V4"
     source = target.read_text()
     if marker in source:
         return
     guard = r'''
 
-# PICO_CI_POST_APPLY_GUARD_V3
+# PICO_CI_POST_APPLY_GUARD_V4
 if __name__ == "__main__":
     import re as _pico_re
     import subprocess as _pico_subprocess
@@ -300,6 +300,55 @@ if __name__ == "__main__":
 
         print(
             "::notice title=Pico structural preflight::final stagedef, character-path, and XML checks passed",
+            flush=True,
+        )
+
+        # M1/M3 must be applied only after every frontend/content generator has
+        # finished. The previous checkpoint only compile-tested this helper and
+        # never executed it in the production tree, so M2 landed while M1/M3 did
+        # not. Execute the proven helper here, after the original Pico main().
+        _runtime_script = _PicoPath(__file__).resolve().with_name("apply_iso9660_lookup_fallback.py")
+        _runtime_result = _pico_subprocess.run(
+            [_pico_sys.executable, str(_runtime_script), "--upstream", str(_pico_root)],
+            stdout=_pico_subprocess.PIPE,
+            stderr=_pico_subprocess.STDOUT,
+            text=True,
+        )
+        if _runtime_result.returncode:
+            _pico_fail(
+                "M1/M3 production runtime repair",
+                (_runtime_result.stdout or "runtime repair helper failed")[-7000:],
+            )
+
+        _runtime_io = (_pico_root / "src/io.c").read_text()
+        _runtime_movie = (_pico_root / "src/movie.c").read_text()
+        _runtime_str = (_pico_root / "src/strplay.c").read_text()
+        _runtime_menu = (_pico_root / "src/menu.c").read_text()
+        _runtime_required = {
+            "ISO full-directory resolver": "boolean IO_SearchFile(CdlFILE *file, const char *path)",
+            "Movie resolver": "IO_SearchFile(&file, path)",
+            "STR resolver": "IO_SearchFile(&file, str->FileName)",
+            "Frontend audio owner": "M1_M3_FRONTEND_AUDIO_RESTORE",
+        }
+        if _runtime_required["ISO full-directory resolver"] not in _runtime_io:
+            _pico_fail("M1/M3 validation", "ISO full-directory resolver missing after final integration")
+        if _runtime_required["Movie resolver"] not in _runtime_movie:
+            _pico_fail("M1/M3 validation", "Movie_Play is not using the shared resolver")
+        if _runtime_required["STR resolver"] not in _runtime_str:
+            _pico_fail("M1/M3 validation", "STR player is not using the shared resolver")
+        if _runtime_required["Frontend audio owner"] not in _runtime_menu:
+            _pico_fail("M1/M3 validation", "central frontend audio restore missing")
+        if "CdSearchFile(&file, str->FileName)" in _runtime_str:
+            _pico_fail("M1/M3 validation", "raw CdSearchFile survived in STR player")
+
+        _runtime_diff = _pico_check()
+        if _runtime_diff.returncode:
+            _pico_fail(
+                "M1/M3 post-repair diff check",
+                (_runtime_diff.stdout or "git diff --check failed after runtime repair")[-5000:],
+            )
+        print(
+            "::notice title=M1/M3 production repair::shared STR lookup and frontend music restore are present in final generated sources",
             flush=True,
         )
 '''
