@@ -86,3 +86,5 @@ if __name__ == "__main__":
         raise
     else:
         print("::notice title=Pico Mix phase::content builder completed", flush=True)
+
+# CI trigger: root sitecustomize.py exposes the final stdin validation traceback.
