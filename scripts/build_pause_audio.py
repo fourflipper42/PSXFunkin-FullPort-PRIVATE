@@ -128,3 +128,4 @@ if __name__ == "__main__":
     main()
 
 # CI retrigger after correcting the Pico Makefile source continuation generator.
+# Production rebuild after correcting the Pico stagedef separator generator.
