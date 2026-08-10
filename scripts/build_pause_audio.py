@@ -129,3 +129,4 @@ if __name__ == "__main__":
 
 # CI retrigger after correcting the Pico Makefile source continuation generator.
 # Production rebuild after correcting the Pico stagedef separator generator.
+# Production rebuild with full-directory ISO9660 boot lookup fallback.
