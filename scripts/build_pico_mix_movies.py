@@ -27,8 +27,6 @@ def workflow_escape(text: str) -> str:
 
 
 def phase(message: str) -> None:
-    # Keep routine progress out of the finite Actions annotation list. Errors
-    # and the post-apply guard below still use annotations when they matter.
     print(f"[Pico Mix movie] {message}", flush=True)
 
 
@@ -95,12 +93,10 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
     atlas_frames = atlas.timeline_length(atlas.root["TL"])
     frame_count = math.ceil((320 / 24) * FPS)
 
-    # WonderfulToolchain/psxavenc passes AVCodecContext.colorspace directly to
-    # sws_getCoefficients(). An unspecified generated-video colorspace therefore
-    # reaches a libswscale path that the official Stress opening does not. Keep
-    # the successful LE SSERAFIM H.264 handoff but explicitly tag BT.601 using
-    # bt470bg (enum value 5, matching libswscale's ITU-601 coefficient table).
-    # Disable B-frames as well so the temporary stream has no delayed frames.
+    # psxavenc feeds the input video colorspace directly to libswscale. Use the
+    # same H.264 handoff that already works for the LE SSERAFIM movies, but tag
+    # this generated cutscene explicitly as BT.601-compatible and avoid B-frame
+    # decode delay.
     silent = temporary / "stress-pico-ending-silent.mp4"
     process = subprocess.Popen([
         str(ffmpeg), "-y", "-loglevel", "error", "-f", "rawvideo",
@@ -151,24 +147,21 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
     return target, metadata
 
 
-def install_post_apply_diff_guard() -> None:
-    """Install a CI-only guard after the Pico applier's main() call.
+def install_post_apply_guard() -> None:
+    """Install focused post-apply corrections into the CI workspace applier.
 
-    The upstream tree passed git diff --check immediately before Pico, so any
-    check failure after Pico is introduced by this phase. Git returns status 2
-    for these whitespace diagnostics. The guard removes only the exact lines
-    Git identifies as fixable whitespace defects, then re-runs the check. This
-    leaves gameplay/content semantics untouched and preserves the frozen
-    Character Select RLE assets byte-for-byte.
+    The Pico phase is the only phase after the last clean diff check. The hook
+    therefore fixes only defects introduced by Pico itself: the official Stress
+    scroll-speed tuple and exact lines reported by ``git diff --check``.
     """
     target = Path(__file__).resolve().with_name("apply_pico_mixes_v1.py")
-    marker = "# PICO_CI_POST_APPLY_DIFF_GUARD_V1"
+    marker = "# PICO_CI_POST_APPLY_GUARD_V2"
     source = target.read_text()
     if marker in source:
         return
     guard = r'''
 
-# PICO_CI_POST_APPLY_DIFF_GUARD_V1
+# PICO_CI_POST_APPLY_GUARD_V2
 if __name__ == "__main__":
     import re as _pico_re
     import subprocess as _pico_subprocess
@@ -186,6 +179,38 @@ if __name__ == "__main__":
         _pico_root = None
 
     if _pico_root is not None:
+        # Stress is the fifteenth official Pico Mix. Keep its stage-definition
+        # scroll tuple synchronized with the extracted official chart values
+        # used by the content builder: Easy 2.5, Normal 2.9, Hard 3.2.
+        _pico_stagedef_path = _pico_root / "src/stagedef_disc1.h"
+        _pico_stagedef = _pico_stagedef_path.read_text()
+        _pico_expected_speed = "{FIXED_DEC(25,10),FIXED_DEC(29,10),FIXED_DEC(32,10)}"
+        _pico_stress = _pico_re.search(
+            r"(?s)(\t\{ //StageId_PM_Stress\b.*?\t\t//Song info\s*\n\s*)"
+            r"\{FIXED_DEC\([0-9]+,[0-9]+\),\s*FIXED_DEC\([0-9]+,[0-9]+\),\s*"
+            r"FIXED_DEC\([0-9]+,[0-9]+\)\}",
+            _pico_stagedef,
+        )
+        if not _pico_stress:
+            print(
+                "::error title=Pico Stress stage definition::unable to locate generated StageId_PM_Stress song-speed tuple",
+                flush=True,
+            )
+            _pico_sys.exit(1)
+        _pico_current_speed = _pico_stress.group(0).splitlines()[-1].strip()
+        if _pico_current_speed != _pico_expected_speed:
+            _pico_stagedef = (
+                _pico_stagedef[:_pico_stress.start()]
+                + _pico_stress.group(1)
+                + _pico_expected_speed
+                + _pico_stagedef[_pico_stress.end():]
+            )
+            _pico_stagedef_path.write_text(_pico_stagedef)
+            print(
+                "::notice title=Pico Stress scroll parity::corrected generated tuple to 2.5 / 2.9 / 3.2",
+                flush=True,
+            )
+
         def _pico_check():
             return _pico_subprocess.run(
                 ["git", "-C", str(_pico_root), "diff", "--check"],
@@ -198,26 +223,17 @@ if __name__ == "__main__":
         if _pico_first.returncode:
             _pico_fix_lines = {}
             _pico_eof_files = set()
-            _pico_unknown = []
             for _pico_item in (_pico_first.stdout or "").splitlines():
                 _pico_match = _pico_re.match(
                     r"^(.+?):(\d+): (trailing whitespace|space before tab in indent)\.$",
                     _pico_item,
                 )
                 if _pico_match:
-                    _pico_fix_lines.setdefault(_pico_match.group(1), set()).add(
-                        int(_pico_match.group(2))
-                    )
+                    _pico_fix_lines.setdefault(_pico_match.group(1), set()).add(int(_pico_match.group(2)))
                     continue
-                _pico_match = _pico_re.match(
-                    r"^(.+?):(\d+): new blank line at EOF\.$",
-                    _pico_item,
-                )
+                _pico_match = _pico_re.match(r"^(.+?):(\d+): new blank line at EOF\.$", _pico_item)
                 if _pico_match:
                     _pico_eof_files.add(_pico_match.group(1))
-                    continue
-                if _pico_re.match(r"^.+?:\d+: ", _pico_item):
-                    _pico_unknown.append(_pico_item)
 
             for _pico_rel, _pico_numbers in _pico_fix_lines.items():
                 _pico_path = _pico_root / _pico_rel
@@ -233,10 +249,11 @@ if __name__ == "__main__":
                     else:
                         _pico_body, _pico_newline = _pico_line, ""
                     _pico_body = _pico_body.rstrip(" \t")
-                    _pico_indent = _pico_re.match(r"^[ \t]*", _pico_body).group(0)
+                    _pico_indent_match = _pico_re.match(r"^[ \t]*", _pico_body)
+                    _pico_indent = _pico_indent_match.group(0)
                     while " \t" in _pico_indent:
                         _pico_indent = _pico_indent.replace(" \t", "\t")
-                    _pico_body = _pico_indent + _pico_body[len(_pico_re.match(r"^[ \t]*", _pico_body).group(0)):]
+                    _pico_body = _pico_indent + _pico_body[len(_pico_indent_match.group(0)):]
                     _pico_lines[_pico_number - 1] = _pico_body + _pico_newline
                 _pico_path.write_text("".join(_pico_lines))
 
@@ -263,7 +280,7 @@ if __name__ == "__main__":
             )
 '''
     target.write_text(source + guard)
-    phase("installed post-apply diff guard")
+    phase("installed post-apply guard")
 
 
 def main() -> None:
@@ -334,7 +351,7 @@ def main() -> None:
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
-    install_post_apply_diff_guard()
+    install_post_apply_guard()
     phase("report completed")
 
 
