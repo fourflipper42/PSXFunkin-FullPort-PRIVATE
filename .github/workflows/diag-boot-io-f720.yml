@@ -1,0 +1,40 @@
+name: Validate patched full-port boot filesystem
+
+on:
+  push:
+    branches: [full-port-completion]
+    paths:
+      - '.github/workflows/diag-boot-io-f720.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download exact patched release BIN
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download pico-mixes-v1-f7201a600dcc \
+            --repo fourflipper42/PSXFunkin-FullPort \
+            --pattern 'PSXFunkin_v084_Pico_Mixes_v1.bin'
+          sha256sum PSXFunkin_v084_Pico_Mixes_v1.bin
+
+      - name: Validate raw MODE2 ISO9660 filesystem
+        run: |
+          python3 scripts/validate_raw_psx_iso9660.py \
+            PSXFunkin_v084_Pico_Mixes_v1.bin \
+            --require '/MENU/MENU.ARC;1' \
+            --require '/MENU/LOADING.TIM;1' \
+            --require '/MENU/FPPICO.TIM;1' \
+            --require '/CHAR/TANKBLDY.ARC;1' \
+            --require '/WEEK10/10.15H.CHT;1' \
+            --require-multisector-dir '/MENU' \
+            --require-multisector-dir '/CHAR' \
+            --require-multisector-dir '/WEEK10'
