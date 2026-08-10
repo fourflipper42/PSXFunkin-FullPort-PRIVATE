@@ -10,13 +10,66 @@ allowed.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import runpy
+import site
 import traceback
 
 
 CORE = Path(__file__).with_name("build_pico_mix_content_core.py")
 core = runpy.run_path(str(CORE), run_name="pico_mix_content_core")
+
+
+def install_ci_inline_traceback_hook() -> None:
+    """Make the later stdin validator expose its exact failed assertion in CI.
+
+    Repository-root sitecustomize.py is not imported by the Actions Python
+    startup used for the heredoc validator. Python does import usercustomize
+    from its user site, however, so install the same narrowly-scoped hook there
+    before the later Pico asset/movie/apply/validation processes start.
+    """
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    user_site = Path(site.getusersitepackages())
+    user_site.mkdir(parents=True, exist_ok=True)
+    hook = r'''from __future__ import annotations
+import os
+import sys
+import traceback
+from pathlib import Path
+
+
+def _pico_escape(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+if (
+    os.environ.get("GITHUB_ACTIONS") == "true"
+    and Path("build/pico_mix_assets_v1.json").is_file()
+    and Path("build/pico_mix_content_v1.json").is_file()
+    and Path("build/pico_mix_movies_v1.json").is_file()
+    and Path("upstream/src/stage/picomix.c").is_file()
+):
+    _pico_original_hook = sys.excepthook
+
+    def _pico_inline_hook(exc_type, exc, tb):
+        detail = "".join(traceback.format_exception(exc_type, exc, tb))[-12000:]
+        print(
+            "::error title=Pico inline validation failure::" + _pico_escape(detail),
+            file=sys.stderr,
+            flush=True,
+        )
+        _pico_original_hook(exc_type, exc, tb)
+
+    sys.excepthook = _pico_inline_hook
+'''
+    target = user_site / "usercustomize.py"
+    target.write_text(hook)
+    print(
+        f"::notice title=Pico Mix diagnostics::installed inline validator traceback hook at {target}",
+        flush=True,
+    )
 
 
 def resolve_official_voice(song_dir: Path, requested: str) -> str:
@@ -77,6 +130,7 @@ def workflow_escape(text: str) -> str:
 
 
 if __name__ == "__main__":
+    install_ci_inline_traceback_hook()
     print("::notice title=Pico Mix phase::content builder started", flush=True)
     try:
         core["main"]()
@@ -86,5 +140,3 @@ if __name__ == "__main__":
         raise
     else:
         print("::notice title=Pico Mix phase::content builder completed", flush=True)
-
-# CI trigger: root sitecustomize.py exposes the final stdin validation traceback.
