@@ -22,8 +22,41 @@ def encoded_frame_count(path:Path)->int:
  if mx <= 0: raise RuntimeError(f'no STR video frames found in {path}')
  return mx
 
+def patch_m1_v4_helper()->None:
+ # M1 v4: the prior Movie_Play wrapper did two unbounded/undiagnosed things
+ # before entering the guarded STR player: it performed a redundant CD lookup
+ # and waited forever for PADstart to read released.  The STR player already
+ # performs a bounded lookup and owns E0-E4 diagnostics, so remove both.
+ helper=Path(__file__).with_name('apply_iso9660_lookup_fallback.py')
+ text=helper.read_text()
+ if 'M1_MOVIE_ENTRY_V4' in text:
+  return
+ old=r'''\tCdlFILE file;
+\tif (!IO_SearchFile(&file, path))
+\t{
+\t\tsprintf(error_msg, "[M1V3 LOOKUP] missing %s", path);
+\t\tErrorLock();
+\t\treturn;
+\t}
+
+\twhile (PadRead(1) & PADstart)
+\t\tVSync(0);
+
+\tSTRFILE sfile;'''
+ new=r'''\t/* M1_MOVIE_ENTRY_V4
+\t * Do not perform an unguarded preflight CdSearchFile/ISO scan here and do
+\t * not spin waiting for PADstart.  strDoPlayback owns bounded lookup/CD
+\t * startup and reports E0-E4.  Start is only sampled after playback begins. */
+\tSTRFILE sfile;'''
+ if text.count(old)!=1:
+  raise RuntimeError(f'M1 v4 Movie_Play helper anchor count={text.count(old)}')
+ text=text.replace(old,new,1)
+ helper.write_text(text)
+ print('M1 v4: removed redundant preflight movie lookup and infinite Start wait')
+
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--out',type=Path,required=True); ap.add_argument('--psxavenc',type=Path,required=True); ap.add_argument('--ffprobe',default='ffprobe'); ap.add_argument('--report',type=Path,required=True); ap.add_argument('--header',type=Path,required=True); a=ap.parse_args(); a.out.mkdir(parents=True,exist_ok=True); r=[]; defines=[]
+ patch_m1_v4_helper()
  for srcname,outname,define in MOVIES:
   src=a.root/'videos/videos'/srcname; out=a.out/outname
   run([a.psxavenc,'-q','-t','str','-v','v2','-f','37800','-b','4','-c','2','-s','320x240','-r','15','-x','2',src,out])
