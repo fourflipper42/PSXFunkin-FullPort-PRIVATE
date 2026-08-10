@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Apply full-directory ISO9660 lookup plus M1/M3 runtime repairs.
+"""Apply the full-disc ISO resolver plus M1/M3 runtime repairs.
 
-The giant disc has ISO9660 directories (including the root directory) that span
-multiple 2048-byte sectors. PsyQ CdSearchFile is kept as the fast path, but a
-non-fatal IO_SearchFile fallback scans every directory sector when PsyQ misses.
-The movie player is routed through that same resolver, fixing cutscenes that
-previously bypassed the boot-file fix. The final menu transition also becomes
-the single owner of restoring Gettin' Freaky after Character Select/Freeplay.
+This patch is intentionally idempotent: Pico integration applies it once and the
+final production guard may invoke it again to validate the already-patched tree.
+M1 routes STR lookup through the proven ISO9660 fallback and moves the large STR
+decode workspace from the PS1 stack to the engine heap. M3 defers restoring
+Gettin' Freaky until after the destination menu visual set has finished all CD
+asset reads, because IO_Read intentionally stops XA before seeking.
 """
 from __future__ import annotations
 
@@ -34,10 +34,6 @@ NEW = r'''/*
  * PsyQ's CdSearchFile is retained as the normal fast path, but the full port
  * contains ISO9660 directories spanning multiple 2048-byte sectors. Some
  * PsyQ revisions fail to find records beyond the first directory sector.
- *
- * This fallback reads ISO9660 metadata directly only after CdSearchFile misses.
- * It understands the subset emitted by mkpsxiso: the primary volume descriptor,
- * nested directories, and ordinary ISO9660 file records.
  */
 static u32 io_iso_sector[IO_SECT_SIZE / sizeof(u32)];
 
@@ -209,7 +205,6 @@ boolean IO_SearchFile(CdlFILE *file, const char *path)
 
 void IO_FindFile(CdlFILE *file, const char *path)
 {
-	// Normal asset reads own the CD and therefore stop XA before seeking.
 	Audio_StopXA();
 	if (!IO_SearchFile(file, path))
 	{
@@ -251,38 +246,42 @@ def replace_c_function(text: str, signature: str, replacement: str, label: str) 
 
 def patch_io(root: Path) -> None:
     io_c = root / "src/io.c"
-    text = io_c.read_text()
-    count = text.count(OLD)
-    if count != 1:
-        raise SystemExit(f"IO_FindFile baseline anchor changed: expected 1, found {count}")
-    io_c.write_text(text.replace(OLD, NEW, 1))
-
     io_h = root / "src/io.h"
-    text = io_h.read_text()
-    text = replace_once(
-        text,
-        "void IO_FindFile(CdlFILE *file, const char *path);\n",
-        "boolean IO_SearchFile(CdlFILE *file, const char *path);\n"
-        "void IO_FindFile(CdlFILE *file, const char *path);\n",
-        "public nonfatal ISO search declaration",
-    )
-    io_h.write_text(text)
+    text = io_c.read_text()
+
+    if "boolean IO_SearchFile(CdlFILE *file, const char *path)" not in text:
+        count = text.count(OLD)
+        if count != 1:
+            raise SystemExit(f"IO_FindFile baseline anchor changed: expected 1, found {count}")
+        io_c.write_text(text.replace(OLD, NEW, 1))
+
+    text_h = io_h.read_text()
+    if "boolean IO_SearchFile(CdlFILE *file, const char *path);" not in text_h:
+        text_h = replace_once(
+            text_h,
+            "void IO_FindFile(CdlFILE *file, const char *path);\n",
+            "boolean IO_SearchFile(CdlFILE *file, const char *path);\n"
+            "void IO_FindFile(CdlFILE *file, const char *path);\n",
+            "public nonfatal ISO search declaration",
+        )
+        io_h.write_text(text_h)
 
 
 def patch_movies(root: Path) -> None:
     movie = root / "src/movie.c"
     text = movie.read_text()
     if '#include "io.h"' not in text:
-        text = replace_once(text, '#include "main.h"\n', '#include "main.h"\n#include "io.h"\n#include "audio.h"\n', "movie IO/audio includes")
+        text = replace_once(
+            text,
+            '#include "main.h"\n',
+            '#include "main.h"\n#include "io.h"\n#include "audio.h"\n',
+            "movie IO/audio includes",
+        )
+
     movie_play = r'''void Movie_Play(const char *path, unsigned long length)
 {
-	// Movie playback owns the CD. Stop any XA stream before either the fallback
-	// directory scan or STR streaming starts.
 	Audio_StopXA();
 
-	// Resolve with the same multi-sector ISO9660 path used by normal assets.
-	// The full disc root is larger than one ISO sector, so raw CdSearchFile is
-	// not reliable for the late MOVIE directory on all PsyQ revisions.
 	CdlFILE file;
 	if (!IO_SearchFile(&file, path))
 	{
@@ -291,8 +290,7 @@ def patch_movies(root: Path) -> None:
 		return;
 	}
 
-	// Story selection can itself be confirmed with Start. Do not let that same
-	// held press immediately skip the movie we are about to begin.
+	// Do not let the Start press that selected Story Mode instantly skip the FMV.
 	while (PadRead(1) & PADstart)
 		VSync(0);
 
@@ -303,21 +301,106 @@ def patch_movies(root: Path) -> None:
 	sfile.NumFrames = length;
 	PlayStr(320, 240, 0, 0, &sfile);
 
-	// Leave the drive quiescent. The next XA owner will reinitialize its own
-	// filter/mode instead of inheriting STR streaming state.
 	CdControlB(CdlPause, NULL, NULL);
 	DrawSync(0);
 	SetDispMask(1);
 }
 '''
+    # Replacing by function boundaries is safe on first and repeated application.
     text = replace_c_function(text, "void Movie_Play(", movie_play, "movie playback function")
     movie.write_text(text)
 
     strplay = root / "src/strplay.c"
     text = strplay.read_text()
-    old = "if (CdSearchFile(&file, str->FileName) == 0) {"
-    new = "if (!IO_SearchFile(&file, str->FileName)) {"
-    text = replace_once(text, old, new, "STR internal file lookup")
+    if '#include "mem.h"' not in text:
+        text = replace_once(text, '#include "psx.h"\n', '#include "psx.h"\n#include "mem.h"\n', "STR heap include")
+
+    raw_lookup = "if (CdSearchFile(&file, str->FileName) == 0) {"
+    shared_lookup = "if (!IO_SearchFile(&file, str->FileName)) {"
+    if raw_lookup in text:
+        text = replace_once(text, raw_lookup, shared_lookup, "STR internal file lookup")
+    elif shared_lookup not in text:
+        raise SystemExit("STR lookup is neither raw CdSearchFile nor shared IO_SearchFile")
+
+    # Legacy strplay placed the ring buffer, two VLC buffers and two MDEC slice
+    # buffers on the stack. At 320x240 this is roughly 388 KiB. Story Mode calls
+    # the movie before stage allocation, so borrow one contiguous heap block and
+    # release it before Stage_Load continues.
+    if "M1_STR_HEAP_WORKSPACE_V2" not in text:
+        locals_old = r'''	u_long	RingBuff[RING_SIZE*SECTOR_SIZE];	// Ring buffer
+	u_long	VlcBuff[2][str->Xres/2*str->Yres];	// VLC buffers
+	u_short	ImgBuff[2][16*PPW*str->Yres];		// Frame 'slice' buffers
+'''
+        locals_new = r'''	/* M1_STR_HEAP_WORKSPACE_V2 */
+	size_t ring_words = (size_t)RING_SIZE * (size_t)SECTOR_SIZE;
+	size_t vlc_words = ((size_t)str->Xres / 2) * (size_t)str->Yres;
+	size_t img_words = (size_t)(16 * PPW) * (size_t)str->Yres;
+	size_t ring_bytes = ring_words * sizeof(u_long);
+	size_t vlc_bytes = vlc_words * 2 * sizeof(u_long);
+	size_t img_bytes = img_words * 2 * sizeof(u_short);
+	u8 *workspace = NULL;
+	u_long *RingBuff = NULL;
+	u_long *VlcBuff = NULL;
+	u_short *ImgBuff = NULL;
+'''
+        text = replace_once(text, locals_old, locals_new, "STR automatic decode buffers")
+
+        lookup_end = r'''		SetDispMask(1);
+		return;
+	}
+	
+	// Setup the buffer pointers
+'''
+        allocation = r'''		SetDispMask(1);
+		return;
+	}
+
+	workspace = (u8*)Mem_Alloc(ring_bytes + vlc_bytes + img_bytes);
+	if (workspace == NULL)
+	{
+		sprintf(error_msg, "[strDoPlayback] no RAM for %lu-byte movie workspace",
+		(unsigned long)(ring_bytes + vlc_bytes + img_bytes));
+		ErrorLock();
+		SetDispMask(1);
+		return;
+	}
+	RingBuff = (u_long*)workspace;
+	VlcBuff = (u_long*)(workspace + ring_bytes);
+	ImgBuff = (u_short*)(workspace + ring_bytes + vlc_bytes);
+	
+	// Setup the buffer pointers
+'''
+        text = replace_once(text, lookup_end, allocation, "STR heap allocation point")
+
+        ptrs_old = r'''	strEnv.VlcBuff_ptr[0] = &VlcBuff[0][0];
+	strEnv.VlcBuff_ptr[1] = &VlcBuff[1][0];
+	strEnv.VlcID     = 0;
+	strEnv.ImgBuff_ptr[0] = &ImgBuff[0][0];
+	strEnv.ImgBuff_ptr[1] = &ImgBuff[1][0];
+'''
+        ptrs_new = r'''	strEnv.VlcBuff_ptr[0] = VlcBuff;
+	strEnv.VlcBuff_ptr[1] = VlcBuff + vlc_words;
+	strEnv.VlcID     = 0;
+	strEnv.ImgBuff_ptr[0] = ImgBuff;
+	strEnv.ImgBuff_ptr[1] = ImgBuff + img_words;
+'''
+        text = replace_once(text, ptrs_old, ptrs_new, "STR heap buffer pointers")
+
+        cleanup_old = r'''	DecDCToutCallback(0);
+	StUnSetRing();
+	CdControlB(CdlPause, 0, 0);
+	
+}
+'''
+        cleanup_new = r'''	DecDCToutCallback(0);
+	StUnSetRing();
+	CdControlB(CdlPause, 0, 0);
+	Mem_Free(workspace);
+	
+}
+'''
+        text = replace_once(text, cleanup_old, cleanup_new, "STR heap workspace cleanup")
+
     strplay.write_text(text)
 
 
@@ -325,14 +408,18 @@ def patch_frontend_music(root: Path) -> None:
     menu = root / "src/menu.c"
     text = menu.read_text()
 
-    # Character Select used to restore music from its visual teardown. Freeplay
-    # had a second, separate restore path. Those paths race page/visual swaps.
-    # Remove both and restore exactly once when the page transition commits.
+    # The standalone t0.12 compile diagnostic predates the full-port visual-set
+    # manager and Character Select page. M3 only applies to the production menu.
+    if "Menu_SyncV084Textures" not in text or "MenuPage_CharacterSelect" not in text:
+        return
+    if "M3_POST_VISUAL_AUDIO_RESTORE_V2" in text:
+        return
+
     cs_restore = "\t\tMenu_RestoreMenuMusic();\n"
     if text.count(cs_restore) == 1:
         text = text.replace(
             cs_restore,
-            "\t\t/* M3: frontend music restore is owned by page transition commit. */\n",
+            "\t\t/* M3: defer music until destination visual CD reads finish. */\n",
             1,
         )
     elif text.count(cs_restore) != 0:
@@ -348,7 +435,7 @@ def patch_frontend_music(root: Path) -> None:
     if text.count(freeplay_restore) == 1:
         text = text.replace(
             freeplay_restore,
-            "\t\t/* M3: frontend music restore is owned by page transition commit. */\n",
+            "\t\t/* M3: defer music until destination visual CD reads finish. */\n",
             1,
         )
     elif text.count(freeplay_restore) != 0:
@@ -364,6 +451,7 @@ def patch_frontend_music(root: Path) -> None:
         "\t}\n"
     )
     transition_new = (
+        "\tboolean restore_frontend_music = false;\n"
         "\tif (Trans_Tick())\n"
         "\t{\n"
         "\t\tu8 previous_page = menu.page;\n"
@@ -372,23 +460,30 @@ def patch_frontend_music(root: Path) -> None:
         "\t\tmenu.page = menu.next_page;\n"
         "\t\tmenu.select = menu.next_select;\n"
         "\n"
-        "\t\t/* M1_M3_FRONTEND_AUDIO_RESTORE\n"
-        "\t\t * Freeplay previews and Character Select use their own XA streams.\n"
-        "\t\t * Restore Gettin' Freaky only after returning to an ordinary\n"
-        "\t\t * frontend page, never while a Stage/Freeplay/CharacterSelect\n"
-        "\t\t * destination is taking ownership of the CD. */\n"
         "\t\tif ((previous_page == MenuPage_Freeplay || previous_page == MenuPage_CharacterSelect) &&\n"
         "\t\t    menu.page != MenuPage_Stage && menu.page != MenuPage_Freeplay &&\n"
         "\t\t    menu.page != MenuPage_CharacterSelect)\n"
-        "\t\t{\n"
-        "\t\t\tAudio_StopXA();\n"
-        "\t\t\tAudio_PlayXA_Track(XA_GettinFreaky, 0x40, 0, true);\n"
-        "\t\t\tAudio_WaitPlayXA();\n"
-        "\t\t\tstage.song_step = 0;\n"
-        "\t\t}\n"
+        "\t\t\trestore_frontend_music = true;\n"
         "\t}\n"
     )
-    text = replace_once(text, transition, transition_new, "central frontend audio transition")
+    text = replace_once(text, transition, transition_new, "frontend audio transition flag")
+
+    visual_sync = (
+        "\t//Swap authentic v0.8.4 visual sets only when entering/leaving those pages.\n"
+        "\tif (menu.page_swap)\n"
+        "\t\tMenu_SyncV084Textures((MenuPage)menu.page);\n\n"
+    )
+    post_visual = visual_sync + (
+        "\t/* M3_POST_VISUAL_AUDIO_RESTORE_V2\n"
+        "\t * Menu_SyncV084Textures performs IO_Read calls, and IO_Read stops XA.\n"
+        "\t * Restore menu music only after those destination asset reads finish. */\n"
+        "\tif (restore_frontend_music)\n"
+        "\t{\n"
+        "\t\tMenu_RestoreMenuMusic();\n"
+        "\t\tstage.song_step = 0;\n"
+        "\t}\n\n"
+    )
+    text = replace_once(text, visual_sync, post_visual, "post-visual frontend audio restore")
     menu.write_text(text)
 
 
@@ -416,9 +511,14 @@ def validate(root: Path) -> None:
         raise SystemExit("STR player does not use full ISO search")
     if "CdSearchFile(&file, str->FileName)" in strplay:
         raise SystemExit("raw CdSearchFile survived inside STR player")
-    if "M1_M3_FRONTEND_AUDIO_RESTORE" not in menu:
-        raise SystemExit("central frontend music restore marker missing")
-    print("Applied ISO9660, STR playback lookup, and frontend audio ownership repairs")
+    if "M1_STR_HEAP_WORKSPACE_V2" not in strplay:
+        raise SystemExit("STR player still uses the large automatic stack workspace")
+    if "Menu_SyncV084Textures" in menu:
+        if "M3_POST_VISUAL_AUDIO_RESTORE_V2" not in menu:
+            raise SystemExit("post-visual frontend music restore marker missing")
+        if "Menu_RestoreMenuMusic();" not in menu:
+            raise SystemExit("post-visual menu music restore call missing")
+    print("Applied/validated ISO9660, heap-backed STR playback, and post-visual frontend audio repairs")
 
 
 def main() -> None:
