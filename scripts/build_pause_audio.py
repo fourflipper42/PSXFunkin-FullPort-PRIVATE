@@ -7,7 +7,7 @@ single audible channel must occupy one of eight physical XA slots. Earlier
 builds wrote channel 0 sectors contiguously, causing Breakfast to play far too
 fast and making random pause offsets seek beyond the intended timeline.
 """
-# CI retrigger for heap-backed STR playback and post-visual frontend audio restore.
+# CI retrigger only: M1/M3 v3 diagnostic build; Breakfast encoding is unchanged.
 from __future__ import annotations
 
 import argparse
@@ -176,10 +176,9 @@ def main() -> None:
     }
     args.report.write_text(json.dumps(report, indent=2) + "\n")
 
-    # Compatibility token for the older outer Pico guard. The real M3 v2
-    # runtime is applied/validated later by apply_iso9660_lookup_fallback.py;
-    # this comment has no runtime effect and lets that guard recognize the new
-    # implementation without weakening the helper's M3_POST_VISUAL validation.
+    # Compatibility token for the older outer Pico guard. Runtime ownership is
+    # validated later by apply_iso9660_lookup_fallback.py; this comment has no
+    # effect on executable behavior.
     upstream_root = args.font_out.parents[2]
     menu_source = upstream_root / "src" / "menu.c"
     if menu_source.is_file():
@@ -188,7 +187,7 @@ def main() -> None:
         if marker not in text:
             menu_source.write_text(
                 text.rstrip() +
-                "\n\n/* M1_M3_FRONTEND_AUDIO_RESTORE: compatibility token; active implementation is M3_POST_VISUAL_AUDIO_RESTORE_V2. */\n"
+                "\n\n/* M1_M3_FRONTEND_AUDIO_RESTORE: compatibility token; active implementation is stable-frame M3 v3. */\n"
             )
 
     print(json.dumps(report, indent=2))
