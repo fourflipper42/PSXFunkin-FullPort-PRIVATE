@@ -25,7 +25,6 @@ jobs:
           import os
           import pathlib
           import subprocess
-          import sys
           import yaml
 
           workflow = yaml.safe_load(pathlib.Path('.github/workflows/charselect-v7-1-build.yml').read_text())
@@ -40,10 +39,9 @@ jobs:
               print(f'::group::{name}', flush=True)
               env = os.environ.copy()
               for key, value in (step.get('env') or {}).items():
-                  value = str(value)
-                  if key == 'GH_TOKEN' and '${{' in value:
+                  if key == 'GH_TOKEN':
                       value = os.environ['GH_TOKEN']
-                  env[key] = value
+                  env[key] = str(value)
               cwd = pathlib.Path(step.get('working-directory', '.'))
               proc = subprocess.run(
                   ['bash', '-eo', 'pipefail', '-c', command],
