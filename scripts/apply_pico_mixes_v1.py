@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -1085,7 +1087,12 @@ def main() -> None:
     apply_freeplay(root / "src/menu.c")
     apply_character_select(root / "src/menu.c")
     apply_xml(root)
-    print("Applied all 15 official Pico Mixes, Pico Freeplay routing, and runtime events")
+    fallback = Path(__file__).with_name("apply_iso9660_lookup_fallback.py")
+    subprocess.run(
+        [sys.executable, str(fallback), "--upstream", str(root)],
+        check=True,
+    )
+    print("Applied all 15 official Pico Mixes, Pico Freeplay routing, runtime events, and ISO9660 lookup fallback")
 
 
 if __name__ == "__main__":
