@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
-"""Recover the two officially embedded SPAGHETTI masters and encode PS1 XA.
+"""Recover official SPAGHETTI masters and encode correctly interleaved PS1 XA.
 
-The licensed track is embedded in the official v0.8.4 Linux executable instead
-of being stored as loose files.  The two exact byte lengths are declared by the
-official songs manifest, so this extracts complete Ogg bitstreams by page/EOS
-boundaries and refuses any ambiguous match.
+18.9 kHz 4-bit stereo XA requires eight physical sector slots per decoded
+channel timeline. The previous two-way full/instrumental interleave delivered
+each channel roughly four times too often and made the runtime's 75-sector/s
+track length extend beyond SPAG.XA. This builder emits channels 0 and 1 plus
+valid silent channels 2-7 so physical CD time and decoded audio time agree.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import struct
 import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
 
 SECTOR = 2336
+SAMPLE_RATE = 18900
+INTERLEAVE_SLOTS = 8
 OFFICIAL_STREAMS = {
     "Inst.ogg": 4_062_832,
     "Voices-sserafim-sakura.ogg": 4_125_963,
@@ -70,12 +72,18 @@ def extract_embedded_streams(executable: bytes) -> dict[str, bytes]:
 
 
 def encode_xa(encoder: Path, source: Path, target: Path, channel: int) -> None:
-    run([encoder, "-q", "-t", "xa", "-f", "18900", "-b", "4", "-c", "2", "-F", "1", "-C", str(channel), source, target])
+    run([
+        encoder,
+        "-q", "-t", "xa",
+        "-f", str(SAMPLE_RATE), "-b", "4", "-c", "2",
+        "-F", "1", "-C", str(channel),
+        source, target,
+    ])
 
 
 def sectors(path: Path) -> list[bytes]:
     data = path.read_bytes()
-    if len(data) % SECTOR:
+    if not data or len(data) % SECTOR:
         raise RuntimeError(f"{path} is not {SECTOR}-byte sector aligned")
     return [data[index:index + SECTOR] for index in range(0, len(data), SECTOR)]
 
@@ -111,7 +119,7 @@ def main() -> None:
         door2 = args.assets_root / "sserafim/sounds/doorKick2.ogg"
         full_wav = temp / "spaghetti-full.wav"
         inst_wav = temp / "spaghetti-inst.wav"
-        # Event times come from the official chart.  Baking the door impacts into
+        # Event times come from the official chart. Baking the door impacts into
         # both streams keeps them sample-accurate without interrupting CD-XA.
         run([
             args.ffmpeg, "-y", "-loglevel", "error",
@@ -119,14 +127,14 @@ def main() -> None:
             "-i", door1, "-i", door2,
             "-filter_complex",
             "[2:a]adelay=1076|1076[k1];[3:a]adelay=2488|2488[k2];[0:a][1:a][k1][k2]amix=inputs=4:duration=longest:normalize=0[m]",
-            "-map", "[m]", "-ar", "18900", "-ac", "2", full_wav,
+            "-map", "[m]", "-ar", str(SAMPLE_RATE), "-ac", "2", full_wav,
         ])
         run([
             args.ffmpeg, "-y", "-loglevel", "error",
             "-i", temp / "Inst.ogg", "-i", door1, "-i", door2,
             "-filter_complex",
             "[1:a]adelay=1076|1076[k1];[2:a]adelay=2488|2488[k2];[0:a][k1][k2]amix=inputs=3:duration=longest:normalize=0[m]",
-            "-map", "[m]", "-ar", "18900", "-ac", "2", inst_wav,
+            "-map", "[m]", "-ar", str(SAMPLE_RATE), "-ac", "2", inst_wav,
         ])
 
         full_xa = temp / "full.xa"
@@ -135,17 +143,43 @@ def main() -> None:
         encode_xa(args.psxavenc, inst_wav, inst_xa, 1)
         full_sectors = sectors(full_xa)
         inst_sectors = sectors(inst_xa)
+
+        silence_wav = temp / "silence.wav"
+        run([
+            args.ffmpeg,
+            "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"anullsrc=r={SAMPLE_RATE}:cl=stereo",
+            "-t", "1", silence_wav,
+        ])
+        silence: dict[int, bytes] = {}
+        for channel in range(INTERLEAVE_SLOTS):
+            silent_xa = temp / f"silence-{channel}.xa"
+            encode_xa(args.psxavenc, silence_wav, silent_xa, channel)
+            silence[channel] = sectors(silent_xa)[0]
+
         count = max(len(full_sectors), len(inst_sectors))
-        # The two streams are almost identical in length; repeat each final XA
-        # sector only as padding so the opposite stream cannot leak in.
         output = bytearray()
         for index in range(count):
-            output += full_sectors[index] if index < len(full_sectors) else full_sectors[-1]
-            output += inst_sectors[index] if index < len(inst_sectors) else inst_sectors[-1]
+            output += full_sectors[index] if index < len(full_sectors) else silence[0]
+            output += inst_sectors[index] if index < len(inst_sectors) else silence[1]
+            for channel in range(2, INTERLEAVE_SLOTS):
+                output += silence[channel]
         target = args.out / "spag.xa"
         target.write_bytes(output)
 
     centiseconds = max(1, round(duration * 100.0))
+    physical_sectors = (args.out / "spag.xa").stat().st_size // SECTOR
+    expected_sectors = count * INTERLEAVE_SLOTS
+    if physical_sectors != expected_sectors:
+        raise RuntimeError(f"SPAG XA interleave mismatch: {physical_sectors} != {expected_sectors}")
+    # The runtime measures XA track boundaries in physical 75 Hz CD sectors.
+    # Allow normal encoder rounding, but reject the old under-interleaved layout.
+    expected_from_duration = duration * 75.0
+    if not (expected_from_duration * 0.96 <= physical_sectors <= expected_from_duration * 1.04 + INTERLEAVE_SLOTS):
+        raise RuntimeError(
+            f"SPAG XA physical duration mismatch: sectors={physical_sectors}, duration={duration:.3f}s"
+        )
+
     args.header.parent.mkdir(parents=True, exist_ok=True)
     args.header.write_text(
         "#ifndef _SSERAFIM_AUDIO_GENERATED_H\n"
@@ -165,8 +199,11 @@ def main() -> None:
         "xa": {
             "file": "spag.xa",
             "bytes": (args.out / "spag.xa").stat().st_size,
-            "physical_sectors": (args.out / "spag.xa").stat().st_size // SECTOR,
-            "channels": {"0": "full mix", "1": "instrumental"},
+            "physical_sectors": physical_sectors,
+            "logical_timeline_sectors": count,
+            "interleave_slots": INTERLEAVE_SLOTS,
+            "physical_seconds": physical_sectors / 75.0,
+            "channels": {"0": "full mix", "1": "instrumental", "2-7": "silent padding"},
         },
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
