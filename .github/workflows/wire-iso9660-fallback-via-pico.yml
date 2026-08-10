@@ -1,0 +1,49 @@
+name: Wire ISO9660 fallback through Pico integration
+
+on:
+  push:
+    branches: [full-port-completion]
+    paths:
+      - '.github/workflows/wire-iso9660-fallback-via-pico.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: full-port-completion
+          fetch-depth: 0
+
+      - name: Patch Pico integration to install IO fallback
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path=Path('scripts/apply_pico_mixes_v1.py')
+          text=path.read_text()
+          old='import argparse\nimport re\nfrom pathlib import Path\n'
+          new='import argparse\nimport re\nimport subprocess\nimport sys\nfrom pathlib import Path\n'
+          if text.count(old) != 1:
+              raise SystemExit('Pico import anchor changed')
+          text=text.replace(old,new,1)
+          old='    apply_character_select(root / "src/menu.c")\n    apply_xml(root)\n    print("Applied all 15 official Pico Mixes, Pico Freeplay routing, and runtime events")\n'
+          new='    apply_character_select(root / "src/menu.c")\n    apply_xml(root)\n    fallback = Path(__file__).with_name("apply_iso9660_lookup_fallback.py")\n    subprocess.run(\n        [sys.executable, str(fallback), "--upstream", str(root)],\n        check=True,\n    )\n    print("Applied all 15 official Pico Mixes, Pico Freeplay routing, runtime events, and ISO9660 lookup fallback")\n'
+          if text.count(old) != 1:
+              raise SystemExit('Pico main anchor changed')
+          path.write_text(text.replace(old,new,1))
+          PY
+          python3 -m py_compile scripts/apply_pico_mixes_v1.py scripts/apply_iso9660_lookup_fallback.py
+          git diff --check
+          git diff -- scripts/apply_pico_mixes_v1.py
+
+      - name: Commit integration
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add scripts/apply_pico_mixes_v1.py
+          git commit -m 'Install ISO9660 fallback during Pico integration'
+          git push origin HEAD:full-port-completion
