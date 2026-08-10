@@ -1,0 +1,56 @@
+name: Fix Pico Makefile generator continuation
+
+on:
+  push:
+    branches: [ full-port-completion ]
+    paths:
+      - '.github/workflows/fix-pico-makefile-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: full-port-completion
+      - name: Repair Pico Makefile source continuation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import py_compile
+
+          path = Path('scripts/apply_pico_mixes_v1.py')
+          lines = path.read_text().splitlines(keepends=True)
+          matches = [i for i, line in enumerate(lines) if 'f"       src/character/{name}.c ' in line]
+          if len(matches) != 1:
+              raise SystemExit(f'expected one Pico character source generator line, found {len(matches)}')
+
+          i = matches[0]
+          lines[i] = '        f"       src/character/{name}.c ' + ('\\' * 3) + 'n"\n'
+          path.write_text(''.join(lines))
+          py_compile.compile(str(path), doraise=True)
+
+          repaired = path.read_text().splitlines()[i]
+          suffix = repaired.split('.c ', 1)[1]
+          slash_count = len(suffix) - len(suffix.lstrip('\\'))
+          if slash_count != 3 or not suffix.endswith('n"'):
+              raise SystemExit(f'unexpected repaired source literal: {repaired!r}')
+          print(f'Repaired Pico source generator at line {i + 1}: {repaired}')
+          PY
+          git diff --check
+          git diff -- scripts/apply_pico_mixes_v1.py
+      - name: Commit repair
+        run: |
+          if git diff --quiet -- scripts/apply_pico_mixes_v1.py; then
+            echo 'Generator already repaired.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/apply_pico_mixes_v1.py
+          git commit -m 'Fix Pico Makefile source continuations'
+          git push origin HEAD:full-port-completion
