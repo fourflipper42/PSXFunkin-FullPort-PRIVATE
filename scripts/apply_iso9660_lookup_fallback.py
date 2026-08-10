@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Patch PSXFunkin's CD lookup so large ISO9660 directories work on PS1.
+"""Apply full-directory ISO9660 lookup plus M1/M3 runtime repairs.
 
-PsyQ CdSearchFile is kept as the fast path. If it misses, the fallback reads the
-ISO9660 primary volume descriptor and scans every sector of each directory in
-the requested path. This is needed by the full port because directories such as
-MENU, CHAR, and WEEK10 are now larger than the original one-sector layout.
+The giant disc has ISO9660 directories (including the root directory) that span
+multiple 2048-byte sectors. PsyQ CdSearchFile is kept as the fast path, but a
+non-fatal IO_SearchFile fallback scans every directory sector when PsyQ misses.
+The movie player is routed through that same resolver, fixing cutscenes that
+previously bypassed the boot-file fix. The final menu transition also becomes
+the single owner of restoring Gettin' Freaky after Character Select/Freeplay.
 """
 from __future__ import annotations
 
@@ -30,12 +32,12 @@ OLD = r'''void IO_FindFile(CdlFILE *file, const char *path)
 
 NEW = r'''/*
  * PsyQ's CdSearchFile is retained as the normal fast path, but the full port
- * contains ISO9660 directories spanning multiple 2048-byte sectors.  Some
+ * contains ISO9660 directories spanning multiple 2048-byte sectors. Some
  * PsyQ revisions fail to find records beyond the first directory sector.
  *
- * This small fallback reads ISO9660 metadata directly only after CdSearchFile
- * misses.  It understands the subset used by mkpsxiso: primary volume
- * descriptor, nested directories, and ordinary ISO9660 file records.
+ * This fallback reads ISO9660 metadata directly only after CdSearchFile misses.
+ * It understands the subset emitted by mkpsxiso: the primary volume descriptor,
+ * nested directories, and ordinary ISO9660 file records.
  */
 static u32 io_iso_sector[IO_SECT_SIZE / sizeof(u32)];
 
@@ -104,7 +106,6 @@ static boolean IO_ISOFindInDirectory(u32 dir_lba, u32 dir_size,
 			u8 record_len = record[0];
 			u8 name_len;
 
-			/* A zero record length pads the rest of this logical sector. */
 			if (record_len == 0)
 				break;
 			if (record_len < 34 || offset + record_len > limit)
@@ -133,7 +134,6 @@ static boolean IO_ISOSearchFile(CdlFILE *file, const char *path)
 	u32 dir_lba;
 	u32 dir_size;
 
-	/* ISO9660 Primary Volume Descriptor is logical sector 16. */
 	if (!IO_ReadISOSector(16))
 		return false;
 	pvd = (const u8*)io_iso_sector;
@@ -198,51 +198,238 @@ static boolean IO_ISOSearchFile(CdlFILE *file, const char *path)
 	}
 }
 
+boolean IO_SearchFile(CdlFILE *file, const char *path)
+{
+	printf("[IO_SearchFile] Searching for %s\n", path);
+	if (CdSearchFile(file, (char*)path))
+		return true;
+	printf("[IO_SearchFile] CdSearchFile miss, using full ISO9660 scan\n");
+	return IO_ISOSearchFile(file, path);
+}
+
 void IO_FindFile(CdlFILE *file, const char *path)
 {
-	printf("[IO_FindFile] Searching for %s\n", path);
-	
-	//Stop XA playback
+	// Normal asset reads own the CD and therefore stop XA before seeking.
 	Audio_StopXA();
-	
-	//Use PsyQ's cached search first, then scan the complete ISO9660 directory.
-	if (!CdSearchFile(file, (char*)path))
+	if (!IO_SearchFile(file, path))
 	{
-		printf("[IO_FindFile] CdSearchFile miss, using full ISO9660 scan\n");
-		if (!IO_ISOSearchFile(file, path))
-		{
-			sprintf(error_msg, "[IO_FindFile] %s not found", path);
-			ErrorLock();
-		}
+		sprintf(error_msg, "[IO_FindFile] %s not found", path);
+		ErrorLock();
 	}
 }
 '''
+
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one anchor, found {count}")
+    return text.replace(old, new, 1)
+
+
+def replace_c_function(text: str, signature: str, replacement: str, label: str) -> str:
+    start = text.find(signature)
+    if start < 0:
+        raise SystemExit(f"{label}: signature missing")
+    brace = text.find("{", start)
+    if brace < 0:
+        raise SystemExit(f"{label}: opening brace missing")
+    depth = 0
+    end = -1
+    for index in range(brace, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                end = index + 1
+                break
+    if end < 0:
+        raise SystemExit(f"{label}: closing brace missing")
+    return text[:start] + replacement.rstrip() + text[end:]
+
+
+def patch_io(root: Path) -> None:
+    io_c = root / "src/io.c"
+    text = io_c.read_text()
+    count = text.count(OLD)
+    if count != 1:
+        raise SystemExit(f"IO_FindFile baseline anchor changed: expected 1, found {count}")
+    io_c.write_text(text.replace(OLD, NEW, 1))
+
+    io_h = root / "src/io.h"
+    text = io_h.read_text()
+    text = replace_once(
+        text,
+        "void IO_FindFile(CdlFILE *file, const char *path);\n",
+        "boolean IO_SearchFile(CdlFILE *file, const char *path);\n"
+        "void IO_FindFile(CdlFILE *file, const char *path);\n",
+        "public nonfatal ISO search declaration",
+    )
+    io_h.write_text(text)
+
+
+def patch_movies(root: Path) -> None:
+    movie = root / "src/movie.c"
+    text = movie.read_text()
+    if '#include "io.h"' not in text:
+        text = replace_once(text, '#include "main.h"\n', '#include "main.h"\n#include "io.h"\n#include "audio.h"\n', "movie IO/audio includes")
+    movie_play = r'''void Movie_Play(const char *path, unsigned long length)
+{
+	// Movie playback owns the CD. Stop any XA stream before either the fallback
+	// directory scan or STR streaming starts.
+	Audio_StopXA();
+
+	// Resolve with the same multi-sector ISO9660 path used by normal assets.
+	// The full disc root is larger than one ISO sector, so raw CdSearchFile is
+	// not reliable for the late MOVIE directory on all PsyQ revisions.
+	CdlFILE file;
+	if (!IO_SearchFile(&file, path))
+	{
+		sprintf(error_msg, "[Movie_Play] Missing \"%s\"", path);
+		ErrorLock();
+		return;
+	}
+
+	// Story selection can itself be confirmed with Start. Do not let that same
+	// held press immediately skip the movie we are about to begin.
+	while (PadRead(1) & PADstart)
+		VSync(0);
+
+	STRFILE sfile;
+	strcpy(sfile.FileName, path);
+	sfile.Xres = 320;
+	sfile.Yres = 240;
+	sfile.NumFrames = length;
+	PlayStr(320, 240, 0, 0, &sfile);
+
+	// Leave the drive quiescent. The next XA owner will reinitialize its own
+	// filter/mode instead of inheriting STR streaming state.
+	CdControlB(CdlPause, NULL, NULL);
+	DrawSync(0);
+	SetDispMask(1);
+}
+'''
+    text = replace_c_function(text, "void Movie_Play(", movie_play, "movie playback function")
+    movie.write_text(text)
+
+    strplay = root / "src/strplay.c"
+    text = strplay.read_text()
+    old = "if (CdSearchFile(&file, str->FileName) == 0) {"
+    new = "if (!IO_SearchFile(&file, str->FileName)) {"
+    text = replace_once(text, old, new, "STR internal file lookup")
+    strplay.write_text(text)
+
+
+def patch_frontend_music(root: Path) -> None:
+    menu = root / "src/menu.c"
+    text = menu.read_text()
+
+    # Character Select used to restore music from its visual teardown. Freeplay
+    # had a second, separate restore path. Those paths race page/visual swaps.
+    # Remove both and restore exactly once when the page transition commits.
+    cs_restore = "\t\tMenu_RestoreMenuMusic();\n"
+    if text.count(cs_restore) == 1:
+        text = text.replace(
+            cs_restore,
+            "\t\t/* M3: frontend music restore is owned by page transition commit. */\n",
+            1,
+        )
+    elif text.count(cs_restore) != 0:
+        raise SystemExit(f"Character Select music restore count changed: {text.count(cs_restore)}")
+
+    freeplay_restore = (
+        "\t\tif (page != MenuPage_Stage && page != MenuPage_CharacterSelect)\n"
+        "\t\t{\n"
+        "\t\t\tAudio_PlayXA_Track(XA_GettinFreaky, 0x40, 0, true);\n"
+        "\t\t\tAudio_WaitPlayXA();\n"
+        "\t\t}\n"
+    )
+    if text.count(freeplay_restore) == 1:
+        text = text.replace(
+            freeplay_restore,
+            "\t\t/* M3: frontend music restore is owned by page transition commit. */\n",
+            1,
+        )
+    elif text.count(freeplay_restore) != 0:
+        raise SystemExit(f"Freeplay music restore count changed: {text.count(freeplay_restore)}")
+
+    transition = (
+        "\tif (Trans_Tick())\n"
+        "\t{\n"
+        "\t\t//Change to set next page\n"
+        "\t\tmenu.page_swap = true;\n"
+        "\t\tmenu.page = menu.next_page;\n"
+        "\t\tmenu.select = menu.next_select;\n"
+        "\t}\n"
+    )
+    transition_new = (
+        "\tif (Trans_Tick())\n"
+        "\t{\n"
+        "\t\tu8 previous_page = menu.page;\n"
+        "\t\t//Change to set next page\n"
+        "\t\tmenu.page_swap = true;\n"
+        "\t\tmenu.page = menu.next_page;\n"
+        "\t\tmenu.select = menu.next_select;\n"
+        "\n"
+        "\t\t/* M1_M3_FRONTEND_AUDIO_RESTORE\n"
+        "\t\t * Freeplay previews and Character Select use their own XA streams.\n"
+        "\t\t * Restore Gettin' Freaky only after returning to an ordinary\n"
+        "\t\t * frontend page, never while a Stage/Freeplay/CharacterSelect\n"
+        "\t\t * destination is taking ownership of the CD. */\n"
+        "\t\tif ((previous_page == MenuPage_Freeplay || previous_page == MenuPage_CharacterSelect) &&\n"
+        "\t\t    menu.page != MenuPage_Stage && menu.page != MenuPage_Freeplay &&\n"
+        "\t\t    menu.page != MenuPage_CharacterSelect)\n"
+        "\t\t{\n"
+        "\t\t\tAudio_StopXA();\n"
+        "\t\t\tAudio_PlayXA_Track(XA_GettinFreaky, 0x40, 0, true);\n"
+        "\t\t\tAudio_WaitPlayXA();\n"
+        "\t\t\tstage.song_step = 0;\n"
+        "\t\t}\n"
+        "\t}\n"
+    )
+    text = replace_once(text, transition, transition_new, "central frontend audio transition")
+    menu.write_text(text)
+
+
+def validate(root: Path) -> None:
+    io_c = (root / "src/io.c").read_text()
+    io_h = (root / "src/io.h").read_text()
+    movie = (root / "src/movie.c").read_text()
+    strplay = (root / "src/strplay.c").read_text()
+    menu = (root / "src/menu.c").read_text()
+
+    for marker in (
+        "IO_ISOSearchFile",
+        "IO_ISOFindInDirectory",
+        "IO_ReadISOSector(16)",
+        "boolean IO_SearchFile(CdlFILE *file, const char *path)",
+        "CdIntToPos(extent, &file->pos)",
+    ):
+        if marker not in io_c:
+            raise SystemExit(f"ISO9660 runtime marker missing: {marker}")
+    if "boolean IO_SearchFile(CdlFILE *file, const char *path);" not in io_h:
+        raise SystemExit("IO_SearchFile declaration missing")
+    if "IO_SearchFile(&file, path)" not in movie:
+        raise SystemExit("Movie_Play does not use full ISO search")
+    if "IO_SearchFile(&file, str->FileName)" not in strplay:
+        raise SystemExit("STR player does not use full ISO search")
+    if "CdSearchFile(&file, str->FileName)" in strplay:
+        raise SystemExit("raw CdSearchFile survived inside STR player")
+    if "M1_M3_FRONTEND_AUDIO_RESTORE" not in menu:
+        raise SystemExit("central frontend music restore marker missing")
+    print("Applied ISO9660, STR playback lookup, and frontend audio ownership repairs")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--upstream", type=Path, required=True)
     args = parser.parse_args()
-
-    path = args.upstream / "src" / "io.c"
-    text = path.read_text()
-    count = text.count(OLD)
-    if count != 1:
-        raise SystemExit(f"IO_FindFile baseline anchor changed: expected 1, found {count}")
-    path.write_text(text.replace(OLD, NEW, 1))
-
-    patched = path.read_text()
-    required = (
-        "IO_ISOSearchFile",
-        "IO_ISOFindInDirectory",
-        "IO_ReadISOSector(16)",
-        "CdSearchFile(file, (char*)path)",
-        "CdIntToPos(extent, &file->pos)",
-    )
-    for marker in required:
-        if marker not in patched:
-            raise SystemExit(f"ISO9660 fallback marker missing: {marker}")
-    print("Applied full-directory ISO9660 lookup fallback")
+    root = args.upstream
+    patch_io(root)
+    patch_movies(root)
+    patch_frontend_music(root)
+    validate(root)
 
 
 if __name__ == "__main__":
