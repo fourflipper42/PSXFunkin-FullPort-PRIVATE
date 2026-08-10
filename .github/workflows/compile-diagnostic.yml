@@ -1,0 +1,68 @@
+name: PSXFunkin compile diagnostic
+
+on:
+  push:
+    branches: [ full-port-completion ]
+    paths:
+      - '.github/workflows/compile-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replay production build through compiler
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m pip install --disable-pip-version-check -q pyyaml
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+          import sys
+          import yaml
+
+          workflow = yaml.safe_load(pathlib.Path('.github/workflows/charselect-v7-1-build.yml').read_text())
+          job = workflow['jobs']['ps1-build']
+          for step in job['steps']:
+              if 'uses' in step:
+                  continue
+              name = step.get('name', 'unnamed')
+              command = step.get('run')
+              if not command:
+                  continue
+              print(f'::group::{name}', flush=True)
+              env = os.environ.copy()
+              for key, value in (step.get('env') or {}).items():
+                  value = str(value)
+                  if key == 'GH_TOKEN' and '${{' in value:
+                      value = os.environ['GH_TOKEN']
+                  env[key] = value
+              cwd = pathlib.Path(step.get('working-directory', '.'))
+              proc = subprocess.run(
+                  ['bash', '-eo', 'pipefail', '-c', command],
+                  cwd=cwd,
+                  env=env,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  text=True,
+              )
+              print(proc.stdout, end='', flush=True)
+              print('::endgroup::', flush=True)
+              if proc.returncode:
+                  lines = [line for line in proc.stdout.splitlines() if line.strip()]
+                  useful = [line for line in lines if any(token in line.lower() for token in ('error:', 'fatal:', 'undefined reference', 'no rule to make', 'make:', 'collect2:', 'ld:'))]
+                  excerpt = '\n'.join((useful or lines)[-30:])
+                  excerpt = excerpt.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::error title={name} failure::{excerpt}', flush=True)
+                  raise SystemExit(proc.returncode)
+              if name == 'Compile PSXFunkin':
+                  print('::notice title=Compile diagnostic::PSXFunkin compiler completed successfully', flush=True)
+                  break
+          PY
