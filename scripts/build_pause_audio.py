@@ -7,6 +7,7 @@ single audible channel must occupy one of eight physical XA slots. Earlier
 builds wrote channel 0 sectors contiguously, causing Breakfast to play far too
 fast and making random pause offsets seek beyond the intended timeline.
 """
+# CI retrigger for heap-backed STR playback and post-visual frontend audio restore.
 from __future__ import annotations
 
 import argparse
