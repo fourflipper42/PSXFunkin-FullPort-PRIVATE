@@ -996,7 +996,9 @@ def apply_definitions(root: Path) -> None:
     definitions = []
     for index, (key, _display, original, _track, _bpm) in enumerate(SONGS):
         definitions.append(pico_definition(text, index, key, original))
-    path.write_text(text.rstrip() + ",\n" + ",\n".join(definitions) + "\n")
+    base = text.rstrip()
+    separator = "\n" if base.endswith(",") else ",\n"
+    path.write_text(base + separator + ",\n".join(definitions) + "\n")
 
 
 def apply_makefile(root: Path) -> None:
