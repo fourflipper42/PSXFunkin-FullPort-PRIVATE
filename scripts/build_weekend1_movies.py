@@ -23,36 +23,48 @@ def encoded_frame_count(path:Path)->int:
  return mx
 
 def patch_m1_v4_helper()->None:
- # M1 v4: the prior Movie_Play wrapper did two unbounded/undiagnosed things
- # before entering the guarded STR player: it performed a redundant CD lookup
- # and waited forever for PADstart to read released.  The STR player already
- # performs a bounded lookup and owns E0-E4 diagnostics, so remove both.
+ # M1 v4 removes the two unguarded operations that previously happened before
+ # PlayStr(): a redundant movie lookup and an infinite PADstart-release wait.
+ # Rewrite the helper's complete Movie_Play template structurally instead of
+ # matching its whitespace-sensitive C body.
  helper=Path(__file__).with_name('apply_iso9660_lookup_fallback.py')
  text=helper.read_text()
  if 'M1_MOVIE_ENTRY_V4' in text:
   return
- old=r'''\tCdlFILE file;
-\tif (!IO_SearchFile(&file, path))
-\t{
-\t\tsprintf(error_msg, "[M1V3 LOOKUP] missing %s", path);
-\t\tErrorLock();
-\t\treturn;
-\t}
+ start_marker="    movie_play = r'''void Movie_Play("
+ start=text.find(start_marker)
+ if start < 0:
+  raise RuntimeError('M1 v4 Movie_Play template start missing')
+ end=text.find("\n'''", start + len(start_marker))
+ if end < 0:
+  raise RuntimeError('M1 v4 Movie_Play template end missing')
+ end += len("\n'''")
+ replacement=r'''    movie_play = r\'''void Movie_Play(const char *path, unsigned long length)
+{
+\tAudio_StopXA();
 
-\twhile (PadRead(1) & PADstart)
-\t\tVSync(0);
-
-\tSTRFILE sfile;'''
- new=r'''\t/* M1_MOVIE_ENTRY_V4
+\t/* M1_MOVIE_ENTRY_V4
 \t * Do not perform an unguarded preflight CdSearchFile/ISO scan here and do
-\t * not spin waiting for PADstart.  strDoPlayback owns bounded lookup/CD
-\t * startup and reports E0-E4.  Start is only sampled after playback begins. */
-\tSTRFILE sfile;'''
- if text.count(old)!=1:
-  raise RuntimeError(f'M1 v4 Movie_Play helper anchor count={text.count(old)}')
- text=text.replace(old,new,1)
+\t * not spin waiting for PADstart. strDoPlayback owns bounded lookup/CD
+\t * startup and reports E0-E4. Start is sampled only after playback begins. */
+\tSTRFILE sfile;
+\tstrcpy(sfile.FileName, path);
+\tsfile.Xres = 320;
+\tsfile.Yres = 240;
+\tsfile.NumFrames = length;
+\tPlayStr(320, 240, 0, 0, &sfile);
+
+\tCdControlB(CdlPause, NULL, NULL);
+\tDrawSync(0);
+\tSetDispMask(1);
+}
+\''' '''
+ # The replacement above is constructed without relying on the C body's tabs.
+ # Normalize the escaped Python triple-quote delimiters into the helper source.
+ replacement=replacement.replace("r\\'''", "r'''").replace("\\''' ", "'''")
+ text=text[:start]+replacement+text[end:]
  helper.write_text(text)
- print('M1 v4: removed redundant preflight movie lookup and infinite Start wait')
+ print('M1 v4: structurally rewrote Movie_Play without preflight lookup/Start wait')
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--out',type=Path,required=True); ap.add_argument('--psxavenc',type=Path,required=True); ap.add_argument('--ffprobe',default='ffprobe'); ap.add_argument('--report',type=Path,required=True); ap.add_argument('--header',type=Path,required=True); a=ap.parse_args(); a.out.mkdir(parents=True,exist_ok=True); r=[]; defines=[]
