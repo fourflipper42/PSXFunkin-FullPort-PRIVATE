@@ -64,3 +64,5 @@ jobs:
                   print('::notice title=Compile diagnostic::PSXFunkin compiler completed successfully', flush=True)
                   break
           PY
+
+# Diagnostic rerun after repairing Pico Makefile continuation syntax.
