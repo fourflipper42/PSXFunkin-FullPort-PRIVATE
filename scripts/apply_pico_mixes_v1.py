@@ -1004,7 +1004,7 @@ def apply_makefile(root: Path) -> None:
     text = makefile.read_text()
     text = once(text, "       src/stage/sserafim.c \\\n", "       src/stage/sserafim.c \\\n       src/stage/picomix.c \\\n", "Pico stage build")
     additions = "".join(
-        f"       src/character/{name}.c \\\\\n"
+        f"       src/character/{name}.c \\\n"
         for name in ("picodark", "picoxmas", "picopixel", "picohold", "nenedark",
                      "nenexmas", "nenepixel", "spookydark", "tankbloody", "otis")
     )
