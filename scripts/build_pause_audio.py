@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Encode the official Funkin Breakfast pause music as a PS1 XA stream."""
+"""Encode official Funkin Breakfast pause music as correctly interleaved PS1 XA.
+
+18.9 kHz 4-bit stereo XA carries about 1/8 second of decoded audio per logical
+XA sector, while the CD supplies 75 physical sectors per second. Therefore a
+single audible channel must occupy one of eight physical XA slots. Earlier
+builds wrote channel 0 sectors contiguously, causing Breakfast to play far too
+fast and making random pause offsets seek beyond the intended timeline.
+"""
 from __future__ import annotations
 
 import argparse
@@ -12,6 +19,8 @@ from pathlib import Path
 
 
 SAMPLE_RATE = 18900
+SECTOR = 2336
+INTERLEAVE_SLOTS = 8
 
 
 def sha256(path: Path) -> str:
@@ -44,6 +53,28 @@ def run(command: list[object]) -> None:
     subprocess.run([str(value) for value in command], check=True)
 
 
+def xa_sectors(path: Path) -> list[bytes]:
+    data = path.read_bytes()
+    if not data or len(data) % SECTOR:
+        raise RuntimeError(f"{path} is not aligned to {SECTOR}-byte XA sectors")
+    return [data[index:index + SECTOR] for index in range(0, len(data), SECTOR)]
+
+
+def encode_xa(encoder: Path, source: Path, target: Path, channel: int) -> None:
+    run([
+        encoder,
+        "-q",
+        "-t", "xa",
+        "-f", str(SAMPLE_RATE),
+        "-b", "4",
+        "-c", "2",
+        "-F", "1",
+        "-C", str(channel),
+        source,
+        target,
+    ])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--assets-root", type=Path, required=True)
@@ -60,7 +91,8 @@ def main() -> None:
     args.report.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        wav = Path(temp_dir) / "breakfast.wav"
+        temp = Path(temp_dir)
+        wav = temp / "breakfast.wav"
         run([
             args.ffmpeg,
             "-y", "-loglevel", "error",
@@ -69,23 +101,41 @@ def main() -> None:
             "-ac", "2",
             wav,
         ])
+
+        audible_xa = temp / "breakfast-ch0.xa"
+        encode_xa(args.psxavenc, wav, audible_xa, 0)
+        audible = xa_sectors(audible_xa)
+
+        # Fill channels 1-7 with valid silent XA sectors so channel 0 occurs
+        # exactly once per eight physical sectors, as 18.9 kHz stereo requires.
+        silence_wav = temp / "silence.wav"
         run([
-            args.psxavenc,
-            "-q",
-            "-t", "xa",
-            "-f", str(SAMPLE_RATE),
-            "-b", "4",
-            "-c", "2",
-            "-F", "1",
-            "-C", "0",
-            wav,
-            args.out,
+            args.ffmpeg,
+            "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"anullsrc=r={SAMPLE_RATE}:cl=stereo",
+            "-t", "1",
+            silence_wav,
         ])
+        silence: dict[int, bytes] = {}
+        for channel in range(1, INTERLEAVE_SLOTS):
+            silent_xa = temp / f"silence-ch{channel}.xa"
+            encode_xa(args.psxavenc, silence_wav, silent_xa, channel)
+            silence[channel] = xa_sectors(silent_xa)[0]
+
+        output = bytearray()
+        for sector in audible:
+            output += sector
+            for channel in range(1, INTERLEAVE_SLOTS):
+                output += silence[channel]
+        args.out.write_bytes(output)
 
     if not args.out.is_file() or args.out.stat().st_size == 0:
         raise SystemExit("pause XA encoder produced no output")
-    if args.out.stat().st_size % 2336:
+    if args.out.stat().st_size % SECTOR:
         raise SystemExit("pause XA is not aligned to raw XA sectors")
+    physical_sectors = args.out.stat().st_size // SECTOR
+    if physical_sectors != len(audible) * INTERLEAVE_SLOTS:
+        raise SystemExit("pause XA interleave length mismatch")
 
     font = bytearray(args.font_template.read_bytes())
     if len(font) < 32 or struct.unpack_from("<I", font, 0)[0] != 0x10:
@@ -109,7 +159,10 @@ def main() -> None:
         "channels": 2,
         "xa_file": args.out.name,
         "xa_bytes": args.out.stat().st_size,
-        "xa_sectors": args.out.stat().st_size // 2336,
+        "xa_sectors": physical_sectors,
+        "xa_logical_audio_sectors": len(audible),
+        "xa_interleave_slots": INTERLEAVE_SLOTS,
+        "xa_physical_seconds": physical_sectors / 75.0,
         "xa_sha256": sha256(args.out),
         "pause_font": {
             "template": str(args.font_template),
@@ -126,7 +179,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-# CI retrigger after correcting the Pico Makefile source continuation generator.
-# Production rebuild after correcting the Pico stagedef separator generator.
-# Production rebuild with full-directory ISO9660 boot lookup fallback.
