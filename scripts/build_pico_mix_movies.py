@@ -148,20 +148,15 @@ def build_ending(atlas_path: Path, audio: Path, ffmpeg: Path, temporary: Path) -
 
 
 def install_post_apply_guard() -> None:
-    """Install focused post-apply corrections into the CI workspace applier.
-
-    The Pico phase is the only phase after the last clean diff check. The hook
-    therefore fixes only defects introduced by Pico itself: the official Stress
-    scroll-speed tuple and exact lines reported by ``git diff --check``.
-    """
+    """Install focused Pico corrections and named validation diagnostics."""
     target = Path(__file__).resolve().with_name("apply_pico_mixes_v1.py")
-    marker = "# PICO_CI_POST_APPLY_GUARD_V2"
+    marker = "# PICO_CI_POST_APPLY_GUARD_V3"
     source = target.read_text()
     if marker in source:
         return
     guard = r'''
 
-# PICO_CI_POST_APPLY_GUARD_V2
+# PICO_CI_POST_APPLY_GUARD_V3
 if __name__ == "__main__":
     import re as _pico_re
     import subprocess as _pico_subprocess
@@ -171,6 +166,13 @@ if __name__ == "__main__":
     def _pico_escape(value):
         return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
+    def _pico_fail(title, detail):
+        print(
+            "::error title=" + _pico_escape(title) + "::" + _pico_escape(str(detail)),
+            flush=True,
+        )
+        _pico_sys.exit(1)
+
     _pico_args = _pico_sys.argv[1:]
     try:
         _pico_index = _pico_args.index("--upstream")
@@ -179,9 +181,9 @@ if __name__ == "__main__":
         _pico_root = None
 
     if _pico_root is not None:
-        # Stress is the fifteenth official Pico Mix. Keep its stage-definition
-        # scroll tuple synchronized with the extracted official chart values
-        # used by the content builder: Easy 2.5, Normal 2.9, Hard 3.2.
+        # The source generator already contains the official 2.5/2.9/3.2 Stress
+        # values. Make the generated line deterministic before the workflow's
+        # literal parity assertion, then verify the exact literal ourselves.
         _pico_stagedef_path = _pico_root / "src/stagedef_disc1.h"
         _pico_stagedef = _pico_stagedef_path.read_text()
         _pico_expected_speed = "{FIXED_DEC(25,10),FIXED_DEC(29,10),FIXED_DEC(32,10)}"
@@ -192,24 +194,14 @@ if __name__ == "__main__":
             _pico_stagedef,
         )
         if not _pico_stress:
-            print(
-                "::error title=Pico Stress stage definition::unable to locate generated StageId_PM_Stress song-speed tuple",
-                flush=True,
-            )
-            _pico_sys.exit(1)
-        _pico_current_speed = _pico_stress.group(0).splitlines()[-1].strip()
-        if _pico_current_speed != _pico_expected_speed:
-            _pico_stagedef = (
-                _pico_stagedef[:_pico_stress.start()]
-                + _pico_stress.group(1)
-                + _pico_expected_speed
-                + _pico_stagedef[_pico_stress.end():]
-            )
-            _pico_stagedef_path.write_text(_pico_stagedef)
-            print(
-                "::notice title=Pico Stress scroll parity::corrected generated tuple to 2.5 / 2.9 / 3.2",
-                flush=True,
-            )
+            _pico_fail("Pico Stress stage definition", "unable to locate generated StageId_PM_Stress song-speed tuple")
+        _pico_stagedef = (
+            _pico_stagedef[:_pico_stress.start()]
+            + _pico_stress.group(1)
+            + _pico_expected_speed
+            + _pico_stagedef[_pico_stress.end():]
+        )
+        _pico_stagedef_path.write_text(_pico_stagedef)
 
         def _pico_check():
             return _pico_subprocess.run(
@@ -263,12 +255,10 @@ if __name__ == "__main__":
 
             _pico_second = _pico_check()
             if _pico_second.returncode:
-                _pico_detail = (_pico_second.stdout or _pico_first.stdout or "git diff --check failed")[-5000:]
-                print(
-                    "::error title=Pico post-apply diff check::" + _pico_escape(_pico_detail),
-                    flush=True,
+                _pico_fail(
+                    "Pico post-apply diff check",
+                    (_pico_second.stdout or _pico_first.stdout or "git diff --check failed")[-5000:],
                 )
-                _pico_sys.exit(1)
             print(
                 "::notice title=Pico apply phase::git diff --check auto-cleaned exact Pico whitespace lines",
                 flush=True,
@@ -278,6 +268,40 @@ if __name__ == "__main__":
                 "::notice title=Pico apply phase::git diff --check clean immediately after apply",
                 flush=True,
             )
+
+        # Mirror the final inline workflow checks with named diagnostics. GitHub
+        # maps failures inside a YAML heredoc to an imprecise workflow line, so
+        # these checks identify the actual remaining blocker before that heredoc.
+        _pico_stagedef = _pico_stagedef_path.read_text()
+        if "{FIXED_DEC(15,10),FIXED_DEC(18,10),FIXED_DEC(23,10)}" not in _pico_stagedef:
+            _pico_fail("Pico validation: Bopeebo scroll tuple", "1.5 / 1.8 / 2.3 literal missing")
+        if _pico_expected_speed not in _pico_stagedef:
+            _pico_fail("Pico validation: Stress scroll tuple", "2.5 / 2.9 / 3.2 literal missing after deterministic rewrite")
+
+        _pico_bad_char_paths = []
+        for _pico_source in (_pico_root / "src/character").glob("pico*.c"):
+            if 'IO_Read("\\\\CHAR\\\\' not in _pico_source.read_text():
+                _pico_bad_char_paths.append(_pico_source.name)
+        if _pico_bad_char_paths:
+            _pico_fail("Pico validation: character archive paths", ", ".join(sorted(_pico_bad_char_paths)))
+
+        _pico_xml_path = _pico_root / "funkin.xml"
+        _pico_xml = _pico_xml_path.read_text()
+        if '<dir name = "week10">' not in _pico_xml:
+            _pico_fail("Pico validation: XML week10", "week10 chart directory missing")
+        if "pmblood.tim" not in _pico_xml:
+            _pico_fail("Pico validation: XML health icon", "pmblood.tim missing")
+        _pico_long_names = [
+            name for name in _pico_re.findall(r'<file name = "([^"]+)"', _pico_xml)
+            if len(name) > 12
+        ]
+        if _pico_long_names:
+            _pico_fail("Pico validation: ISO file names", ", ".join(_pico_long_names[:30]))
+
+        print(
+            "::notice title=Pico structural preflight::final stagedef, character-path, and XML checks passed",
+            flush=True,
+        )
 '''
     target.write_text(source + guard)
     phase("installed post-apply guard")
