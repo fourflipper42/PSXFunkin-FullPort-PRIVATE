@@ -26,20 +26,24 @@ def patch_m1_v4_helper()->None:
  # M1 v4 removes the two unguarded operations that previously happened before
  # PlayStr(): a redundant movie lookup and an infinite PADstart-release wait.
  # Rewrite the helper's complete Movie_Play template structurally instead of
- # matching its whitespace-sensitive C body.
+ # matching its whitespace-sensitive C body. Keep the helper's validation in
+ # lock-step so Pico's final integration pass validates the v4 contract rather
+ # than rejecting the intentional removal of the v3 wrapper preflight.
  helper=Path(__file__).with_name('apply_iso9660_lookup_fallback.py')
  text=helper.read_text()
- if 'M1_MOVIE_ENTRY_V4' in text:
+ validator_marker='M1 v4 redundant preflight ISO search survived'
+ if 'M1_MOVIE_ENTRY_V4' in text and validator_marker in text:
   return
- start_marker="    movie_play = r'''void Movie_Play("
- start=text.find(start_marker)
- if start < 0:
-  raise RuntimeError('M1 v4 Movie_Play template start missing')
- end=text.find("\n'''", start + len(start_marker))
- if end < 0:
-  raise RuntimeError('M1 v4 Movie_Play template end missing')
- end += len("\n'''")
- replacement=r'''    movie_play = r\'''void Movie_Play(const char *path, unsigned long length)
+ if 'M1_MOVIE_ENTRY_V4' not in text:
+  start_marker="    movie_play = r'''void Movie_Play("
+  start=text.find(start_marker)
+  if start < 0:
+   raise RuntimeError('M1 v4 Movie_Play template start missing')
+  end=text.find("\n'''", start + len(start_marker))
+  if end < 0:
+   raise RuntimeError('M1 v4 Movie_Play template end missing')
+  end += len("\n'''")
+  replacement=r'''    movie_play = r\'''void Movie_Play(const char *path, unsigned long length)
 {
 \tAudio_StopXA();
 
@@ -59,12 +63,18 @@ def patch_m1_v4_helper()->None:
 \tSetDispMask(1);
 }
 \''' '''
- # The replacement above is constructed without relying on the C body's tabs.
- # Normalize the escaped Python triple-quote delimiters into the helper source.
- replacement=replacement.replace("r\\'''", "r'''").replace("\\''' ", "'''")
- text=text[:start]+replacement+text[end:]
+  # The replacement above is constructed without relying on the C body's tabs.
+  # Normalize the escaped Python triple-quote delimiters into the helper source.
+  replacement=replacement.replace("r\\'''", "r'''").replace("\\''' ", "'''")
+  text=text[:start]+replacement+text[end:]
+ old_validation='''    if "IO_SearchFile(&file, path)" not in movie:\n        raise SystemExit("Movie_Play does not use full ISO search")\n'''
+ new_validation='''    if "M1_MOVIE_ENTRY_V4" not in movie:\n        raise SystemExit("M1 v4 movie entry marker missing")\n    if "IO_SearchFile(&file, path)" in movie:\n        raise SystemExit("M1 v4 redundant preflight ISO search survived")\n    if "while (PadRead(1) & PADstart)" in movie:\n        raise SystemExit("M1 v4 unbounded Start-release wait survived")\n'''
+ if old_validation in text:
+  text=text.replace(old_validation,new_validation,1)
+ elif validator_marker not in text:
+  raise RuntimeError('M1 v4 validator anchor missing')
  helper.write_text(text)
- print('M1 v4: structurally rewrote Movie_Play without preflight lookup/Start wait')
+ print('M1 v4: structurally rewrote Movie_Play and aligned final validator')
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--out',type=Path,required=True); ap.add_argument('--psxavenc',type=Path,required=True); ap.add_argument('--ffprobe',default='ffprobe'); ap.add_argument('--report',type=Path,required=True); ap.add_argument('--header',type=Path,required=True); a=ap.parse_args(); a.out.mkdir(parents=True,exist_ok=True); r=[]; defines=[]
