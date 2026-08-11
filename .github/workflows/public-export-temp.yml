@@ -28,7 +28,8 @@ jobs:
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
             -czf /tmp/public_snapshot.tar.gz \
             .gitignore README.md patches scripts sitecustomize.py
-          split -b 8192 -d -a 3 /tmp/public_snapshot.tar.gz export/chunk-
+          base64 -w0 /tmp/public_snapshot.tar.gz > /tmp/public_snapshot.b64
+          split -b 6000 -d -a 3 /tmp/public_snapshot.b64 export/chunk-
           sha256sum /tmp/public_snapshot.tar.gz | awk '{print $1}' > export/archive.sha256
           stat -c '%s' /tmp/public_snapshot.tar.gz > export/archive.size
           find export -maxdepth 1 -type f -name 'chunk-*' | sort | wc -l > export/chunk-count
