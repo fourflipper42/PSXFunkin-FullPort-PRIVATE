@@ -1,0 +1,44 @@
+name: Prepare public snapshot export
+
+on:
+  push:
+    branches:
+      - public-export-temp
+    paths-ignore:
+      - 'export/**'
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: public-export-temp
+          fetch-depth: 1
+
+      - name: Build clean snapshot archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf export
+          mkdir -p export
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -czf /tmp/public_snapshot.tar.gz \
+            .gitignore README.md patches scripts sitecustomize.py
+          split -b 8192 -d -a 3 /tmp/public_snapshot.tar.gz export/chunk-
+          sha256sum /tmp/public_snapshot.tar.gz | awk '{print $1}' > export/archive.sha256
+          stat -c '%s' /tmp/public_snapshot.tar.gz > export/archive.size
+          find export -maxdepth 1 -type f -name 'chunk-*' | sort | wc -l > export/chunk-count
+
+      - name: Store export chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add export
+          git commit -m 'Prepare public snapshot archive'
+          git push origin HEAD:public-export-temp
