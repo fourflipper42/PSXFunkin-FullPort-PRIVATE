@@ -39,6 +39,7 @@ def patch_m1_v4_helper() -> None:
     # samples while leaving the already-proven lookup/stream/return path intact.
     # M1 v6 routes VLC decode through DecDCTvlc2 so that exact table is consumed
     # explicitly instead of relying on DecDCTvlc's internal/global table state.
+    # M1 v7 matches Sony's CD/MOVIE samples by using CdlModeStream2 for STR reads.
     helper = Path(__file__).with_name('apply_iso9660_lookup_fallback.py')
     text = helper.read_text()
     validator_marker = 'M1 v4 redundant preflight ISO search survived'
@@ -168,6 +169,31 @@ def patch_m1_v4_helper() -> None:
             raise RuntimeError(f'M1 v6 helper validator anchor changed: {text.count(helper_validate_anchor)}')
         text = text.replace(helper_validate_anchor, helper_validate_patch, 1)
 
+    # Sony's PsyQ 4.4 CD/MOVIE samples start STR streaming with Stream2. The
+    # inherited player used Stream, which v6 showed can deliver intermittent
+    # decodable data but not a stable movie stream. Match Sony's command exactly.
+    if 'M1_STREAM2_V7' not in text:
+        stream_anchor = 'if (CdRead2(CdlModeStream | CdlModeSpeed | CdlModeRT) != 0)\n'
+        stream_patch = (
+            '/* M1_STREAM2_V7: Sony PsyQ CD/MOVIE streaming mode. */\n'
+            '\t\tif (CdRead2(CdlModeStream2 | CdlModeSpeed | CdlModeRT) != 0)\n'
+        )
+        if text.count(stream_anchor) != 1:
+            raise RuntimeError(f'M1 v7 CD stream anchor changed: {text.count(stream_anchor)}')
+        text = text.replace('\t\t' + stream_anchor, '\t\t' + stream_patch, 1)
+
+        helper_v6_anchor = (
+            '    if "M1_VLC_EXPLICIT_V6" not in strplay or "DecDCTvlc2(next, strEnv->VlcBuff_ptr[strEnv->VlcID], strVlcTable);" not in strplay:\n'
+            '        raise SystemExit("M1 v6 explicit PsyQ VLC decoder missing")\n'
+        )
+        helper_v7_patch = helper_v6_anchor + (
+            '    if "M1_STREAM2_V7" not in strplay or "CdlModeStream2 | CdlModeSpeed | CdlModeRT" not in strplay:\n'
+            '        raise SystemExit("M1 v7 Sony Stream2 mode missing")\n'
+        )
+        if text.count(helper_v6_anchor) != 1:
+            raise RuntimeError(f'M1 v7 helper validator anchor changed: {text.count(helper_v6_anchor)}')
+        text = text.replace(helper_v6_anchor, helper_v7_patch, 1)
+
     helper.write_text(text)
 
     # build_pico_mix_movies.py injects the final post-apply validator into the
@@ -224,6 +250,19 @@ def patch_m1_v4_helper() -> None:
         if pico.count(runtime_v5_anchor) != 1:
             raise RuntimeError(f'M1 v6 Pico runtime validator anchor changed: {pico.count(runtime_v5_anchor)}')
         pico = pico.replace(runtime_v5_anchor, runtime_v6_patch, 1)
+
+    if 'M1 v7 Sony Stream2 mode missing' not in pico:
+        runtime_v6_anchor = (
+            '        if "M1_VLC_EXPLICIT_V6" not in _runtime_str or "DecDCTvlc2(next, strEnv->VlcBuff_ptr[strEnv->VlcID], strVlcTable);" not in _runtime_str:\n'
+            '            _pico_fail("M1/M3 validation", "M1 v6 explicit PsyQ VLC decoder missing")\n'
+        )
+        runtime_v7_patch = runtime_v6_anchor + (
+            '        if "M1_STREAM2_V7" not in _runtime_str or "CdlModeStream2 | CdlModeSpeed | CdlModeRT" not in _runtime_str:\n'
+            '            _pico_fail("M1/M3 validation", "M1 v7 Sony Stream2 mode missing")\n'
+        )
+        if pico.count(runtime_v6_anchor) != 1:
+            raise RuntimeError(f'M1 v7 Pico runtime validator anchor changed: {pico.count(runtime_v6_anchor)}')
+        pico = pico.replace(runtime_v6_anchor, runtime_v7_patch, 1)
     pico_builder.write_text(pico)
 
     # Temporary M1 acceptance build: patch the generated Pico apply step so the
@@ -272,7 +311,7 @@ def patch_m1_v4_helper() -> None:
         apply_text = apply_text.replace(diag_anchor, diag_insert + diag_anchor, 1)
         pico_apply.write_text(apply_text)
 
-    print('M1 v6: v4 entry guards, explicit Sony VLC-table decode, and isolated STR boot diagnostic installed')
+    print('M1 v7: explicit Sony VLC-table decode, Stream2 CD mode, and isolated STR boot diagnostic installed')
 
 
 def main():
