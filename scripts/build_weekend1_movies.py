@@ -19,7 +19,7 @@ def encoded_frame_count(path:Path)->int:
   # real-time data submode 0x48; the MDEC header follows immediately.
   if sec[2] == 0x48 and sec[8:12] == STR_MAGIC:
    mx=max(mx,struct.unpack_from('<I',sec,16)[0])
- if mx <= 0: raise RuntimeError(f'{path} is not 2336-byte sector aligned') if len(path.read_bytes())%SECTOR else RuntimeError(f'no STR video frames found in {path}')
+ if mx <= 0: raise RuntimeError(f'no STR video frames found in {path}')
  return mx
 
 def patch_m1_v4_helper()->None:
