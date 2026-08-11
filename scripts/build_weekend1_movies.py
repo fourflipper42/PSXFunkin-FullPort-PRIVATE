@@ -43,27 +43,28 @@ def patch_m1_v4_helper()->None:
   end += len("\n'''")
   replacement=r'''    movie_play = r\'''void Movie_Play(const char *path, unsigned long length)
 {
-\tAudio_StopXA();
+\\tAudio_StopXA();
 
-\t/* M1_MOVIE_ENTRY_V4
-\t * Do not perform an unguarded preflight CdSearchFile/ISO scan here and do
-\t * not spin waiting for PADstart. strDoPlayback owns bounded lookup/CD
-\t * startup and reports E0-E4. Start is sampled only after playback begins. */
-\tSTRFILE sfile;
-\tstrcpy(sfile.FileName, path);
-\tsfile.Xres = 320;
-\tsfile.Yres = 240;
-\tsfile.NumFrames = length;
-\tPlayStr(320, 240, 0, 0, &sfile);
+\\t/* M1_MOVIE_ENTRY_V4
+\\t * Do not perform an unguarded preflight CdSearchFile/ISO scan here and do
+\\t * not spin waiting for PADstart. strDoPlayback owns bounded lookup/CD
+\\t * startup and reports E0-E4. Start is sampled only after playback begins. */
+\\tSTRFILE sfile;
+\\tstrcpy(sfile.FileName, path);
+\\tsfile.Xres = 320;
+\\tsfile.Yres = 240;
+\\tsfile.NumFrames = length;
+\\tPlayStr(320, 240, 0, 0, &sfile);
 
-\tCdControlB(CdlPause, NULL, NULL);
-\tDrawSync(0);
-\tSetDispMask(1);
+\\tCdControlB(CdlPause, NULL, NULL);
+\\tDrawSync(0);
+\\tSetDispMask(1);
 }
 \''' '''
   # The replacement above is constructed without relying on the C body's tabs.
-  # Normalize the escaped Python triple-quote delimiters into the helper source.
-  replacement=replacement.replace("r\\'''", "r'''").replace("\\''' ", "'''")
+  # Normalize the escaped Python triple-quote delimiters and C indentation into
+  # the helper source so generated movie.c contains real tabs, not literal \t.
+  replacement=replacement.replace("r\\\\'''", "r'''").replace("\\\\''' ", "'''").replace("\\\\t", "\t")
   text=text[:start]+replacement+text[end:]
  old_validation='''    if "IO_SearchFile(&file, path)" not in movie:\n        raise SystemExit("Movie_Play does not use full ISO search")\n'''
  new_validation='''    if "M1_MOVIE_ENTRY_V4" not in movie:\n        raise SystemExit("M1 v4 movie entry marker missing")\n    if "IO_SearchFile(&file, path)" in movie:\n        raise SystemExit("M1 v4 redundant preflight ISO search survived")\n    if "while (PadRead(1) & PADstart)" in movie:\n        raise SystemExit("M1 v4 unbounded Start-release wait survived")\n'''
