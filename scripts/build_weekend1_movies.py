@@ -19,21 +19,19 @@ def encoded_frame_count(path:Path)->int:
   # real-time data submode 0x48; the MDEC header follows immediately.
   if sec[2] == 0x48 and sec[8:12] == STR_MAGIC:
    mx=max(mx,struct.unpack_from('<I',sec,16)[0])
- if mx <= 0: raise RuntimeError(f'no STR video frames found in {path}')
+ if mx <= 0: raise RuntimeError(f'{path} is not 2336-byte sector aligned') if len(path.read_bytes())%SECTOR else RuntimeError(f'no STR video frames found in {path}')
  return mx
 
 def patch_m1_v4_helper()->None:
  # M1 v4 removes the two unguarded operations that previously happened before
  # PlayStr(): a redundant movie lookup and an infinite PADstart-release wait.
  # Rewrite the helper's complete Movie_Play template structurally instead of
- # matching its whitespace-sensitive C body. Keep the helper's validation in
- # lock-step so Pico's final integration pass validates the v4 contract rather
- # than rejecting the intentional removal of the v3 wrapper preflight.
+ # matching its whitespace-sensitive C body. Keep every final validator in
+ # lock-step so Pico's integration pass validates the v4 contract rather than
+ # rejecting the intentional removal of the v3 wrapper preflight.
  helper=Path(__file__).with_name('apply_iso9660_lookup_fallback.py')
  text=helper.read_text()
  validator_marker='M1 v4 redundant preflight ISO search survived'
- if 'M1_MOVIE_ENTRY_V4' in text and validator_marker in text:
-  return
  if 'M1_MOVIE_ENTRY_V4' not in text:
   start_marker="    movie_play = r'''void Movie_Play("
   start=text.find(start_marker)
@@ -74,7 +72,33 @@ def patch_m1_v4_helper()->None:
  elif validator_marker not in text:
   raise RuntimeError('M1 v4 validator anchor missing')
  helper.write_text(text)
- print('M1 v4: structurally rewrote Movie_Play and aligned final validator')
+
+ # build_pico_mix_movies.py injects the final post-apply validator into the Pico
+ # apply script. Its v3-era Movie_Play check must match the same M1 v4 contract:
+ # Movie_Play delegates lookup to bounded strDoPlayback instead of doing a
+ # second unguarded resolver pass before PlayStr().
+ pico_builder=Path(__file__).with_name('build_pico_mix_movies.py')
+ pico=pico_builder.read_text()
+ old_key='            "Movie resolver": "IO_SearchFile(&file, path)",'
+ new_key='            "Movie entry v4": "M1_MOVIE_ENTRY_V4",'
+ if old_key in pico:
+  pico=pico.replace(old_key,new_key,1)
+ old_guard='''        if _runtime_required["Movie resolver"] not in _runtime_movie:
+            _pico_fail("M1/M3 validation", "Movie_Play is not using the shared resolver")
+'''
+ new_guard='''        if _runtime_required["Movie entry v4"] not in _runtime_movie:
+            _pico_fail("M1/M3 validation", "M1 v4 movie entry marker missing")
+        if "IO_SearchFile(&file, path)" in _runtime_movie:
+            _pico_fail("M1/M3 validation", "M1 v4 redundant preflight ISO search survived")
+        if "while (PadRead(1) & PADstart)" in _runtime_movie:
+            _pico_fail("M1/M3 validation", "M1 v4 unbounded Start-release wait survived")
+'''
+ if old_guard in pico:
+  pico=pico.replace(old_guard,new_guard,1)
+ elif 'M1 v4 redundant preflight ISO search survived' not in pico:
+  raise RuntimeError('M1 v4 Pico validator anchor missing')
+ pico_builder.write_text(pico)
+ print('M1 v4: structurally rewrote Movie_Play and aligned final validators')
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--out',type=Path,required=True); ap.add_argument('--psxavenc',type=Path,required=True); ap.add_argument('--ffprobe',default='ffprobe'); ap.add_argument('--report',type=Path,required=True); ap.add_argument('--header',type=Path,required=True); a=ap.parse_args(); a.out.mkdir(parents=True,exist_ok=True); r=[]; defines=[]
