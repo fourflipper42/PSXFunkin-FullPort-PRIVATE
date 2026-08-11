@@ -37,6 +37,8 @@ def patch_m1_v4_helper() -> None:
     # PlayStr(): a redundant movie lookup and an infinite PADstart-release wait.
     # M1 v5 adds the VLC table initialization used by Sony's PsyQ CD movie
     # samples while leaving the already-proven lookup/stream/return path intact.
+    # M1 v6 routes VLC decode through DecDCTvlc2 so that exact table is consumed
+    # explicitly instead of relying on DecDCTvlc's internal/global table state.
     helper = Path(__file__).with_name('apply_iso9660_lookup_fallback.py')
     text = helper.read_text()
     validator_marker = 'M1 v4 redundant preflight ISO search survived'
@@ -92,7 +94,7 @@ def patch_m1_v4_helper() -> None:
         raise RuntimeError('M1 v4 validator anchor missing')
 
     # Sony's PsyQ 4.4 CD/MOVIE samples declare a DECDCTTAB and call
-    # DecDCTvlcBuild() before the first DecDCTvlc(). The inherited cuckydev
+    # DecDCTvlcBuild() before the first VLC decode. The inherited cuckydev
     # player omitted both. Install exactly that missing initialization.
     if 'M1_VLC_TABLE_V5' not in text:
         read_anchor = (
@@ -120,7 +122,7 @@ def patch_m1_v4_helper() -> None:
         )
         dct_patch = (
             '\tDecDCTReset(0);\n'
-            '\t/* Sony PsyQ CD/MOVIE samples build this before the first DecDCTvlc. */\n'
+            '\t/* Sony PsyQ CD/MOVIE samples build this before the first VLC decode. */\n'
             '\tDecDCTvlcBuild(strVlcTable);\n'
             '\tDecDCToutCallback(strCallback);\n'
         )
@@ -142,11 +144,35 @@ def patch_m1_v4_helper() -> None:
             raise RuntimeError(f'M1 v5 helper validator anchor changed: {text.count(validate_anchor)}')
         text = text.replace(validate_anchor, validate_patch, 1)
 
+    # PsyQ provides an explicit-table decoder variant. Use it so the table built
+    # above is definitely the one driving VLC expansion on every streamed frame.
+    if 'M1_VLC_EXPLICIT_V6' not in text:
+        vlc_anchor = '\tDecDCTvlc(next, strEnv->VlcBuff_ptr[strEnv->VlcID]);\n'
+        vlc_patch = (
+            '\t/* M1_VLC_EXPLICIT_V6: consume the built PsyQ table explicitly. */\n'
+            '\tDecDCTvlc2(next, strEnv->VlcBuff_ptr[strEnv->VlcID], strVlcTable);\n'
+        )
+        if text.count(vlc_anchor) != 1:
+            raise RuntimeError(f'M1 v6 VLC decode anchor changed: {text.count(vlc_anchor)}')
+        text = text.replace(vlc_anchor, vlc_patch, 1)
+
+        helper_validate_anchor = (
+            '    if "M1_VLC_TABLE_V5" not in strplay or "DecDCTvlcBuild(strVlcTable);" not in strplay:\n'
+            '        raise SystemExit("M1 v5 PsyQ VLC table initialization missing")\n'
+        )
+        helper_validate_patch = helper_validate_anchor + (
+            '    if "M1_VLC_EXPLICIT_V6" not in strplay or "DecDCTvlc2(next, strEnv->VlcBuff_ptr[strEnv->VlcID], strVlcTable);" not in strplay:\n'
+            '        raise SystemExit("M1 v6 explicit PsyQ VLC decoder missing")\n'
+        )
+        if text.count(helper_validate_anchor) != 1:
+            raise RuntimeError(f'M1 v6 helper validator anchor changed: {text.count(helper_validate_anchor)}')
+        text = text.replace(helper_validate_anchor, helper_validate_patch, 1)
+
     helper.write_text(text)
 
     # build_pico_mix_movies.py injects the final post-apply validator into the
     # Pico apply script. Keep its v4 movie-entry contract aligned and extend it
-    # to require the v5 VLC table initialization in the final generated tree.
+    # to require the v5/v6 VLC decode contract in the final generated tree.
     pico_builder = Path(__file__).with_name('build_pico_mix_movies.py')
     pico = pico_builder.read_text()
     old_key = '            "Movie resolver": "IO_SearchFile(&file, path)",'
@@ -185,6 +211,19 @@ def patch_m1_v4_helper() -> None:
         if pico.count(runtime_anchor) != 1:
             raise RuntimeError(f'M1 v5 Pico runtime validator anchor changed: {pico.count(runtime_anchor)}')
         pico = pico.replace(runtime_anchor, runtime_patch, 1)
+
+    if 'M1 v6 explicit PsyQ VLC decoder missing' not in pico:
+        runtime_v5_anchor = (
+            '        if "M1_VLC_TABLE_V5" not in _runtime_str or "DecDCTvlcBuild(strVlcTable);" not in _runtime_str:\n'
+            '            _pico_fail("M1/M3 validation", "M1 v5 PsyQ VLC table initialization missing")\n'
+        )
+        runtime_v6_patch = runtime_v5_anchor + (
+            '        if "M1_VLC_EXPLICIT_V6" not in _runtime_str or "DecDCTvlc2(next, strEnv->VlcBuff_ptr[strEnv->VlcID], strVlcTable);" not in _runtime_str:\n'
+            '            _pico_fail("M1/M3 validation", "M1 v6 explicit PsyQ VLC decoder missing")\n'
+        )
+        if pico.count(runtime_v5_anchor) != 1:
+            raise RuntimeError(f'M1 v6 Pico runtime validator anchor changed: {pico.count(runtime_v5_anchor)}')
+        pico = pico.replace(runtime_v5_anchor, runtime_v6_patch, 1)
     pico_builder.write_text(pico)
 
     # Temporary M1 acceptance build: patch the generated Pico apply step so the
@@ -233,7 +272,7 @@ def patch_m1_v4_helper() -> None:
         apply_text = apply_text.replace(diag_anchor, diag_insert + diag_anchor, 1)
         pico_apply.write_text(apply_text)
 
-    print('M1 v5: v4 entry guards, Sony VLC-table init, and isolated STR boot diagnostic installed')
+    print('M1 v6: v4 entry guards, explicit Sony VLC-table decode, and isolated STR boot diagnostic installed')
 
 
 def main():
