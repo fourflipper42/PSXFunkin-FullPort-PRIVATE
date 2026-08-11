@@ -25,13 +25,14 @@ jobs:
           set -euo pipefail
           rm -rf export
           mkdir -p export
+          export XZ_OPT='-9e'
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
-            -czf /tmp/public_snapshot.tar.gz \
+            -cJf /tmp/public_snapshot.tar.xz \
             .gitignore README.md patches scripts sitecustomize.py
-          base64 -w0 /tmp/public_snapshot.tar.gz > /tmp/public_snapshot.b64
-          split -b 6000 -d -a 3 /tmp/public_snapshot.b64 export/chunk-
-          sha256sum /tmp/public_snapshot.tar.gz | awk '{print $1}' > export/archive.sha256
-          stat -c '%s' /tmp/public_snapshot.tar.gz > export/archive.size
+          base64 -w0 /tmp/public_snapshot.tar.xz > /tmp/public_snapshot.b64
+          split -b 3000 -d -a 3 /tmp/public_snapshot.b64 export/chunk-
+          sha256sum /tmp/public_snapshot.tar.xz | awk '{print $1}' > export/archive.sha256
+          stat -c '%s' /tmp/public_snapshot.tar.xz > export/archive.size
           find export -maxdepth 1 -type f -name 'chunk-*' | sort | wc -l > export/chunk-count
 
       - name: Store export chunks
