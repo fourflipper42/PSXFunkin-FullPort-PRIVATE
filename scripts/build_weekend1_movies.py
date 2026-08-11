@@ -97,7 +97,53 @@ def patch_m1_v4_helper()->None:
  elif 'M1 v4 redundant preflight ISO search survived' not in pico:
   raise RuntimeError('M1 v4 Pico validator anchor missing')
  pico_builder.write_text(pico)
- print('M1 v4: structurally rewrote Movie_Play and aligned final validators')
+
+ # Temporary M1 acceptance build: patch the generated Pico apply step so the
+ # final runtime tree boots directly through one known-good STR before any
+ # Weekend/SP story state. After Movie_Play returns, normal menu startup is
+ # untouched. This keeps the large-disc lookup conditions while isolating the
+ # generic movie subsystem for emulator/hardware testing.
+ pico_apply=Path(__file__).with_name('apply_pico_mixes_v1.py')
+ apply_text=pico_apply.read_text()
+ diag_marker='M1_ISOLATED_STR_BOOT_SCRIPT_V1'
+ if diag_marker not in apply_text:
+  diag_anchor='    print("Applied all 15 official Pico Mixes, Pico Freeplay routing, runtime events, and ISO9660 lookup fallback")\n'
+  if apply_text.count(diag_anchor) != 1:
+   raise RuntimeError(f'M1 diagnostic apply anchor changed: {apply_text.count(diag_anchor)}')
+  diag_insert=r'''    # M1_ISOLATED_STR_BOOT_SCRIPT_V1
+    diag_header = root / "src/pico_mix_movies_generated.h"
+    frame_prefix = "#define PICO_STRESS_INTRO_FRAMES "
+    frame_lines = [line for line in diag_header.read_text().splitlines() if line.startswith(frame_prefix)]
+    if len(frame_lines) != 1:
+        raise SystemExit(f"M1 diagnostic frame macro count changed: {len(frame_lines)}")
+    diag_frames = int(frame_lines[0][len(frame_prefix):].strip())
+
+    diag_main_path = root / "src/main.c"
+    diag_main = diag_main_path.read_text()
+    if "M1_ISOLATED_STR_BOOT_V1" not in diag_main:
+        if '#include "movie.h"\n' not in diag_main:
+            diag_main = once(
+                diag_main,
+                '#include "stage.h"\n',
+                '#include "stage.h"\n#include "movie.h"\n',
+                "M1 diagnostic movie include",
+            )
+        timer_anchor = "\tTimer_Init();\n\t\n\t//Start game"
+        timer_patch = (
+            "\tTimer_Init();\n"
+            "\n"
+            "\t/* M1_ISOLATED_STR_BOOT_V1: direct generic STR acceptance test. */\n"
+            f'\tMovie_Play("\\\\MOVIE\\\\PSTRS.STR;1", {diag_frames});\n'
+            "\n"
+            "\t//Start game"
+        )
+        diag_main = once(diag_main, timer_anchor, timer_patch, "M1 diagnostic boot hook")
+        diag_main_path.write_text(diag_main)
+
+'''
+  apply_text=apply_text.replace(diag_anchor,diag_insert+diag_anchor,1)
+  pico_apply.write_text(apply_text)
+ print('M1 v4: rewrote Movie_Play, aligned validators, and installed isolated STR boot diagnostic')
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--out',type=Path,required=True); ap.add_argument('--psxavenc',type=Path,required=True); ap.add_argument('--ffprobe',default='ffprobe'); ap.add_argument('--report',type=Path,required=True); ap.add_argument('--header',type=Path,required=True); a=ap.parse_args(); a.out.mkdir(parents=True,exist_ok=True); r=[]; defines=[]
