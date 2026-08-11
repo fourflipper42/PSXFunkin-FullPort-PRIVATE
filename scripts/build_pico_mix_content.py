@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import runpy
 import site
+import sys
 import traceback
 
 
@@ -125,6 +126,33 @@ core["mix_song"] = mix_song
 core["main"].__globals__["mix_song"] = mix_song
 
 
+def patch_m1_rgb24_v8() -> None:
+    """Temporarily match Sony's 24-bit CD/MOVIE output path for M1."""
+    try:
+        iso_index = sys.argv.index("--iso-root")
+        iso_root = Path(sys.argv[iso_index + 1])
+    except (ValueError, IndexError):
+        raise RuntimeError("M1 v8 requires --iso-root so strplay.c can be patched")
+
+    strplay = iso_root.parent / "src/strplay.c"
+    text = strplay.read_text()
+    marker = "M1_RGB24_V8"
+    if marker in text:
+        return
+
+    old = "#define IS_RGB24\t0\t// 0:16-bit playback, 1:24-bit playback (recommended for quality)"
+    new = "#define IS_RGB24\t1\t// M1_RGB24_V8: Sony PsyQ 24-bit movie output path"
+    if text.count(old) != 1:
+        raise RuntimeError(f"M1 v8 RGB24 anchor changed: {text.count(old)}")
+    text = text.replace(old, new, 1)
+    strplay.write_text(text)
+
+    verify = strplay.read_text()
+    if marker not in verify or "#define IS_RGB24\t1" not in verify:
+        raise RuntimeError("M1 v8 RGB24 patch did not persist")
+    print("::notice title=M1 STR diagnostic::v8 Sony RGB24 output path enabled", flush=True)
+
+
 def workflow_escape(text: str) -> str:
     return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
@@ -134,6 +162,7 @@ if __name__ == "__main__":
     print("::notice title=Pico Mix phase::content builder started", flush=True)
     try:
         core["main"]()
+        patch_m1_rgb24_v8()
     except BaseException as exc:
         detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         print(f"::error title=Pico Mix content failure::{workflow_escape(detail)}", flush=True)
