@@ -1,0 +1,27 @@
+# Build output
+build/
+dist/
+out/
+*.bin
+*.cue
+*.iso
+*.exe
+*.map
+*.elf
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local tooling
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.bak
+
+# Editor files
+.vscode/
+.idea/

@@ -1,1 +1,0 @@
-Implementation branch preparation marker. The actual menu source transformation is in scripts/apply_v084_menu_foundation.py and is applied to the clean t0.12 source after the existing Erect/Nightmare patch stack during CI.
