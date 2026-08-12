@@ -171,7 +171,7 @@ def patch_m1_mdec_v9() -> None:
     # FrameDone is written by the MDEC interrupt callback and polled by the main
     # thread. It must not be cached across the wait loop by the compiler.
     text, count = re.subn(
-        r"(?m)^(\s*)int(\s+)FrameDone;",
+        r"(?m)^(\s*)int(\s+)FrameDone;".replace("\\\\s", "\\s"),
         r"\1volatile int\2FrameDone;",
         text,
         count=1,
