@@ -591,13 +591,13 @@ jobs:
           movies=json.loads(Path('build/sserafim_movies_v1.json').read_text())
           assert assets['policy']=='authentic-v0.8.4-le-sserafim-source-frames-only'
           assert assets['characters']=={
-              'kazuha':{'frames':12,'pages':3},
+              'kazuha':{'frames':12,'pages':2},
               'sakura':{'frames':36,'pages':9},
-              'girlfriend':{'frames':28,'pages':7},
+              'girlfriend':{'frames':28,'pages':5},
           }
-          assert assets['extras']['yunjin']=={'pages':5,'frames':20}
-          assert assets['extras']['chaewon']=={'pages':2,'frames':5}
-          assert assets['extras']['eunchae']=={'pages':2,'frames':5}
+          assert assets['extras']['yunjin']=={'pages':8,'frames':31}
+          assert assets['extras']['chaewon']=={'pages':4,'frames':16}
+          assert assets['extras']['eunchae']=={'pages':4,'frames':16}
           assert charts['event_count']==468
           assert charts['note_kind_codes']=={'sakura-joint':40,'sakura-bf1':41,'sakura-bf2':42}
           assert charts['removed_non_scoreable_tail_note'] is True
