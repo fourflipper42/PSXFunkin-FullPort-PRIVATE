@@ -145,14 +145,8 @@ def _replace_c_function(text: str, signature: str, replacement: str, label: str)
     raise RuntimeError(f"{label}: closing brace missing")
 
 
-def patch_m1_mdec_v9() -> None:
+def patch_m1_mdec_v9(iso_root: Path) -> None:
     """Expose MDEC callback/completion failures instead of displaying fake frames."""
-    try:
-        iso_index = sys.argv.index("--iso-root")
-        iso_root = Path(sys.argv[iso_index + 1])
-    except (ValueError, IndexError):
-        raise RuntimeError("M1 v9 requires --iso-root so strplay.c can be patched")
-
     strplay = iso_root.parent / "src/strplay.c"
     text = strplay.read_text()
     marker = "M1_MDEC_SYNC_V9"
@@ -257,12 +251,12 @@ static volatile int strMdecFailureCode = 0;'''
         raise RuntimeError(f"M1 v9 post-sync anchor changed: {text.count(post_sync_anchor)}")
     text = text.replace(post_sync_anchor, post_sync_patch, 1)
 
-    cleanup_anchor = (
-        "\tDecDCToutCallback(0);\n"
-        "\tStUnSetRing();\n"
-        "\tCdControlB(CdlPause, 0, 0);\n"
-        "\tMem_Free(workspace);\n"
-        "}\n\nstatic void strCallback() {"
+    cleanup_pattern = re.compile(
+        r"\tDecDCToutCallback\(0\);\n"
+        r"\tStUnSetRing\(\);\n"
+        r"\tCdControlB\(CdlPause, 0, 0\);\n"
+        r"\tMem_Free\(workspace\);\n"
+        r"\}\n+(?=static void strCallback\(\) \{)"
     )
     cleanup_patch = (
         "\tDecDCToutCallback(0);\n"
@@ -278,11 +272,11 @@ static volatile int strMdecFailureCode = 0;'''
         "\t\tErrorLock();\n"
         "\t\treturn;\n"
         "\t}\n"
-        "}\n\nstatic void strCallback() {"
+        "}\n"
     )
-    if text.count(cleanup_anchor) != 1:
-        raise RuntimeError(f"M1 v9 final cleanup anchor changed: {text.count(cleanup_anchor)}")
-    text = text.replace(cleanup_anchor, cleanup_patch, 1)
+    text, count = cleanup_pattern.subn(cleanup_patch, text, count=1)
+    if count != 1:
+        raise RuntimeError(f"M1 v9 final cleanup anchor changed: {count}")
 
     strplay.write_text(text)
     verify = strplay.read_text()
@@ -315,7 +309,6 @@ if __name__ == "__main__":
     print("::notice title=Pico Mix phase::content builder started", flush=True)
     try:
         core["main"]()
-        patch_m1_mdec_v9()
     except BaseException as exc:
         detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         print(f"::error title=Pico Mix content failure::{workflow_escape(detail)}", flush=True)

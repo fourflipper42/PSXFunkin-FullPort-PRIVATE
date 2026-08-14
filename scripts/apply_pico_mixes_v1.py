@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from build_pico_mix_content import patch_m1_mdec_v9
+
 
 SONGS = (
     ("Bopeebo", "BOPEEBO", "1_1", "Bopeebo", 100),
@@ -1092,6 +1094,9 @@ def main() -> None:
         [sys.executable, str(fallback), "--upstream", str(root)],
         check=True,
     )
+    # M1 v9 patches the repaired STR player, so it must run after the ISO/M1
+    # fallback installer has replaced the untouched 2021 strplay.c runtime.
+    patch_m1_mdec_v9(root / "iso")
     print("Applied all 15 official Pico Mixes, Pico Freeplay routing, runtime events, and ISO9660 lookup fallback")
 
 
