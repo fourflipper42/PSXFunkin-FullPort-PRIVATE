@@ -914,13 +914,32 @@ jobs:
           cp /tmp/weekend-production/main.c upstream/src/main.c
 
       - name: Upload Weekend 1 runtime diagnostics
+        id: runtime_diagnostics_upload
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: weekend1-runtime-diagnostics-${{ github.sha }}
           compression-level: 0
           if-no-files-found: warn
           path: build/weekend-runtime-smoke/
+
+      - name: Preserve runtime diagnostics in private repo when artifact storage is full
+        if: steps.runtime_diagnostics_upload.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DEST="ci-runtime-captures/${GITHUB_SHA:0:12}"
+          for path in build/weekend-runtime-smoke/*.png build/weekend-runtime-smoke/*.txt build/weekend-runtime-smoke/emulator.log; do
+            test -f "$path" || continue
+            name="$(basename "$path")"
+            content="$(base64 -w0 "$path")"
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${DEST}/${name}" \
+              -f message="Store Weekend 1 runtime capture ${GITHUB_SHA:0:12} [skip ci]" \
+              -f content="$content" \
+              -f branch="full-port-completion"
+          done
 
       - name: Package Pico Mixes v1 checkpoint
         run: |
@@ -961,6 +980,7 @@ jobs:
           stat -c '%n %s bytes' build/release/PSXFunkin_v084_Pico_Mixes_v1.bin
 
       - name: Upload runtime-verified checkpoint
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: psxfunkin-weekend1-runtime-verified-${{ github.sha }}
