@@ -22,7 +22,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             xvfb imagemagick xdotool libgl1-mesa-dri \
-            g++-mipsel-linux-gnu cpp-mipsel-linux-gnu binutils-mipsel-linux-gnu
+            g++-mipsel-linux-gnu cpp-mipsel-linux-gnu binutils-mipsel-linux-gnu \
+            bchunk p7zip-full
 
       - name: Download exact private checkpoint
         env:
@@ -36,6 +37,15 @@ jobs:
             --pattern 'PSXFunkin_v084_Pico_Mixes_v1.cue'
           echo 'f6cdd8fe8fa163fbba605391261088abe60ce9da5e03a29cfd0510ef60b7cd97  disc/PSXFunkin_v084_Pico_Mixes_v1.bin' | sha256sum -c -
           echo 'fe55cd5851eca69531d3a9570194cff28ea205a6f973ebf1c273081fe4a08e3d  disc/PSXFunkin_v084_Pico_Mixes_v1.cue' | sha256sum -c -
+          mkdir -p extracted/fs
+          bchunk \
+            disc/PSXFunkin_v084_Pico_Mixes_v1.bin \
+            disc/PSXFunkin_v084_Pico_Mixes_v1.cue \
+            extracted/track
+          7z x -y extracted/track01.iso -oextracted/fs
+          find extracted/fs -maxdepth 3 -type f | sort | sed -n '1,160p'
+          find extracted/fs -type f -iname '*.exe' -print -quit > extracted/exe-path.txt
+          test -s extracted/exe-path.txt
 
       - name: Download PCSX-Redux with OpenBIOS
         run: |
@@ -51,7 +61,7 @@ jobs:
         run: |
           git clone --depth 1 --recurse-submodules --shallow-submodules \
             https://github.com/grumpycoders/pcsx-redux.git openbios-src
-          make -C openbios-src/src/mips/openbios BOOT_MODE=fast
+          make -C openbios-src/src/mips/openbios
           test -s openbios-src/src/mips/openbios/openbios.bin
           sha256sum openbios-src/src/mips/openbios/openbios.bin
 
@@ -65,8 +75,10 @@ jobs:
           export XDG_DATA_HOME="$PWD/capture/data"
           EMULATOR="$PWD/squashfs-root/AppRun"
           BIOS="$PWD/openbios-src/src/mips/openbios/openbios.bin"
+          GAME_EXE="$PWD/$(cat extracted/exe-path.txt)"
           test -x "$EMULATOR"
           test -s "$BIOS"
+          test -s "$GAME_EXE"
           : > capture/emulator.log
           xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
             set -uo pipefail
@@ -74,7 +86,7 @@ jobs:
             if [[ -n "$2" ]]; then
               bios_args=(-bios "$2")
             fi
-            "$1" "${bios_args[@]}" -iso "$3" -run -interpreter -softgpu > capture/emulator.log 2>&1 &
+            "$1" "${bios_args[@]}" -iso "$3" -exe "$4" -run -stdout -interpreter -softgpu > capture/emulator.log 2>&1 &
             emulator_pid=$!
             for attempt in $(seq 1 30); do
               if xdotool search --onlyvisible --name "PCSX-Redux" >/dev/null 2>&1; then
@@ -90,7 +102,7 @@ jobs:
             import -window root capture/m1-runtime-24s.png
             kill "$emulator_pid" 2>/dev/null || true
             wait "$emulator_pid" 2>/dev/null || true
-          ' _ "$EMULATOR" "$BIOS" "$PWD/disc/PSXFunkin_v084_Pico_Mixes_v1.cue"
+          ' _ "$EMULATOR" "$BIOS" "$PWD/disc/PSXFunkin_v084_Pico_Mixes_v1.cue" "$GAME_EXE"
           test -s capture/m1-runtime-16s.png
           file capture/m1-runtime-*.png
           tail -n 200 capture/emulator.log || true
