@@ -28,13 +28,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p disc extracted/fs
-          gh release download pico-mixes-v1-4d353e0238a2 \
+          gh release download pico-mixes-v1-ebd378c9c769 \
             --repo "${GITHUB_REPOSITORY}" \
             --dir disc \
             --pattern 'PSXFunkin_v084_Pico_Mixes_v1.bin' \
-            --pattern 'PSXFunkin_v084_Pico_Mixes_v1.cue'
-          echo 'f6cdd8fe8fa163fbba605391261088abe60ce9da5e03a29cfd0510ef60b7cd97  disc/PSXFunkin_v084_Pico_Mixes_v1.bin' | sha256sum -c -
-          echo 'fe55cd5851eca69531d3a9570194cff28ea205a6f973ebf1c273081fe4a08e3d  disc/PSXFunkin_v084_Pico_Mixes_v1.cue' | sha256sum -c -
+            --pattern 'PSXFunkin_v084_Pico_Mixes_v1.cue' \
+            --pattern 'SHA256SUMS.txt'
+          (cd disc && grep -E 'PSXFunkin_v084_Pico_Mixes_v1\.(bin|cue)$' SHA256SUMS.txt | sha256sum -c -)
           bchunk \
             disc/PSXFunkin_v084_Pico_Mixes_v1.bin \
             disc/PSXFunkin_v084_Pico_Mixes_v1.cue \
