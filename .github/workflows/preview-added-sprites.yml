@@ -28,7 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p disc extracted/fs
-          gh release download pico-mixes-v1-ebd378c9c769 \
+          gh release download pico-mixes-v1-371293c80eda \
             --repo "${GITHUB_REPOSITORY}" \
             --dir disc \
             --pattern 'PSXFunkin_v084_Pico_Mixes_v1.bin' \
@@ -55,3 +55,4 @@ jobs:
           git add sprite-previews/${GITHUB_SHA}
           git commit -m "Record private sprite previews ${GITHUB_SHA::12}"
           git push
+
