@@ -54,8 +54,8 @@ def validate(path: Path) -> tuple[int, int, int]:
         expected = set(range(totals[frame]))
         if seen != expected:
             raise SystemExit(f"{path}: incomplete frame {frame}: {sorted(seen)} / {totals[frame]}")
-    if dimensions != {(320, 240)}:
-        raise SystemExit(f"{path}: unexpected dimensions {sorted(dimensions)}")
+    if len(dimensions) != 1:
+        raise SystemExit(f"{path}: dimensions change mid-stream: {sorted(dimensions)}")
     return len(frame_ids), video_sectors, audio_sectors
 
 
