@@ -38,7 +38,12 @@ jobs:
           grep -q 'IO_ISOSearchFile' upstream/src/io.c
           grep -q 'CdSearchFile(file, (char\*)path)' upstream/src/io.c
           grep -q 'IO_SearchFile(&file, str->FileName)' upstream/src/strplay.c
-          grep -q 'IO_SearchFile(&file, path)' upstream/src/movie.c
+          grep -q 'W1_CUCKYDEV_MOVIE_ENTRY_V10' upstream/src/movie.c
+          grep -q 'W1_CUCKYDEV_STR_CONTRACT_V10' upstream/src/strplay.c
+          grep -q 'DecDCTvlc(next, strEnv->VlcBuff_ptr\[strEnv->VlcID\]);' upstream/src/strplay.c
+          grep -q 'CdlModeStream | CdlModeSpeed | CdlModeRT' upstream/src/strplay.c
+          ! grep -q 'DecDCTvlc2(' upstream/src/strplay.c
+          ! grep -q 'CdlModeStream2' upstream/src/strplay.c
 
           # This diagnostic compiles the untouched t0.12 menu, which predates
           # the full-port CharacterSelect page enum. The production pipeline
