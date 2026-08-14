@@ -13,7 +13,7 @@ permissions:
 jobs:
   capture:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +45,14 @@ jobs:
           test -x squashfs-root/AppRun
           find squashfs-root -maxdepth 4 -type f | sort | sed -n '1,240p'
 
+      - name: Build official OpenBIOS
+        run: |
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            https://github.com/grumpycoders/pcsx-redux.git openbios-src
+          ./openbios-src/dockermake.sh -C src/mips/openbios
+          test -s openbios-src/src/mips/openbios/openbios.bin
+          sha256sum openbios-src/src/mips/openbios/openbios.bin
+
       - name: Boot disc and capture display
         shell: bash
         run: |
@@ -54,8 +62,9 @@ jobs:
           export XDG_CONFIG_HOME="$PWD/capture/config"
           export XDG_DATA_HOME="$PWD/capture/data"
           EMULATOR="$PWD/squashfs-root/AppRun"
-          BIOS="$(find "$PWD/squashfs-root" -type f -iname 'openbios.bin' -print -quit || true)"
+          BIOS="$PWD/openbios-src/src/mips/openbios/openbios.bin"
           test -x "$EMULATOR"
+          test -s "$BIOS"
           : > capture/emulator.log
           xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
             set -uo pipefail
