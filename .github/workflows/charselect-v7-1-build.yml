@@ -104,7 +104,8 @@ jobs:
             build-essential git curl unzip cmake ninja-build pkg-config meson python3-pil \
             gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu \
             ffmpeg libavformat-dev libavfilter-dev libavcodec-dev libavutil-dev \
-            libswscale-dev libswresample-dev libtinyxml2-dev
+            libswscale-dev libswresample-dev libtinyxml2-dev \
+            xvfb imagemagick tesseract-ocr libgl1-mesa-dri
 
       - name: Fetch exact upstream baseline
         run: |
@@ -819,9 +820,92 @@ jobs:
           echo "Raw disc sectors: $sectors"
           test "$sectors" -le 360000
 
+      - name: Boot Weekend 1 cutscene and stage RAM smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/weekend-production build/weekend-runtime-smoke
+          cp upstream/funkin.ps-exe upstream/funkin.bin upstream/funkin.cue /tmp/weekend-production/
+          cp upstream/src/main.c /tmp/weekend-production/main.c
+          python3 - <<'PY'
+          from pathlib import Path
+          path=Path('upstream/src/main.c')
+          text=path.read_text()
+          old='\t//Start game\n\tgameloop = GameLoop_Menu;\n\tMenu_Load(MenuPage_Opening);'
+          new=('\t/* CI_WEEKEND1_RUNTIME_SMOKE: movie return plus the complete stage heap. */\n'
+               '\tgameloop = GameLoop_Stage;\n'
+               '\tLoadScr_Start();\n'
+               '\tStage_Load(StageId_8_1, StageDiff_Normal, true);\n'
+               '\tLoadScr_End();')
+          if text.count(old)!=1:
+              raise SystemExit(f'Weekend runtime smoke main anchor changed: {text.count(old)}')
+          path.write_text(text.replace(old,new,1))
+          PY
+          make -C upstream clean || true
+          make -C upstream -j2
+          (cd upstream && "$HOME/.local/bin/mkpsxiso" -y funkin.xml)
+
+          curl -fL --retry 3 --retry-delay 2 \
+            'https://github.com/pkgforge-dev/PCSX-Redux-AppImage-Enhanced/releases/download/r7370.3e10093a-1%402026-08-01_1785584896/PCSX-Redux-r7370.3e10093a-1-anylinux-x86_64.AppImage' \
+            -o pcsx-redux.AppImage
+          chmod +x pcsx-redux.AppImage
+          ./pcsx-redux.AppImage --appimage-extract >/dev/null
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            https://github.com/grumpycoders/pcsx-redux.git openbios-src
+          make -C openbios-src/src/mips/openbios
+
+          export XDG_CONFIG_HOME="$PWD/build/weekend-runtime-smoke/config"
+          export XDG_DATA_HOME="$PWD/build/weekend-runtime-smoke/data"
+          mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+          EMULATOR="$PWD/squashfs-root/AppRun"
+          BIOS="$PWD/openbios-src/src/mips/openbios/openbios.bin"
+          CUE="$PWD/upstream/funkin.cue"
+          EXE="$PWD/upstream/funkin.ps-exe"
+          : > build/weekend-runtime-smoke/emulator.log
+          xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
+            set -euo pipefail
+            "$1" -bios "$2" -iso "$3" -exe "$4" -run -stdout -interpreter -softgpu \
+              > build/weekend-runtime-smoke/emulator.log 2>&1 &
+            emulator_pid=$!
+            sleep 12
+            import -window root build/weekend-runtime-smoke/cutscene-12s.png
+            sleep 82
+            import -window root build/weekend-runtime-smoke/stage-94s.png
+            sleep 12
+            import -window root build/weekend-runtime-smoke/stage-106s.png
+            kill "$emulator_pid" 2>/dev/null || true
+            wait "$emulator_pid" 2>/dev/null || true
+          ' _ "$EMULATOR" "$BIOS" "$CUE" "$EXE"
+
+          for frame in build/weekend-runtime-smoke/*.png; do
+            tesseract "$frame" stdout 2>/dev/null | tee "${frame%.png}.txt"
+          done
+          if grep -Eiq 'fatal|malloc|asyncreadfile|allocation failed' build/weekend-runtime-smoke/*.txt; then
+            echo 'Weekend runtime smoke captured a fatal allocation screen' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageStat
+          for path in sorted(Path('build/weekend-runtime-smoke').glob('*.png')):
+              stat=ImageStat.Stat(Image.open(path).convert('RGB'))
+              spread=sum(high-low for low,high in stat.extrema)
+              if spread < 24:
+                  raise SystemExit(f'{path}: effectively blank runtime capture')
+              print(f'RUNTIME_FRAME_OK {path} spread={spread}')
+          PY
+          if grep -Eiq 'fatal|malloc|asyncreadfile|allocation failed' build/weekend-runtime-smoke/emulator.log; then
+            exit 1
+          fi
+
+          cp /tmp/weekend-production/funkin.ps-exe upstream/funkin.ps-exe
+          cp /tmp/weekend-production/funkin.bin upstream/funkin.bin
+          cp /tmp/weekend-production/funkin.cue upstream/funkin.cue
+          cp /tmp/weekend-production/main.c upstream/src/main.c
+
       - name: Package Pico Mixes v1 checkpoint
         run: |
-          mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation build/release/base-weeks-v1-validation build/release/console-options-v1-validation build/release/sserafim-v1-validation build/release/pico-mixes-v1-validation
+          mkdir -p build/release/v7-1-validation build/release/freeplay-v1-validation build/release/base-weeks-v1-validation build/release/console-options-v1-validation build/release/sserafim-v1-validation build/release/pico-mixes-v1-validation build/release/weekend-runtime-smoke
           cp upstream/funkin.bin build/release/PSXFunkin_v084_Pico_Mixes_v1.bin
           cat > build/release/PSXFunkin_v084_Pico_Mixes_v1.cue <<'EOF'
           FILE "PSXFunkin_v084_Pico_Mixes_v1.bin" BINARY
@@ -836,6 +920,7 @@ jobs:
           cp build/console-options-v1-validation/*.png build/release/console-options-v1-validation/
           cp upstream/build-sserafim/background/sserafim_preview.png build/release/sserafim-v1-validation/
           cp build/pico-mixes-v1-validation/*.png build/release/pico-mixes-v1-validation/
+          cp build/weekend-runtime-smoke/*.png build/weekend-runtime-smoke/*.txt build/weekend-runtime-smoke/emulator.log build/release/weekend-runtime-smoke/
           cat > build/release/PICO_MIXES_V1.txt <<'EOF'
           Official Pico Mixes v1 checkpoint
           - Character Select v7.1 visual hierarchy and audio are frozen unchanged.
@@ -896,7 +981,8 @@ jobs:
             build/release/base-weeks-v1-validation/*.png \
             build/release/console-options-v1-validation/*.png \
             build/release/sserafim-v1-validation/*.png \
-            build/release/pico-mixes-v1-validation/*.png
+            build/release/pico-mixes-v1-validation/*.png \
+            build/release/weekend-runtime-smoke/*
 
       - name: Persist CI outcome for checkpoint monitoring
         if: always()
