@@ -6,6 +6,7 @@ import argparse
 import struct
 from collections import Counter
 from pathlib import Path
+from typing import Iterable
 from PIL import Image
 
 
@@ -23,15 +24,10 @@ def psx_rgb(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
     return tuple((channel >> 3) << 3 for channel in rgb)  # type: ignore[return-value]
 
 
-def quantize_rgba(image: Image.Image, colors: int) -> tuple[list[int], bytes]:
-    rgba = image.convert("RGBA")
-    pixels = list(rgba.getdata())
-    opaque = [psx_rgb((r, g, b)) for r, g, b, a in pixels if a >= 128]
-    limit = colors - 1
-    if not opaque:
-        return [0] * colors, bytes(len(pixels))
-
-    counts = Counter(opaque)
+def _select_palette(counts: Counter[tuple[int, int, int]], limit: int) -> list[tuple[int, int, int]]:
+    """Choose opaque PS1 colours while protecting Base Funkin's dark inks."""
+    if not counts:
+        return []
     if len(counts) <= limit:
         palette_rgb = [rgb for rgb, _ in counts.most_common()]
     else:
@@ -40,7 +36,10 @@ def quantize_rgba(image: Image.Image, colors: int) -> tuple[list[int], bytes]:
         dark = [(rgb, count) for rgb, count in counts.items()
                 if (rgb[0] * 3 + rgb[1] * 6 + rgb[2]) // 10 <= 80]
         reserved = [rgb for rgb, _ in sorted(dark, key=lambda row: row[1], reverse=True)[:3]]
-        remaining = [rgb for rgb in opaque if rgb not in reserved]
+        remaining = []
+        for rgb, count in counts.items():
+            if rgb not in reserved:
+                remaining.extend([rgb] * count)
         slots = max(1, limit - len(reserved))
         if remaining:
             width = min(256, len(remaining))
@@ -64,7 +63,48 @@ def quantize_rgba(image: Image.Image, colors: int) -> tuple[list[int], bytes]:
             if rgb not in palette_rgb:
                 palette_rgb.append(rgb)
 
-    palette_rgb = palette_rgb[:limit]
+    return palette_rgb[:limit]
+
+
+def build_palette_rgba(images: Iterable[Image.Image], colors: int) -> list[tuple[int, int, int]]:
+    """Build one locked CLUT for a complete character or multi-page asset.
+
+    Every source image contributes the same total weight. This prevents a large
+    idle page from changing skin, clothing, or outline colours on rarer poses.
+    """
+    if colors not in (16, 256):
+        raise ValueError("palette size must be 16 or 256")
+    weighted: Counter[tuple[int, int, int]] = Counter()
+    budget = 4096
+    for image in images:
+        local = Counter(
+            psx_rgb((r, g, b))
+            for r, g, b, a in image.convert("RGBA").getdata()
+            if a >= 128
+        )
+        total = sum(local.values())
+        if total == 0:
+            continue
+        for rgb, count in local.items():
+            weighted[rgb] += max(1, round(count * budget / total))
+    return _select_palette(weighted, colors - 1)
+
+
+def quantize_rgba(image: Image.Image, colors: int,
+                  palette_rgb: list[tuple[int, int, int]] | None = None) -> tuple[list[int], bytes]:
+    rgba = image.convert("RGBA")
+    pixels = list(rgba.getdata())
+    opaque = [psx_rgb((r, g, b)) for r, g, b, a in pixels if a >= 128]
+    limit = colors - 1
+    if not opaque:
+        return [0] * colors, bytes(len(pixels))
+
+    if palette_rgb is None:
+        palette_rgb = _select_palette(Counter(opaque), limit)
+    else:
+        palette_rgb = [psx_rgb(rgb) for rgb in palette_rgb[:limit]]
+        if not palette_rgb:
+            raise ValueError("locked palette cannot be empty for an opaque image")
     nearest_cache: dict[tuple[int, int, int], int] = {}
     def nearest(rgb: tuple[int, int, int]) -> int:
         if rgb not in nearest_cache:
@@ -84,7 +124,8 @@ def quantize_rgba(image: Image.Image, colors: int) -> tuple[list[int], bytes]:
 
 
 def encode_tim(image: Image.Image, bpp: int, vram_x: int = 0, vram_y: int = 0,
-               clut_x: int = 0, clut_y: int = 0) -> bytes:
+               clut_x: int = 0, clut_y: int = 0,
+               palette_rgb: list[tuple[int, int, int]] | None = None) -> bytes:
     if bpp not in (4, 8):
         raise ValueError("bpp must be 4 or 8")
     width, height = image.size
@@ -92,7 +133,7 @@ def encode_tim(image: Image.Image, bpp: int, vram_x: int = 0, vram_y: int = 0,
     if width % pixels_per_word:
         raise ValueError(f"Width {width} must be divisible by {pixels_per_word} for {bpp}bpp TIM")
     colors = 16 if bpp == 4 else 256
-    palette, indices = quantize_rgba(image, colors)
+    palette, indices = quantize_rgba(image, colors, palette_rgb)
     if bpp == 4:
         packed = bytearray()
         for i in range(0, len(indices), 2):

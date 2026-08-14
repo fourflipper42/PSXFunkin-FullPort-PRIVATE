@@ -275,6 +275,13 @@ static void Back_Weekend1_DrawFG(StageBack *back)
 static void Back_Weekend1_DrawBG(StageBack *back)
 {
     Back_Weekend1 *this = (Back_Weekend1*)back;
+    const RECT src = {0, 0, 256, 240};
+    RECT_FIXED dst = {FIXED_DEC(-256,1)-stage.camera.x,FIXED_DEC(-120,1)-stage.camera.y,FIXED_DEC(256,1),FIXED_DEC(240,1)};
+    Stage_DrawTex(&this->tex_left,&src,&dst,stage.camera.bzoom);
+    dst.x += FIXED_DEC(256,1);
+    Stage_DrawTex(&this->tex_right,&src,&dst,stage.camera.bzoom);
+
+    /* Authored z-order: the flattened city is behind traffic/cars/lightning. */
     if (this->blazin)
     {
         W1_UpdateLightning(this);
@@ -283,12 +290,6 @@ static void Back_Weekend1_DrawBG(StageBack *back)
     }
     else
         W1_DrawStreet(this);
-
-    const RECT src = {0, 0, 256, 240};
-    RECT_FIXED dst = {FIXED_DEC(-256,1)-stage.camera.x,FIXED_DEC(-120,1)-stage.camera.y,FIXED_DEC(256,1),FIXED_DEC(240,1)};
-    Stage_DrawTex(&this->tex_left,&src,&dst,stage.camera.bzoom);
-    dst.x += FIXED_DEC(256,1);
-    Stage_DrawTex(&this->tex_right,&src,&dst,stage.camera.bzoom);
 }
 
 static void Back_Weekend1_Free(StageBack *back)
@@ -658,7 +659,8 @@ boolean Weekend1_BeginInGameIntro(StageId id, boolean story)
     stage.camera.x = stage.camera.tx;
     stage.camera.y = stage.camera.ty;
     stage.camera.zoom = stage.camera.bzoom = FIXED_DEC(13,10);
-    Audio_PlayXA_Track(XA_DarnellIntro,0x40,0,false);
+    /* Route by ISO path so later track-enum additions cannot alias this intro. */
+    Audio_PlayXA("\\MUSIC\\DARNIN.XA;1",0x40,0,false);
     Audio_WaitPlayXA();
     Timer_Reset();
     return true;

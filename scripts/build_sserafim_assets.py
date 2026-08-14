@@ -16,7 +16,7 @@ sys.path.insert(0, str(HERE / "ps1asset"))
 from animateatlas_flatten import AnimateAtlas, render_leaves
 from arc_pack import pack_arc
 from build_character_pages import build as build_pages
-from png_to_tim import decode_tim, encode_tim
+from png_to_tim import build_palette_rgba, decode_tim, encode_tim
 
 from build_weekend1_assets import lbl, sample_indices, stage_fx_cell, write_char_module
 
@@ -64,11 +64,12 @@ def trim_manifest(manifest: dict, component: Path, rules: dict[str, int],
 
 
 def merge_one(root: Path, out: Path, name: str, atlas_subdir: str, prefix: str,
-              vram_x: int, clut_x: int, selection: dict[str, int]) -> dict:
+              vram_x: int, clut_x: int, selection: dict[str, int],
+              target_height: int = 120) -> dict:
     component = out / "component"
     manifest = build_pages(
         root / "shared/images/characters" / atlas_subdir,
-        component, prefix, 4, vram_x, 0, clut_x, 480, "all", selection,
+        component, prefix, 4, vram_x, 0, clut_x, 480, "all", selection, target_height,
     )
     # build_pages now filters sample_counts directly and preserves its precise
     # variable frame rectangles; do not crush them back into 128px quadrants.
@@ -123,6 +124,7 @@ def pack_sprite_arc(cells: list[tuple[str, Image.Image]], out: Path, arc_name: s
             "tex": index // 4,
             "src": [(index % 2) * 128, ((index % 4) // 2) * 128, 128, 128],
         })
+    page_images = []
     for page_index in range(math.ceil(len(cells) / 4)):
         page = Image.new("RGBA", (256, 256))
         for slot in range(4):
@@ -130,8 +132,11 @@ def pack_sprite_arc(cells: list[tuple[str, Image.Image]], out: Path, arc_name: s
             if index >= len(cells):
                 break
             page.alpha_composite(cells[index][1], ((slot % 2) * 128, (slot // 2) * 128))
+        page_images.append(page)
+    palette = build_palette_rgba([cell for _, cell in cells], 16)
+    for page_index, page in enumerate(page_images):
         path = out / f"{prefix}{page_index:02d}.tim"
-        data = encode_tim(page, 4, vram_x, 0, clut_x, 480)
+        data = encode_tim(page, 4, vram_x, 0, clut_x, 480, palette)
         path.write_bytes(data)
         if decode_tim(data).size != (256, 256):
             raise RuntimeError(f"TIM verification failed: {path}")
@@ -166,9 +171,11 @@ def build_background(root: Path, out: Path) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     canvas.save(out / "sserafim_preview.png")
     pages = []
+    page_images = [canvas.crop((index * 256, 0, (index + 1) * 256, 240)) for index in range(2)]
+    palette = build_palette_rgba(page_images, 16)
     for index, (vram_x, clut_x) in enumerate(((640, 48), (704, 64))):
-        page = canvas.crop((index * 256, 0, (index + 1) * 256, 240))
-        data = encode_tim(page, 4, vram_x, 0, clut_x, 480)
+        page = page_images[index]
+        data = encode_tim(page, 4, vram_x, 0, clut_x, 480, palette)
         target = out / f"back{index}.tim"
         target.write_bytes(data)
         pages.append(target)

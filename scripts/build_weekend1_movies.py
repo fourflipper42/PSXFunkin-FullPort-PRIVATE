@@ -327,7 +327,9 @@ def main():
 
     report = []
     defines = []
-    patch_m1_v4_helper()
+    # Movie encoding must not rewrite runtime/apply scripts. The previous
+    # checkpoint shipped a temporary boot diagnostic and an experimental MDEC
+    # path because this asset builder mutated three unrelated source files.
     for srcname, outname, define in MOVIES:
         source = args.root / 'videos/videos' / srcname
         out = args.out / outname

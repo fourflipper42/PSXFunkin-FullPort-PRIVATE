@@ -326,16 +326,28 @@ if __name__ == "__main__":
         _runtime_menu = (_pico_root / "src/menu.c").read_text()
         _runtime_required = {
             "ISO full-directory resolver": "boolean IO_SearchFile(CdlFILE *file, const char *path)",
-            "Movie resolver": "IO_SearchFile(&file, path)",
+            "Movie entry": "W1_CUCKYDEV_MOVIE_ENTRY_V10",
             "STR resolver": "IO_SearchFile(&file, str->FileName)",
             "Frontend audio owner": "M1_M3_FRONTEND_AUDIO_RESTORE",
         }
         if _runtime_required["ISO full-directory resolver"] not in _runtime_io:
             _pico_fail("M1/M3 validation", "ISO full-directory resolver missing after final integration")
-        if _runtime_required["Movie resolver"] not in _runtime_movie:
-            _pico_fail("M1/M3 validation", "Movie_Play is not using the shared resolver")
+        if _runtime_required["Movie entry"] not in _runtime_movie:
+            _pico_fail("M1/M3 validation", "CuckyDev-compatible movie entry missing")
+        if "IO_SearchFile(&file, path)" in _runtime_movie:
+            _pico_fail("M1/M3 validation", "M1 v4 redundant preflight ISO search survived")
+        if "while (PadRead(1) & PADstart)" in _runtime_movie:
+            _pico_fail("M1/M3 validation", "M1 v4 unbounded Start-release wait survived")
         if _runtime_required["STR resolver"] not in _runtime_str:
             _pico_fail("M1/M3 validation", "STR player is not using the shared resolver")
+        if "W1_CUCKYDEV_STR_CONTRACT_V10" not in _runtime_str:
+            _pico_fail("M1/M3 validation", "CuckyDev-compatible STR contract missing")
+        if "DecDCTvlc(next, strEnv->VlcBuff_ptr[strEnv->VlcID]);" not in _runtime_str:
+            _pico_fail("M1/M3 validation", "CuckyDev DecDCTvlc path missing")
+        if "CdlModeStream | CdlModeSpeed | CdlModeRT" not in _runtime_str:
+            _pico_fail("M1/M3 validation", "CuckyDev CD stream mode missing")
+        if "DecDCTvlc2(" in _runtime_str or "CdlModeStream2" in _runtime_str:
+            _pico_fail("M1/M3 validation", "experimental STR decoder survived")
         if _runtime_required["Frontend audio owner"] not in _runtime_menu:
             _pico_fail("M1/M3 validation", "central frontend audio restore missing")
         if "CdSearchFile(&file, str->FileName)" in _runtime_str:

@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "ps1asset"))
 from animateatlas_flatten import AnimateAtlas, render_leaves
 from arc_pack import pack_arc
-from png_to_tim import decode_tim, encode_tim
+from png_to_tim import build_palette_rgba, decode_tim, encode_tim
 
 import build_freeplay_dj_stream as dj_stream
 import build_freeplay_parity_v1 as freeplay
@@ -72,6 +72,7 @@ def build_sparrow_manifest(base: Path, output: Path, prefix: str,
         }
         frames.append(frame)
         label_map.setdefault(frame["label"], []).append(index)
+    page_images = []
     for page_index in range(math.ceil(len(cells) / 4)):
         page = Image.new("RGBA", (256, 256))
         for slot in range(4):
@@ -79,9 +80,12 @@ def build_sparrow_manifest(base: Path, output: Path, prefix: str,
             if index >= len(cells):
                 break
             page.alpha_composite(cells[index][1], ((slot % 2) * 128, (slot // 2) * 128))
+        page_images.append(page)
+    palette = build_palette_rgba([cell for _, cell in cells], 16)
+    for page_index, page in enumerate(page_images):
         member = f"{prefix}{page_index:02d}.tim"
         target = output / member
-        data = encode_tim(page, 4, vram_x, 0, clut_x, 480)
+        data = encode_tim(page, 4, vram_x, 0, clut_x, 480, palette)
         target.write_bytes(data)
         if decode_tim(data).size != (256, 256):
             raise RuntimeError(f"TIM verification failed: {target}")
@@ -502,7 +506,9 @@ def main() -> None:
 
     otis_selection = {"idle": 4, "shoot left": 2, "shoot right": 2,
                       "shoot right low": 2, "shoot left low": 2}
-    otis = merge_one(root, build / "otis", "otis", "otis", "ot", 512, 16, otis_selection)
+    # Otis is a small background kid in the official scene, not Pico-height.
+    otis = merge_one(root, build / "otis", "otis", "otis", "ot", 512, 16,
+                     otis_selection, target_height=96)
     ot_idle = lbl(otis, "ot", "idle")
     write_char_module(charsrc, "Char_Otis_New", "\\\\CHAR\\\\OTIS.ARC;1", otis, "character", {
         "idle": ot_idle, "left": ot_idle, "down": ot_idle, "up": ot_idle, "right": ot_idle,

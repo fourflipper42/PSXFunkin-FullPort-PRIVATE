@@ -14,7 +14,7 @@ HERE=Path(__file__).resolve().parent
 PS1=HERE/'ps1asset'
 sys.path.insert(0,str(PS1))
 from build_character_pages import build as build_pages
-from png_to_tim import encode_tim, decode_tim
+from png_to_tim import build_palette_rgba, encode_tim, decode_tim
 from arc_pack import pack_arc
 
 VRAM={
@@ -30,11 +30,13 @@ def animation_script(frames:list[int], loop=True, change:int|None=None)->str:
     if loop: return '{'+vals+', ASCR_BACK, '+str(max(1,len(frames)))+'}'
     return '{'+vals+', ASCR_REPEAT}'
 
-def merge_components(data_root:Path, out:Path, name:str, components:list[tuple[str,str]], vram_key:str):
+def merge_components(data_root:Path, out:Path, name:str, components:list[tuple[str,str]], vram_key:str,
+                     sample_counts:dict[str,int]|None=None, target_height:int=120):
     vx,vy,cx,cy=VRAM[vram_key]; all_frames=[]; all_pages=[]; label_map={}; page_offset=0; frame_offset=0
     for sub,prefix in components:
         comp=out/f'_component_{prefix}'
-        m=build_pages(data_root/'shared/images/characters'/sub, comp, prefix, 4, vx,vy,cx,cy,'all')
+        m=build_pages(data_root/'shared/images/characters'/sub, comp, prefix, 4, vx,vy,cx,cy,
+                      'all',sample_counts,target_height)
         for p in m['pages']:
             src=comp/p['tim']; member=f'{prefix}{p["index"]:02d}.tim'; dst=out/member; shutil.copyfile(src,dst); all_pages.append({'member':member,'path':str(dst)})
         for f in m['frames']:
@@ -145,13 +147,17 @@ def pack_stage_fx(cells:list[tuple[str,Image.Image]],out:Path,arc_name:str,vram_
         page=index//4; slot=index%4; frames.setdefault(label,[]).append({
             'tex':page,'src':[(slot%2)*128,(slot//2)*128,128,128]
         })
+    page_images=[]
     for page_index in range(math.ceil(len(cells)/4)):
         page=Image.new('RGBA',(256,256))
         for slot in range(4):
             index=page_index*4+slot
             if index>=len(cells): break
             page.alpha_composite(cells[index][1],((slot%2)*128,(slot//2)*128))
-        tim=encode_tim(page,4,vram_x+page_index*64,0,clut_x+page_index*16,480)
+        page_images.append(page)
+    palette=build_palette_rgba([cell for _,cell in cells],16)
+    for page_index,page in enumerate(page_images):
+        tim=encode_tim(page,4,vram_x+page_index*64,0,clut_x+page_index*16,480,palette)
         path=out/f'fx{page_index:02d}.tim'; path.write_bytes(tim); assert decode_tim(tim).size==(256,256); pages.append(path)
     if len(pages)>4: raise ValueError(f'{arc_name}: {len(pages)} pages exceeds stage VRAM budget')
     pack_arc(out/arc_name,pages,[p.name for p in pages]); return {'pages':len(pages),'frames':frames}
@@ -193,6 +199,10 @@ def compose_stage(data_root:Path, stage_name:str, images_subdir:str, out:Path, x
         if ap.startswith('#'):
             if p.get('zIndex',0) == 0: canvas.alpha_composite(Image.new('RGBA',(512,240),ImageColor.getcolor(ap,'RGBA')))
             continue
+        # Lightmaps depend on additive shaders that the fixed-function PS1
+        # renderer does not have. Flattening them as normal opaque art blows out
+        # the stage, so retain the authored base layer instead.
+        if '_lightmap' in ap: continue
         imgpath=data_root/images_subdir/(ap+'.png')
         if not imgpath.exists(): continue
         try: im=Image.open(imgpath).convert('RGBA')
@@ -200,6 +210,10 @@ def compose_stage(data_root:Path, stage_name:str, images_subdir:str, out:Path, x
         xml=imgpath.with_suffix('.xml'); anims=p.get('animations') or []
         # Animated traffic, cars, and lightning are emitted separately below.
         if xml.exists() and anims: continue
+        # Sparrow PNGs are packed sheets, not display-ready images. The old
+        # builder pasted the whole sheet for static props and produced the
+        # scrambled Weekend background seen in the failed checkpoint.
+        if xml.exists(): im=crop_sparrow(im,xml,None)
         sx,sy=p.get('scale',[1,1]); sx*=scale; sy*=scale; nw=max(1,round(im.width*abs(sx))); nh=max(1,round(im.height*abs(sy)))
         if nw>4096 or nh>4096: continue
         im=im.resize((nw,nh),Image.Resampling.LANCZOS)
@@ -210,8 +224,10 @@ def compose_stage(data_root:Path, stage_name:str, images_subdir:str, out:Path, x
         if alpha<1: im.putalpha(im.getchannel('A').point(lambda v:int(v*alpha)))
         px,py=p.get('position',[0,0]); x=round(256+(px-xref)*scale); y=round(120+(py-yref)*scale); canvas.alpha_composite(im,(x,y))
     out.mkdir(parents=True,exist_ok=True); canvas.save(out/f'{stage_name}_preview.png'); pages=[]
-    for i in range(2):
-        page=canvas.crop((i*256,0,(i+1)*256,240)); tim=encode_tim(page,4,vram_xs[i],0,clut_xs[i],480); p=out/f'back{i}.tim'; p.write_bytes(tim); assert decode_tim(tim).size==(256,240); pages.append(p)
+    page_images=[canvas.crop((i*256,0,(i+1)*256,240)) for i in range(2)]
+    palette=build_palette_rgba(page_images,16)
+    for i,page in enumerate(page_images):
+        tim=encode_tim(page,4,vram_xs[i],0,clut_xs[i],480,palette); p=out/f'back{i}.tim'; p.write_bytes(tim); assert decode_tim(tim).size==(256,240); pages.append(p)
     pack_arc(out/'back.arc',pages,['back0.tim','back1.tim'])
 
 def main():
@@ -229,9 +245,14 @@ def main():
       ('PissedOff',lbl(p,'px','Pissed Off'),False,0),
     ]
     write_char_module(charsrc,'Char_PicoPlayer_New','\\\\CHAR\\\\PICOPLAY.ARC;1',p,'player',mp,custom,3,(-50,-65,100)); shutil.copyfile(builddir/'pico/main.arc',up/'iso'/'picoplay.arc')
-    n=merge_components(root,builddir/'nene','nene',[('nene','ne')],'nene'); idle=lbl(n,'ne','Idle'); fawn=lbl(n,'ne','Fawn'); mn={'idle':idle,'left':idle,'down':fawn or idle,'up':idle,'right':idle}; custom=[('KnifeRaise',lbl(n,'ne','Knife Raise'),False,0),('KnifeIdle',lbl(n,'ne','Idle (holding Knife)'),True,None),('KnifeLower',lbl(n,'ne','Knife Lower'),False,0),('Laugh',lbl(n,'ne','Laugh'),False,0),('Cheer',lbl(n,'ne','Cheer'),False,0),('HairBlow',lbl(n,'ne','Hair Blow'),True,None)]
+    nene_samples={'Idle':8,'Fawn':4,'Knife Raise':4,'Idle (holding Knife)':8,
+                  'Knife Lower':4,'Laugh':6,'Cheer':6,'Hair Blow':8}
+    n=merge_components(root,builddir/'nene','nene',[('nene','ne')],'nene',nene_samples); idle=lbl(n,'ne','Idle'); fawn=lbl(n,'ne','Fawn'); mn={'idle':idle,'left':idle,'down':fawn or idle,'up':idle,'right':idle}; custom=[('KnifeRaise',lbl(n,'ne','Knife Raise'),False,0),('KnifeIdle',lbl(n,'ne','Idle (holding Knife)'),True,None),('KnifeLower',lbl(n,'ne','Knife Lower'),False,0),('Laugh',lbl(n,'ne','Laugh'),False,0),('Cheer',lbl(n,'ne','Cheer'),False,0),('HairBlow',lbl(n,'ne','Hair Blow'),True,None)]
     write_char_module(charsrc,'Char_Nene_New','\\\\CHAR\\\\NENE.ARC;1',n,'character',mn,custom,4,(0,-50,100)); shutil.copyfile(builddir/'nene/main.arc',up/'iso'/'nene.arc')
-    d=merge_components(root,builddir/'darnell','darnell',[('darnell','da')],'darnell')
+    darnell_samples={'Idle':8,'Pose Left':4,'Left Flame Loop':6,'Pose Down':4,'Down Flame Loop':6,
+                     'Pose Up':4,'Up Flame Loop':6,'Pose Right':4,'Right Flame Loop':6,
+                     'Light Can':5,'Kick Up':5,'Knee Forward':5,'Gets Pissed':5,'Laugh':6}
+    d=merge_components(root,builddir/'darnell','darnell',[('darnell','da')],'darnell',darnell_samples)
     def dl(direction): return lbl(d,'da',f'Pose {direction}')+lbl(d,'da',f'{direction} Flame Loop')
     md={'idle':lbl(d,'da','Idle'),'left':dl('Left'),'down':dl('Down'),'up':dl('Up'),'right':dl('Right')}; custom=[('LightCan',lbl(d,'da','Light Can'),False,0),('KickUp',lbl(d,'da','Kick Up'),False,0),('KneeForward',lbl(d,'da','Knee Forward'),False,0),('Pissed',lbl(d,'da','Gets Pissed'),False,0),('Laugh',lbl(d,'da','Laugh'),False,0)]
     write_char_module(charsrc,'Char_Darnell_New','\\\\CHAR\\\\DARNELL.ARC;1',d,'character',md,custom,5,(50,-70,100)); shutil.copyfile(builddir/'darnell/main.arc',up/'iso'/'darnell.arc')

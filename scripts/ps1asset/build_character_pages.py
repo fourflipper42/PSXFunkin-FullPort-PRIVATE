@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from animateatlas_flatten import AnimateAtlas, leaf_bounds, render_leaves_fixed, safe_name
-from png_to_tim import encode_tim, decode_tim
+from png_to_tim import build_palette_rgba, encode_tim, decode_tim
 
 
 PROFILE_LABELS = {
@@ -112,7 +112,8 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
           vram_x: int = 0, vram_y: int = 0,
           clut_x: int = 0, clut_y: int = 0,
           profile: str = "all",
-          sample_counts: dict[str, int] | None = None) -> dict[str, Any]:
+          sample_counts: dict[str, int] | None = None,
+          target_height: int = 120) -> dict[str, Any]:
     atlas = AnimateAtlas(atlas_dir)
     all_labels = atlas.labels()
     allowed = PROFILE_LABELS.get(profile)
@@ -143,7 +144,6 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
     reference_height = max_y - min_y
     if reference_height <= 0:
         raise ValueError(f"{atlas_dir}: invalid idle/dance reference bounds")
-    target_height = 120
     scale = target_height / reference_height
     anchor_x, anchor_y = 128, 236
     center_x = (min_x + max_x) / 2
@@ -192,12 +192,15 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
     for item, cell, (page_index, x, y) in zip(selected, cells, positions):
         item.update({"page": page_index, "src": [x, y, cell.width, cell.height]})
 
+    # One character gets one CLUT. Per-page quantization caused visible skin,
+    # clothes, and outline shifts whenever an animation crossed a TIM page.
+    palette_rgb = build_palette_rgba(cells, 16 if bpp == 4 else 256)
     pages = []
     for page_index, page in enumerate(page_images):
         png_path = pages_dir / f"{name}{page_index:02d}.png"
         tim_path = pages_dir / f"{name}{page_index:02d}.tim"
         page.save(png_path, optimize=True)
-        tim_data = encode_tim(page, bpp, vram_x, vram_y, clut_x, clut_y)
+        tim_data = encode_tim(page, bpp, vram_x, vram_y, clut_x, clut_y, palette_rgb)
         tim_path.write_bytes(tim_data)
         decoded = decode_tim(tim_data)
         if decoded.size != page.size:
@@ -209,6 +212,8 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
         "name": name, "source": str(atlas_dir), "source_frame_rate": atlas.frame_rate,
         "policy": "authentic-source-frames-only", "bpp": bpp,
         "frame_layout": "variable-rect-cuckydev-style", "page_size": [256, 256], "scale": scale,
+        "target_height": target_height, "palette_policy": "character-wide-locked-clut",
+        "palette_rgb": [list(rgb) for rgb in palette_rgb],
         "vram": {"texture": [vram_x, vram_y], "clut": [clut_x, clut_y]},
         "profile": profile,
         "excluded_labels": [label["name"] for label in all_labels if label not in labels],

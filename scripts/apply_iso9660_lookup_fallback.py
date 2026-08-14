@@ -282,17 +282,10 @@ def patch_movies(root: Path) -> None:
 {
 	Audio_StopXA();
 
-	CdlFILE file;
-	if (!IO_SearchFile(&file, path))
-	{
-		sprintf(error_msg, "[M1V3 LOOKUP] missing %s", path);
-		ErrorLock();
-		return;
-	}
-
-	while (PadRead(1) & PADstart)
-		VSync(0);
-
+	/* W1_CUCKYDEV_MOVIE_ENTRY_V10
+	 * Do not perform an unguarded preflight CdSearchFile/ISO scan here and do
+	 * not spin waiting for PADstart. strDoPlayback owns bounded lookup/CD
+	 * startup and reports E0-E4. Start is sampled only after playback begins. */
 	STRFILE sfile;
 	strcpy(sfile.FileName, path);
 	sfile.Xres = 320;
@@ -310,10 +303,17 @@ def patch_movies(root: Path) -> None:
 
     strplay = root / "src/strplay.c"
     text = strplay.read_text()
+    if "M1_VLC_TABLE_V5" not in text:
+        text = replace_once(
+            text,
+            "static STRENV strEnv;\n",
+            "static STRENV strEnv;\n\n/* M1_VLC_TABLE_V5: Sony PsyQ libpress VLC table. */\nstatic DECDCTTAB strVlcTable;\n",
+            "M1 VLC table declaration",
+        )
     if '#include "mem.h"' not in text:
         text = replace_once(text, '#include "psx.h"\n', '#include "psx.h"\n#include "mem.h"\n', "STR heap include")
 
-    if "M1_STR_DIAGNOSTIC_V3" in text:
+    if "W1_CUCKYDEV_STR_CONTRACT_V10" in text:
         strplay.write_text(text)
         return
 
@@ -354,7 +354,6 @@ def patch_movies(root: Path) -> None:
 	if (!IO_SearchFile(&file, str->FileName)) {
 		SetDispMask(1);
 		sprintf(error_msg, "[M1V3 E0] STR lookup failed");
-		ErrorLock();
 		return;
 	}
 
@@ -362,7 +361,6 @@ def patch_movies(root: Path) -> None:
 	if (workspace == NULL) {
 		SetDispMask(1);
 		sprintf(error_msg, "[M1V3 E1] no STR workspace RAM");
-		ErrorLock();
 		return;
 	}
 	RingBuff = (u_long*)workspace;
@@ -387,6 +385,8 @@ def patch_movies(root: Path) -> None:
 	strEnv.FrameDone = 0;
 
 	DecDCTReset(0);
+	/* Sony PsyQ CD/MOVIE samples build this before the first VLC decode. */
+	DecDCTvlcBuild(strVlcTable);
 	DecDCToutCallback(strCallback);
 	StSetRing(RingBuff, RING_SIZE);
 	StSetStream(IS_RGB24, 1, 0xffffffff, 0, 0);
@@ -398,7 +398,6 @@ def patch_movies(root: Path) -> None:
 		Mem_Free(workspace);
 		SetDispMask(1);
 		sprintf(error_msg, "[M1V3 E2] CD stream start failed");
-		ErrorLock();
 		return;
 	}
 
@@ -410,7 +409,6 @@ def patch_movies(root: Path) -> None:
 		Mem_Free(workspace);
 		SetDispMask(1);
 		sprintf(error_msg, "[M1V3 E3] no first STR frame");
-		ErrorLock();
 		return;
 	}
 
@@ -425,7 +423,6 @@ def patch_movies(root: Path) -> None:
 			Mem_Free(workspace);
 			SetDispMask(1);
 			sprintf(error_msg, "[M1V3 E4] STR frame stream stalled");
-			ErrorLock();
 			return;
 		}
 
@@ -465,7 +462,8 @@ def patch_movies(root: Path) -> None:
 		return false;
 
 	strEnv->VlcID = strEnv->VlcID ? 0 : 1;
-	DecDCTvlc(next, strEnv->VlcBuff_ptr[strEnv->VlcID]);
+	/* M1_VLC_EXPLICIT_V6: consume the built PsyQ table explicitly. */
+	DecDCTvlc2(next, strEnv->VlcBuff_ptr[strEnv->VlcID], strVlcTable);
 	StFreeRing(next);
 	return true;
 }
@@ -537,7 +535,8 @@ def patch_movies(root: Path) -> None:
 
 	VSync(3);
 	for (tries = 0; tries < 30; tries++) {
-		if (CdRead2(CdlModeStream | CdlModeSpeed | CdlModeRT) != 0)
+		/* M1_STREAM2_V7: Sony PsyQ CD/MOVIE streaming mode. */
+		if (CdRead2(CdlModeStream2 | CdlModeSpeed | CdlModeRT) != 0)
 			return true;
 		VSync(0);
 	}
@@ -549,6 +548,28 @@ def patch_movies(root: Path) -> None:
         "static void strKickCD(CdlLOC *loc) {",
         kick_cd,
         "bounded STR CD startup",
+    )
+    # Keep the full-disc lookup, heap workspace, and bounded failure paths, but
+    # decode with the exact contract used by CuckyDev's proven PSXFunkin player.
+    # The prior DecDCTvlc2/Stream2 experiment does not match this v2 STR stream
+    # and is the runtime regression reported from the test disc.
+    text = text.replace(
+        "static STRENV strEnv;\n\n/* M1_VLC_TABLE_V5: Sony PsyQ libpress VLC table. */\nstatic DECDCTTAB strVlcTable;\n",
+        "static STRENV strEnv;\n\n/* W1_CUCKYDEV_STR_CONTRACT_V10 */\n",
+    )
+    text = text.replace(
+        "\t/* Sony PsyQ CD/MOVIE samples build this before the first VLC decode. */\n\tDecDCTvlcBuild(strVlcTable);\n",
+        "",
+    )
+    text = text.replace(
+        "\t/* M1_VLC_EXPLICIT_V6: consume the built PsyQ table explicitly. */\n"
+        "\tDecDCTvlc2(next, strEnv->VlcBuff_ptr[strEnv->VlcID], strVlcTable);\n",
+        "\tDecDCTvlc(next, strEnv->VlcBuff_ptr[strEnv->VlcID]);\n",
+    )
+    text = text.replace(
+        "\t\t/* M1_STREAM2_V7: Sony PsyQ CD/MOVIE streaming mode. */\n"
+        "\t\tif (CdRead2(CdlModeStream2 | CdlModeSpeed | CdlModeRT) != 0)\n",
+        "\t\tif (CdRead2(CdlModeStream | CdlModeSpeed | CdlModeRT) != 0)\n",
     )
     strplay.write_text(text)
 
@@ -711,10 +732,20 @@ def validate(root: Path) -> None:
             raise SystemExit(f"ISO9660 runtime marker missing: {marker}")
     if "boolean IO_SearchFile(CdlFILE *file, const char *path);" not in io_h:
         raise SystemExit("IO_SearchFile declaration missing")
-    if "IO_SearchFile(&file, path)" not in movie:
-        raise SystemExit("Movie_Play does not use full ISO search")
-    if "M1_STR_DIAGNOSTIC_V3" not in strplay:
-        raise SystemExit("M1 v3 diagnostic STR player missing")
+    if "W1_CUCKYDEV_MOVIE_ENTRY_V10" not in movie:
+        raise SystemExit("CuckyDev-compatible movie entry marker missing")
+    if "IO_SearchFile(&file, path)" in movie:
+        raise SystemExit("M1 v4 redundant preflight ISO search survived")
+    if "while (PadRead(1) & PADstart)" in movie:
+        raise SystemExit("M1 v4 unbounded Start-release wait survived")
+    if "W1_CUCKYDEV_STR_CONTRACT_V10" not in strplay:
+        raise SystemExit("CuckyDev-compatible STR contract missing")
+    if "DecDCTvlc(next, strEnv->VlcBuff_ptr[strEnv->VlcID]);" not in strplay:
+        raise SystemExit("CuckyDev DecDCTvlc path missing")
+    if "CdlModeStream | CdlModeSpeed | CdlModeRT" not in strplay:
+        raise SystemExit("CuckyDev CD stream mode missing")
+    if "DecDCTvlc2(" in strplay or "CdlModeStream2" in strplay:
+        raise SystemExit("experimental STR decoder survived")
     if "[M1V3 E3] no first STR frame" not in strplay:
         raise SystemExit("M1 v3 first-frame diagnostic missing")
     if "static boolean strKickCD" not in strplay or "static boolean strNextVlc" not in strplay:

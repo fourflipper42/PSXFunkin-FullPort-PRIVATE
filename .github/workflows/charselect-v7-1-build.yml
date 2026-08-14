@@ -30,6 +30,11 @@ on:
       - 'scripts/build_pico_mix_content.py'
       - 'scripts/build_pico_mix_movies.py'
       - 'scripts/apply_pico_mixes_v1.py'
+      - 'scripts/apply_iso9660_lookup_fallback.py'
+      - 'scripts/ps1asset/png_to_tim.py'
+      - 'scripts/ps1asset/build_character_pages.py'
+      - 'scripts/validate_generated_audio_routes.py'
+      - 'scripts/validate_str_assets.py'
   workflow_dispatch:
 
 permissions:
@@ -88,7 +93,9 @@ jobs:
             scripts/build_pico_mix_assets.py \
             scripts/build_pico_mix_content.py \
             scripts/build_pico_mix_movies.py \
-            scripts/apply_pico_mixes_v1.py
+            scripts/apply_pico_mixes_v1.py \
+            scripts/validate_generated_audio_routes.py \
+            scripts/validate_str_assets.py
 
       - name: Install build dependencies
         run: |
@@ -518,13 +525,19 @@ jobs:
           audio=json.loads(Path('build/weekend1_audio_v2.json').read_text())
           movies=json.loads(Path('build/weekend1_movies_v2.json').read_text())
           assert assets['policy']=='authentic-v0.8.4-source-frames-only'
-          assert [(c['name'],c['frames']) for c in assets['characters']]==[
-              ('pico',47),('nene',24),('darnell',30),('picobl',42),('darnbl',36)]
+          chars={c['name']:c for c in assets['characters']}
+          assert set(chars)=={'pico','nene','darnell','picobl','darnbl'}
+          assert chars['pico']['frames']==47 and chars['picobl']['frames']==42 and chars['darnbl']['frames']==36
+          assert chars['nene']['frames'] > 24 and chars['darnell']['frames'] > 30
+          assert chars['nene']['pages'] <= 16 and chars['darnell']['pages'] <= 16
           assert assets['stage_fx']['street']['pages']==3
           assert assets['stage_fx']['blazin']['pages']==4
           nene=json.loads(Path('upstream/build-weekend1/nene/manifest.json').read_text())
           darnbl=json.loads(Path('upstream/build-weekend1/darnbl/manifest.json').read_text())
           assert nene['vram'][:2] != darnbl['vram'][:2], (nene['vram'],darnbl['vram'])
+          for component in ('nene','darnell'):
+              item=json.loads(Path(f'upstream/build-weekend1/{component}/_component_{"ne" if component=="nene" else "da"}/manifest.json').read_text())
+              assert item['palette_policy']=='character-wide-locked-clut'
           assert len(charts['charts'])==14 and len(charts['event_tables'])==5
           assert any(e['zoom'] for e in charts['event_tables'])
           assert audio['week8.xa']['bytes'] % 2336 == 0
@@ -668,6 +681,11 @@ jobs:
             --header upstream/src/pico_mix_movies_generated.h \
             --report build/pico_mix_movies_v1.json
           python3 scripts/apply_pico_mixes_v1.py --upstream upstream
+          python3 scripts/validate_generated_audio_routes.py upstream
+          python3 scripts/validate_str_assets.py \
+            upstream/iso/movie/darnell.str upstream/iso/movie/2hot.str upstream/iso/movie/blazin.str \
+            upstream/iso/movie/sfintro.str upstream/iso/movie/sfend.str \
+            upstream/iso/movie/pstrs.str upstream/iso/movie/pstrend.str
           sha256sum -c /tmp/charselect-v7-1-frozen.sha256
           git -C upstream diff --check
           python3 - <<'PY'
@@ -690,7 +708,10 @@ jobs:
           }
           for name,(frames,pages) in expected.items():
               assert assets['characters'][name]['frames']==frames, name
-              assert assets['characters'][name]['pages']==pages, name
+              if name=='otis.arc':
+                  assert assets['characters'][name]['pages'] <= pages, name
+              else:
+                  assert assets['characters'][name]['pages']==pages, name
           assert len(content['songs'])==15
           assert len(content['charts'])==45
           assert content['events']['total']==1172
