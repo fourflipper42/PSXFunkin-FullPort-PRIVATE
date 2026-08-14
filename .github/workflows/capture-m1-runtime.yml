@@ -20,7 +20,9 @@ jobs:
       - name: Install virtual display tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb imagemagick xdotool libgl1-mesa-dri
+          sudo apt-get install -y \
+            xvfb imagemagick xdotool libgl1-mesa-dri \
+            g++-mipsel-linux-gnu cpp-mipsel-linux-gnu binutils-mipsel-linux-gnu
 
       - name: Download exact private checkpoint
         env:
@@ -49,7 +51,7 @@ jobs:
         run: |
           git clone --depth 1 --recurse-submodules --shallow-submodules \
             https://github.com/grumpycoders/pcsx-redux.git openbios-src
-          ./openbios-src/dockermake.sh -C src/mips/openbios
+          make -C openbios-src/src/mips/openbios
           test -s openbios-src/src/mips/openbios/openbios.bin
           sha256sum openbios-src/src/mips/openbios/openbios.bin
 
@@ -94,7 +96,6 @@ jobs:
           tail -n 200 capture/emulator.log || true
 
       - name: Save screenshot to private branch
-        if: always()
         run: |
           CAPTURE_DIR="runtime-captures/${GITHUB_SHA}"
           mkdir -p "$CAPTURE_DIR"
