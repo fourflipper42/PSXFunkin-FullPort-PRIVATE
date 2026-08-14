@@ -1,0 +1,87 @@
+name: Capture private M1 runtime
+
+on:
+  push:
+    branches: [ full-port-completion ]
+    paths:
+      - '.github/workflows/capture-m1-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install virtual display tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb imagemagick xdotool libgl1-mesa-dri
+
+      - name: Download exact private checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p disc
+          gh release download pico-mixes-v1-4d353e0238a2 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir disc \
+            --pattern 'PSXFunkin_v084_Pico_Mixes_v1.bin' \
+            --pattern 'PSXFunkin_v084_Pico_Mixes_v1.cue'
+          echo 'f6cdd8fe8fa163fbba605391261088abe60ce9da5e03a29cfd0510ef60b7cd97  disc/PSXFunkin_v084_Pico_Mixes_v1.bin' | sha256sum -c -
+          echo 'fe55cd5851eca69531d3a9570194cff28ea205a6f973ebf1c273081fe4a08e3d  disc/PSXFunkin_v084_Pico_Mixes_v1.cue' | sha256sum -c -
+
+      - name: Download PCSX-Redux with OpenBIOS
+        run: |
+          curl -fL --retry 3 --retry-delay 2 \
+            'https://github.com/pkgforge-dev/PCSX-Redux-AppImage-Enhanced/releases/download/r7370.3e10093a-1%402026-08-01_1785584896/PCSX-Redux-r7370.3e10093a-1-anylinux-x86_64.AppImage' \
+            -o pcsx-redux.AppImage
+          chmod +x pcsx-redux.AppImage
+          ./pcsx-redux.AppImage --appimage-extract >/dev/null
+          find squashfs-root -type f \( -iname 'openbios.bin' -o -iname 'pcsx-redux' \) -print
+
+      - name: Boot disc and capture display
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p capture/home capture/config capture/data
+          export HOME="$PWD/capture/home"
+          export XDG_CONFIG_HOME="$PWD/capture/config"
+          export XDG_DATA_HOME="$PWD/capture/data"
+          EMULATOR="$(find squashfs-root -type f -name pcsx-redux -perm -111 -print -quit)"
+          BIOS="$(find squashfs-root -type f -iname openbios.bin -print -quit)"
+          test -n "$EMULATOR"
+          test -n "$BIOS"
+          xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
+            set -uo pipefail
+            "$1" -bios "$2" -iso "$3" -run -interpreter -softgpu > capture/emulator.log 2>&1 &
+            emulator_pid=$!
+            for attempt in $(seq 1 30); do
+              if xdotool search --onlyvisible --name "PCSX-Redux" >/dev/null 2>&1; then
+                break
+              fi
+              sleep 1
+            done
+            sleep 20
+            import -window root capture/m1-runtime.png
+            kill "$emulator_pid" 2>/dev/null || true
+            wait "$emulator_pid" 2>/dev/null || true
+          ' _ "$EMULATOR" "$BIOS" "$PWD/disc/PSXFunkin_v084_Pico_Mixes_v1.cue"
+          test -s capture/m1-runtime.png
+          file capture/m1-runtime.png
+          tail -n 200 capture/emulator.log || true
+
+      - name: Upload screenshot and emulator log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-runtime-capture-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            capture/m1-runtime.png
+            capture/emulator.log
