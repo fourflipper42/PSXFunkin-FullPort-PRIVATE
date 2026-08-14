@@ -870,7 +870,7 @@ def main() -> None:
     (root / "src/stage/weekend1.c").write_text(WEEKEND1_C)
 
     replace_once(root / "Makefile", "       src/stage/week7.c \\\n", "       src/stage/week7.c \\\n       src/stage/weekend1.c \\\n", "Makefile Weekend stage")
-    replace_once(root / "Makefile", "       src/character/pico.c \\\n", "       src/character/pico.c \\\n       src/character/picoplayer.c \\\n       src/character/nene.c \\\n       src/character/darnell.c \\\n       src/character/picoblazin.c \\\n       src/character/darnellblazin.c \\\n", "Makefile Weekend characters")
+    replace_once(root / "Makefile", "       src/character/pico.c \\\n", "       src/character/pico.c \\\n       src/character/weekendpack.c \\\n       src/character/picoplayer.c \\\n       src/character/nene.c \\\n       src/character/darnell.c \\\n       src/character/picoblazin.c \\\n       src/character/darnellblazin.c \\\n", "Makefile Weekend characters")
 
     replace_once(root / "src/stage.h", "\tStageId_Clwn_4, //Expurgation\n\t\n\tStageId_Max", "\tStageId_Clwn_4, //Expurgation\n\n\tStageId_8_1, //Darnell\n\tStageId_8_2, //Lit Up\n\tStageId_8_3, //2Hot\n\tStageId_8_4, //Blazin'\n\n\tStageId_Max", "StageId Weekend append")
     replace_once(root / "src/stage.h", "\t\tStageState_Play, //Game is playing as normal\n\t\tStageState_Pause,", "\t\tStageState_Play, //Game is playing as normal\n\t\tStageState_WeekendIntro, //Darnell's official in-engine can cutscene\n\t\tStageState_Pause,", "Weekend in-game cutscene state")

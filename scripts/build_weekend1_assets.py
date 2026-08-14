@@ -6,7 +6,7 @@ set of authentic source frames suitable for the PS1 renderer; no AI/generated
 art or tween interpolation is used.
 """
 from __future__ import annotations
-import argparse, json, math, shutil, sys, xml.etree.ElementTree as ET
+import argparse, json, math, shutil, struct, sys, xml.etree.ElementTree as ET
 from pathlib import Path
 from PIL import Image, ImageColor
 
@@ -21,6 +21,113 @@ VRAM={
  'pico':(448,0,0,480), 'nene':(512,0,16,480), 'darnell':(576,0,32,480),
  'picobl':(448,0,0,480), 'darnbl':(576,0,32,480),
 }
+
+PACK_MAGIC=b'W1R0'
+
+def zero_rle_pack(data:bytes)->bytes:
+    """Losslessly pack TIM bytes, specializing the transparent zero runs."""
+    out=bytearray(); cursor=0
+    while cursor<len(data):
+        zero=cursor
+        while zero<len(data) and data[zero]==0 and zero-cursor<128: zero+=1
+        if zero-cursor>=3:
+            out.append(0x80 | (zero-cursor-1)); cursor=zero; continue
+        start=cursor
+        while cursor<len(data) and cursor-start<128:
+            run=cursor
+            while run<len(data) and data[run]==0 and run-cursor<128: run+=1
+            if run-cursor>=3: break
+            cursor+=1
+        out.append(cursor-start-1); out.extend(data[start:cursor])
+    return PACK_MAGIC+struct.pack('<II',len(data),len(out))+out
+
+def zero_rle_unpack(data:bytes)->bytes:
+    """Host-side verifier for the PS1 decoder emitted below."""
+    if data[:4]!=PACK_MAGIC or len(data)<12: raise ValueError('bad Weekend packed TIM header')
+    raw_size,packed_size=struct.unpack_from('<II',data,4); src=memoryview(data)[12:12+packed_size]
+    if len(src)!=packed_size: raise ValueError('truncated Weekend packed TIM')
+    out=bytearray(); cursor=0
+    while cursor<len(src):
+        control=src[cursor]; cursor+=1; count=(control&0x7f)+1
+        if control&0x80: out.extend(b'\0'*count)
+        else:
+            if cursor+count>len(src): raise ValueError('truncated Weekend literal')
+            out.extend(src[cursor:cursor+count]); cursor+=count
+    if len(out)!=raw_size: raise ValueError(f'Weekend TIM size mismatch: {len(out)} != {raw_size}')
+    return bytes(out)
+
+def write_weekendpack_module(srcdir:Path)->None:
+    """Emit one shared page decoder instead of one 32 KiB buffer per character."""
+    (srcdir/'weekendpack.h').write_text(r'''#ifndef _WEEKENDPACK_H
+#define _WEEKENDPACK_H
+#include "../gfx.h"
+void WeekendPack_LoadTex(Gfx_Tex *tex, const u8 *packed);
+#endif
+''')
+    (srcdir/'weekendpack.c').write_text(r'''#include "weekendpack.h"
+#include "../main.h"
+
+#define WEEKEND_TIM_MAX 32832
+static u8 weekend_tim_buffer[WEEKEND_TIM_MAX];
+
+static u32 WeekendPack_LE32(const u8 *p)
+{
+    return (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
+}
+
+void WeekendPack_LoadTex(Gfx_Tex *tex, const u8 *packed)
+{
+    const u8 *src;
+    u8 *dst = weekend_tim_buffer;
+    u8 *end;
+    u32 raw_size;
+    u32 packed_size;
+
+    if (packed[0] != 'W' || packed[1] != '1' || packed[2] != 'R' || packed[3] != '0')
+    {
+        sprintf(error_msg, "[WeekendPack] bad page magic");
+        ErrorLock();
+        return;
+    }
+    raw_size = WeekendPack_LE32(packed + 4);
+    packed_size = WeekendPack_LE32(packed + 8);
+    if (raw_size > sizeof(weekend_tim_buffer))
+    {
+        sprintf(error_msg, "[WeekendPack] page %X exceeds scratch", raw_size);
+        ErrorLock();
+        return;
+    }
+    src = packed + 12;
+    end = weekend_tim_buffer + raw_size;
+    while (packed_size != 0 && dst < end)
+    {
+        u8 control = *src++;
+        u32 count = (control & 0x7F) + 1;
+        packed_size--;
+        if (control & 0x80)
+        {
+            if (dst + count > end) break;
+            memset(dst, 0, count);
+            dst += count;
+        }
+        else
+        {
+            if (count > packed_size || dst + count > end) break;
+            memcpy(dst, src, count);
+            src += count;
+            dst += count;
+            packed_size -= count;
+        }
+    }
+    if (dst != end || packed_size != 0)
+    {
+        sprintf(error_msg, "[WeekendPack] corrupt page stream");
+        ErrorLock();
+        return;
+    }
+    Gfx_LoadTex(tex, weekend_tim_buffer, 0);
+}
+''')
 
 def c_ident(s:str)->str: return ''.join(ch if ch.isalnum() else '_' for ch in s)
 def animation_script(frames:list[int], loop=True, change:int|None=None)->str:
@@ -38,14 +145,21 @@ def merge_components(data_root:Path, out:Path, name:str, components:list[tuple[s
         m=build_pages(data_root/'shared/images/characters'/sub, comp, prefix, 4, vx,vy,cx,cy,
                       'all',sample_counts,target_height)
         for p in m['pages']:
-            src=comp/p['tim']; member=f'{prefix}{p["index"]:02d}.tim'; dst=out/member; shutil.copyfile(src,dst); all_pages.append({'member':member,'path':str(dst)})
+            src=comp/p['tim']; member=f'{prefix}{p["index"]:02d}.w1r'; dst=out/member
+            raw=src.read_bytes(); packed=zero_rle_pack(raw)
+            if zero_rle_unpack(packed)!=raw: raise RuntimeError(f'{name}/{member}: lossless pack verification failed')
+            dst.write_bytes(packed)
+            all_pages.append({'member':member,'path':str(dst),'raw_bytes':len(raw),'packed_bytes':len(packed)})
         for f in m['frames']:
             nf=dict(f); nf['index']=frame_offset+f['index']; nf['page']=page_offset+f['page']; nf['label']=f'{prefix}:{f["label"]}'
             all_frames.append(nf); label_map.setdefault(nf['label'],[]).append(nf['index'])
         page_offset+=len(m['pages']); frame_offset+=len(m['frames'])
     if page_offset>16: raise ValueError(f'{name}: {page_offset} pages exceeds ARC/runtime max 16')
     pack_arc(out/'main.arc',[Path(p['path']) for p in all_pages],[p['member'] for p in all_pages])
-    merged={'name':name,'pages':all_pages,'frames':all_frames,'label_map':label_map,'vram':[vx,vy,cx,cy]}
+    merged={'name':name,'pages':all_pages,'frames':all_frames,'label_map':label_map,'vram':[vx,vy,cx,cy],
+            'archive_bytes':(out/'main.arc').stat().st_size,
+            'raw_page_bytes':sum(p['raw_bytes'] for p in all_pages),
+            'packed_page_bytes':sum(p['packed_bytes'] for p in all_pages)}
     (out/'manifest.json').write_text(json.dumps(merged,indent=2)); return merged
 
 def lbl(m,prefix,label): return m['label_map'].get(f'{prefix}:{label}',[])
@@ -59,7 +173,7 @@ def make_standard_anim_entries(lines,base,mapping):
 
 def write_char_module(srcdir:Path, ctor:str, arcpath:str, m:dict, role:str, mapping:dict, custom:list[tuple[str,list[int],bool,int|None]], health:int, focus:tuple[int,int,int]):
     stem=ctor.replace('Char_','').replace('_New','').lower(); hname=f'{stem}.h'; cname=f'{stem}.c'; enum_names=[]
-    lines=['#include "'+hname+'"','#include "../mem.h"','#include "../archive.h"','#include "../stage.h"','#include "../main.h"','',
+    lines=['#include "'+hname+'"','#include "weekendpack.h"','#include "../mem.h"','#include "../archive.h"','#include "../stage.h"','#include "../main.h"','',
            'typedef struct {','    Character character;','    IO_Data arc_main;','    IO_Data arc_ptr[16];','    Gfx_Tex tex;','    u8 frame, tex_id;','} ModernGenerated;','']
     lines.append('static const CharFrame frames[] = {')
     for f in m['frames']:
@@ -78,7 +192,7 @@ def write_char_module(srcdir:Path, ctor:str, arcpath:str, m:dict, role:str, mapp
     lines += anim_defs; lines.append('static const Animation anims[] = {'); lines += [f'    {e},' for e in entries]; lines.append('};\n')
     lines.append('static const char *const page_names[] = {'); lines += [f'    "{p["member"]}",' for p in m['pages']]; lines.append('    NULL\n};\n')
     lines += [
-    'static void SetFrame(void *user, u8 frame) {','    ModernGenerated *this=(ModernGenerated*)user;','    if (frame != this->frame) {','        const CharFrame *cf=&frames[this->frame=frame];','        if (cf->tex != this->tex_id) Gfx_LoadTex(&this->tex, this->arc_ptr[this->tex_id=cf->tex], 0);','    }','}',
+    'static void SetFrame(void *user, u8 frame) {','    ModernGenerated *this=(ModernGenerated*)user;','    if (frame != this->frame) {','        const CharFrame *cf=&frames[this->frame=frame];','        if (cf->tex != this->tex_id) WeekendPack_LoadTex(&this->tex, this->arc_ptr[this->tex_id=cf->tex]);','    }','}',
     'static void Tick(Character *character) {','    ModernGenerated *this=(ModernGenerated*)character;','    Character_CheckEndSing(character);','    if ((stage.flag & STAGE_FLAG_JUST_STEP) && Animatable_Ended(&character->animatable) && (stage.song_step & 0x7)==0)','        character->set_anim(character, CharAnim_Idle);','    Animatable_Animate(&character->animatable,(void*)this,SetFrame);','    Character_Draw(character,&this->tex,&frames[this->frame]);','}',
     'static void SetAnim(Character *character,u8 anim) { Animatable_SetAnim(&character->animatable,anim); Character_CheckStartSing(character); }',
     'static void Free(Character *character) { ModernGenerated *this=(ModernGenerated*)character; Mem_Free(this->arc_main); }',
@@ -160,7 +274,7 @@ def pack_stage_fx(cells:list[tuple[str,Image.Image]],out:Path,arc_name:str,vram_
         tim=encode_tim(page,4,vram_x+page_index*64,0,clut_x+page_index*16,480,palette)
         path=out/f'fx{page_index:02d}.tim'; path.write_bytes(tim); assert decode_tim(tim).size==(256,256); pages.append(path)
     if len(pages)>4: raise ValueError(f'{arc_name}: {len(pages)} pages exceeds stage VRAM budget')
-    pack_arc(out/arc_name,pages,[p.name for p in pages]); return {'pages':len(pages),'frames':frames}
+    pack_arc(out/arc_name,pages,[p.name for p in pages]); return {'pages':len(pages),'frames':frames,'archive_bytes':(out/arc_name).stat().st_size}
 
 def write_fx_header(path:Path,street:dict,blazin:dict)->None:
     lines=['#ifndef _WEEKEND1_FX_GENERATED_H','#define _WEEKEND1_FX_GENERATED_H','']
@@ -229,9 +343,11 @@ def compose_stage(data_root:Path, stage_name:str, images_subdir:str, out:Path, x
     for i,page in enumerate(page_images):
         tim=encode_tim(page,4,vram_xs[i],0,clut_xs[i],480,palette); p=out/f'back{i}.tim'; p.write_bytes(tim); assert decode_tim(tim).size==(256,240); pages.append(p)
     pack_arc(out/'back.arc',pages,['back0.tim','back1.tim'])
+    return {'pages':len(pages),'archive_bytes':(out/'back.arc').stat().st_size}
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--upstream',type=Path,required=True); ap.add_argument('--report',type=Path,required=True); a=ap.parse_args(); root=a.root; up=a.upstream; builddir=up/'build-weekend1'; shutil.rmtree(builddir,ignore_errors=True); builddir.mkdir(parents=True); charsrc=up/'src/character'; records=[]
+    write_weekendpack_module(charsrc)
     p=merge_components(root,builddir/'pico','picoplay',[('pico/basic-animations','pb'),('pico/playable-animations','px'),('pico/death','pd')],'pico')
     mp={'idle':lbl(p,'pb','Idle'),'left':lbl(p,'pb','Left'),'down':lbl(p,'pb','Down'),'up':lbl(p,'pb','Up'),'right':lbl(p,'pb','Right'),'death_intro':lbl(p,'pd','Death Intro'),'death_loop':lbl(p,'pd','Death Loop'),'death_confirm':lbl(p,'pd','Death Confirm')}
     custom=[
@@ -260,9 +376,19 @@ def main():
     write_char_module(charsrc,'Char_PicoBlazin_New','\\\\CHAR\\\\PICOBL.ARC;1',pb,'player',mb,custom,3,(-30,-55,100)); shutil.copyfile(builddir/'picobl/main.arc',up/'iso'/'picobl.arc')
     db=merge_components(root,builddir/'darnbl','darnbl',[('darnellBlazin','db')],'darnbl'); idle=lbl(db,'db','Idle'); mdb={'idle':idle,'left':lbl(db,'db','Punch High 1'),'down':lbl(db,'db','Punch Low 1'),'up':lbl(db,'db','Dodge'),'right':lbl(db,'db','Punch High 2')}; db_names=['Uppercut Prep','Uppercut Punch','Uppercut Punch Loop','Fake Hit','Block','Punch High 1','Punch High 2','Punch Low 1','Punch Low 2','Dodge','Hit High','Hit Low','Cringe','Hit Spin','Pissed','Uppercut Hit']; custom=[(x,lbl(db,'db',x),('Loop' in x),(None if 'Loop' in x else 0)) for x in db_names]
     write_char_module(charsrc,'Char_DarnellBlazin_New','\\\\CHAR\\\\DARNBL.ARC;1',db,'character',mdb,custom,5,(30,-55,100)); shutil.copyfile(builddir/'darnbl/main.arc',up/'iso'/'darnbl.arc')
-    w8=up/'iso/week8'; compose_stage(root,'phillyStreets','weekend1/images',w8,1453,1150,0.22); compose_stage(root,'phillyBlazin','weekend1/images',builddir/'blazinbg',-237,150,0.22); shutil.copyfile(builddir/'blazinbg/back.arc',w8/'blazin.arc')
+    w8=up/'iso/week8'; street_bg=compose_stage(root,'phillyStreets','weekend1/images',w8,1453,1150,0.22); blazin_bg=compose_stage(root,'phillyBlazin','weekend1/images',builddir/'blazinbg',-237,150,0.22); shutil.copyfile(builddir/'blazinbg/back.arc',w8/'blazin.arc')
     fx=build_stage_fx(root,up,builddir)
-    for nm,m in [('pico',p),('nene',n),('darnell',d),('picobl',pb),('darnbl',db)]: records.append({'name':nm,'frames':len(m['frames']),'pages':len(m['pages'])})
-    payload={'characters':records,'stage_fx':fx,'policy':'authentic-v0.8.4-source-frames-only'}
+    for nm,m in [('pico',p),('nene',n),('darnell',d),('picobl',pb),('darnbl',db)]:
+        records.append({'name':nm,'frames':len(m['frames']),'pages':len(m['pages']),
+                        'archive_bytes':m['archive_bytes'],'raw_page_bytes':m['raw_page_bytes'],
+                        'packed_page_bytes':m['packed_page_bytes']})
+    street_resident=p['archive_bytes']+n['archive_bytes']+d['archive_bytes']+street_bg['archive_bytes']+fx['street']['archive_bytes']
+    blazin_resident=pb['archive_bytes']+db['archive_bytes']+blazin_bg['archive_bytes']+fx['blazin']['archive_bytes']
+    payload={'characters':records,'stage_fx':fx,'backgrounds':{'street':street_bg,'blazin':blazin_bg},
+             'runtime_ram':{'street_resident_archive_bytes':street_resident,
+                            'blazin_resident_archive_bytes':blazin_resident,
+                            'heap_bytes':0x100000,'reserved_for_chart_objects':0x20000},
+             'packing':'lossless-zero-rle-shared-32832-byte-decoder',
+             'policy':'authentic-v0.8.4-source-frames-only'}
     a.report.parent.mkdir(parents=True,exist_ok=True); a.report.write_text(json.dumps(payload,indent=2)+'\n'); print(json.dumps(payload,indent=2))
 if __name__=='__main__': main()

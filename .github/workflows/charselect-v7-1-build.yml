@@ -532,6 +532,11 @@ jobs:
           assert chars['nene']['pages'] <= 16 and chars['darnell']['pages'] <= 16
           assert assets['stage_fx']['street']['pages']==3
           assert assets['stage_fx']['blazin']['pages']==4
+          assert assets['packing']=='lossless-zero-rle-shared-32832-byte-decoder'
+          assert assets['runtime_ram']['street_resident_archive_bytes'] + assets['runtime_ram']['reserved_for_chart_objects'] < assets['runtime_ram']['heap_bytes']
+          assert assets['runtime_ram']['blazin_resident_archive_bytes'] + assets['runtime_ram']['reserved_for_chart_objects'] < assets['runtime_ram']['heap_bytes']
+          for character in chars.values():
+              assert character['archive_bytes'] < character['raw_page_bytes']
           nene=json.loads(Path('upstream/build-weekend1/nene/manifest.json').read_text())
           darnbl=json.loads(Path('upstream/build-weekend1/darnbl/manifest.json').read_text())
           assert nene['vram'][:2] != darnbl['vram'][:2], (nene['vram'],darnbl['vram'])
@@ -561,6 +566,10 @@ jobs:
           ):
               assert marker in joined, marker
           assert 'if (id == stageid_8_3)' not in joined
+          weekendpack=Path('upstream/src/character/weekendpack.c').read_text()
+          assert 'weekend_tim_buffer[weekend_tim_max]' in weekendpack.lower()
+          assert 'weekendpack_loadtex' in weekendpack.lower()
+          assert 'src/character/weekendpack.c' in Path('upstream/Makefile').read_text()
           xml=Path('upstream/funkin.xml').read_text()
           long_names=[name for name in re.findall(r'<file name = "([^"]+)"',xml) if len(name)>12]
           assert not long_names, long_names

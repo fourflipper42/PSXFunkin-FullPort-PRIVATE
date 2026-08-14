@@ -48,6 +48,30 @@ def arc_members(path: Path) -> list[tuple[str, bytes]]:
     return members
 
 
+def unpack_weekend_page(data: bytes) -> bytes:
+    if data[:4] != b"W1R0":
+        return data
+    if len(data) < 12:
+        raise ValueError("truncated W1R0 header")
+    raw_size, packed_size = struct.unpack_from("<II", data, 4)
+    src = memoryview(data)[12:12 + packed_size]
+    if len(src) != packed_size:
+        raise ValueError("truncated W1R0 payload")
+    out = bytearray(); cursor = 0
+    while cursor < len(src):
+        control = src[cursor]; cursor += 1
+        count = (control & 0x7F) + 1
+        if control & 0x80:
+            out.extend(b"\0" * count)
+        else:
+            if cursor + count > len(src):
+                raise ValueError("truncated W1R0 literal")
+            out.extend(src[cursor:cursor + count]); cursor += count
+    if len(out) != raw_size:
+        raise ValueError(f"W1R0 size mismatch: {len(out)} != {raw_size}")
+    return bytes(out)
+
+
 def checker(size: tuple[int, int]) -> Image.Image:
     image = Image.new("RGBA", size, (27, 29, 34, 255))
     draw = ImageDraw.Draw(image)
@@ -119,7 +143,7 @@ def main() -> None:
             pages = []
             for member, payload in arc_members(path):
                 try:
-                    pages.append((member, decode_tim(payload).convert("RGBA")))
+                    pages.append((member, decode_tim(unpack_weekend_page(payload)).convert("RGBA")))
                 except Exception as exc:
                     report.append(f"SKIP {name}/{member}: {exc}")
             if not pages:
