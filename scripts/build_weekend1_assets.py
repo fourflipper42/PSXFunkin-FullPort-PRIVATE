@@ -249,9 +249,9 @@ def main():
                   'Knife Lower':4,'Laugh':6,'Cheer':6,'Hair Blow':8}
     n=merge_components(root,builddir/'nene','nene',[('nene','ne')],'nene',nene_samples); idle=lbl(n,'ne','Idle'); fawn=lbl(n,'ne','Fawn'); mn={'idle':idle,'left':idle,'down':fawn or idle,'up':idle,'right':idle}; custom=[('KnifeRaise',lbl(n,'ne','Knife Raise'),False,0),('KnifeIdle',lbl(n,'ne','Idle (holding Knife)'),True,None),('KnifeLower',lbl(n,'ne','Knife Lower'),False,0),('Laugh',lbl(n,'ne','Laugh'),False,0),('Cheer',lbl(n,'ne','Cheer'),False,0),('HairBlow',lbl(n,'ne','Hair Blow'),True,None)]
     write_char_module(charsrc,'Char_Nene_New','\\\\CHAR\\\\NENE.ARC;1',n,'character',mn,custom,4,(0,-50,100)); shutil.copyfile(builddir/'nene/main.arc',up/'iso'/'nene.arc')
-    darnell_samples={'Idle':8,'Pose Left':4,'Left Flame Loop':6,'Pose Down':4,'Down Flame Loop':6,
-                     'Pose Up':4,'Up Flame Loop':6,'Pose Right':4,'Right Flame Loop':6,
-                     'Light Can':5,'Kick Up':5,'Knee Forward':5,'Gets Pissed':5,'Laugh':6}
+    darnell_samples={'Idle':6,'Pose Left':3,'Left Flame Loop':4,'Pose Down':3,'Down Flame Loop':4,
+                     'Pose Up':3,'Up Flame Loop':4,'Pose Right':3,'Right Flame Loop':4,
+                     'Light Can':4,'Kick Up':4,'Knee Forward':4,'Gets Pissed':4,'Laugh':4}
     d=merge_components(root,builddir/'darnell','darnell',[('darnell','da')],'darnell',darnell_samples)
     def dl(direction): return lbl(d,'da',f'Pose {direction}')+lbl(d,'da',f'{direction} Flame Loop')
     md={'idle':lbl(d,'da','Idle'),'left':dl('Left'),'down':dl('Down'),'up':dl('Up'),'right':dl('Right')}; custom=[('LightCan',lbl(d,'da','Light Can'),False,0),('KickUp',lbl(d,'da','Kick Up'),False,0),('KneeForward',lbl(d,'da','Knee Forward'),False,0),('Pissed',lbl(d,'da','Gets Pissed'),False,0),('Laugh',lbl(d,'da','Laugh'),False,0)]
