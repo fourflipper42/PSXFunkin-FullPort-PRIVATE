@@ -1,0 +1,124 @@
+ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0'
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_card_inum returned error: No such file or directory
+ALSA lib confmisc.c:422:(snd_func_concat) [error.core] error evaluating strings
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_concat returned error: No such file or directory
+ALSA lib confmisc.c:1342:(snd_func_refer) [error.core] error evaluating name
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5734:(snd_config_expand) [error.core] Evaluate error: No such file or directory
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM default
+ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0'
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_card_id returned error: No such file or directory
+ALSA lib confmisc.c:422:(snd_func_concat) [error.core] error evaluating strings
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_concat returned error: No such file or directory
+ALSA lib confmisc.c:1342:(snd_func_refer) [error.core] error evaluating name
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5734:(snd_config_expand) [error.core] Evaluate error: No such file or directory
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM dmix
+ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0'
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_card_id returned error: No such file or directory
+ALSA lib confmisc.c:422:(snd_func_concat) [error.core] error evaluating strings
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_concat returned error: No such file or directory
+ALSA lib confmisc.c:1342:(snd_func_refer) [error.core] error evaluating name
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5734:(snd_config_expand) [error.core] Evaluate error: No such file or directory
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM dmix:0
+ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0'
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_card_id returned error: No such file or directory
+ALSA lib confmisc.c:422:(snd_func_concat) [error.core] error evaluating strings
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_concat returned error: No such file or directory
+ALSA lib confmisc.c:1342:(snd_func_refer) [error.core] error evaluating name
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5734:(snd_config_expand) [error.core] Evaluate error: No such file or directory
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM dmix:0,0
+ALSA lib confmisc.c:165:(snd_config_get_card) [error.core] Cannot get card index for 0
+ALSA lib confmisc.c:165:(snd_config_get_card) [error.core] Cannot get card index for 0
+ALSA lib confmisc.c:165:(snd_config_get_card) [error.core] Cannot get card index for 0
+The memory card /home/runner/work/PSXFunkin-FullPort-PRIVATE/PSXFunkin-FullPort-PRIVATE/capture/home/.config/pcsx-redux/memcard1.mcd doesn't exist - creating it
+The memory card /home/runner/work/PSXFunkin-FullPort-PRIVATE/PSXFunkin-FullPort-PRIVATE/capture/home/.config/pcsx-redux/memcard2.mcd doesn't exist - creating it
+Warning: OpenGL error reporting disabled. See About dialog for more information.
+Loaded CD Image: /home/runner/work/PSXFunkin-FullPort-PRIVATE/PSXFunkin-FullPort-PRIVATE/disc/PSXFunkin_v084_Pico_Mixes_v1.cue[+cue].
+Track 01 (DATA) - Start 00:02:00, Length 74:58:55
+CD-ROM Label: PSXFUNKIN
+CD-ROM ID: SCUS00000
+CD-ROM EXE Name: SCUS_000.00;1
+PCSX-Redux booting
+Copyright (C) 2019-2025 PCSX-Redux authors
+CPU type: Interpreted
+Loaded BIOS: /home/runner/work/PSXFunkin-FullPort-PRIVATE/PSXFunkin-FullPort-PRIVATE/openbios-src/src/mips/openbios/openbios.bin
+OpenBIOS detected (1ff48e5a)
+
+
+================
+uC-sdk - booting
+================
+BIOS Trace1: 0x0f
+BIOS Trace1: 0x0e
+BIOS Trace1: 0x01
+BIOS Trace1: 0x02
+BIOS Trace1: 0x03
+BIOS Trace1: 0x04
+BIOS Trace1: 0x01
+BIOS Trace1: 0x03
+BIOS Trace1: 0x04
+BIOS Trace1: 0x05
+BIOS Trace1: 0x06
+BIOS Trace1: 0x02
+BIOS Trace1: 0x05
+PS-X Realtime Kernel OpenBios - build id d9c297102605c7ecdd4faf52cc552aa576e8bf2f.
+Copyright (C) 2019-2026 PCSX-Redux authors.
+BIOS Trace1: 0x06
+KERNEL SETUP!
+
+Configuration : EvCB	0x10		TCB	0x04
+BIOS Trace1: 0x07
+Hijacked shell, loading /home/runner/work/PSXFunkin-FullPort-PRIVATE/PSXFunkin-FullPort-PRIVATE/extracted/fs/SCUS_000.00...
+Successful: new PC = 80010000...
+CD_init:addr=8004b128
+[IO_SearchFile] Searching for \MUSIC\MENU.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK1A.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK1B.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK2A.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK2B.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK3A.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK3B.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK4A.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK4B.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK5A.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK5B.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK6A.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK6B.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK7A.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK7B.XA;1
+[IO_SearchFile] Searching for \MUSIC\KAPIA.XA;1
+[IO_SearchFile] Searching for \MUSIC\KAPIB.XA;1
+[IO_SearchFile] Searching for \MUSIC\CLWNA.XA;1
+[IO_SearchFile] Searching for \MUSIC\ERECTA.XA;1
+[IO_SearchFile] Searching for \MUSIC\ERECTB.XA;1
+[IO_SearchFile] Searching for \MUSIC\ERECTC.XA;1
+[IO_SearchFile] Searching for \MUSIC\ERECTD.XA;1
+[IO_SearchFile] Searching for \MUSIC\CLWNB.XA;1
+[IO_SearchFile] Searching for \MUSIC\WEEK8.XA;1
+[IO_SearchFile] Searching for \MUSIC\DARNIN.XA;1
+[IO_SearchFile] Searching for \MUSIC\SPAG.XA;1
+[IO_SearchFile] Searching for \MUSIC\PICOMIX0.XA;1
+[IO_SearchFile] Searching for \MUSIC\PICOMIX1.XA;1
+[IO_SearchFile] Searching for \MUSIC\PICOMIX2.XA;1
+[IO_SearchFile] Searching for \MUSIC\PICOMIX3.XA;1
+ResetGraph:jtb=8004cf08,env=8004cf50
+Got an unknown GPU data word: 0004cf08 (cmdType: 0, command: 0)
+DMA bus error: code=00908000
+MADR[0]=00000000
+MADR[1]=00000000
+MADR[2]=00000000
+MADR[3]=001885c0
+MADR[4]=0004e1e0
+MADR[5]=00000000
+MADR[6]=00000000
+Found C0 patch hash 2a81bbef "_patch_card#2", issued from 0x8002c02c, executing...
+Found B0 patch hash c29df18f "_patch_card2#2", issued from 0x8002c0c0, executing...
+Found B0 patch hash 5123f82a "_patch_card_info#1", issued from 0x8002bf48, executing...
+Found B0 patch hash cef165ba "_remove_ChgclrPAD#1", issued from 0x8002a970, executing...
+Found B0 patch hash f803a6a6 "_patch_pad#1", issued from 0x8002a8b8, executing...
+PS-X Control PAD Driver
+Saving memory card /home/runner/work/PSXFunkin-FullPort-PRIVATE/PSXFunkin-FullPort-PRIVATE/capture/home/.config/pcsx-redux/memcard1.mcd
+Saving memory card /home/runner/work/PSXFunkin-FullPort-PRIVATE/PSXFunkin-FullPort-PRIVATE/capture/home/.config/pcsx-redux/memcard1.mcd
