@@ -868,10 +868,13 @@ jobs:
               > build/weekend-runtime-smoke/emulator.log 2>&1 &
             emulator_pid=$!
             sleep 12
+            kill -0 "$emulator_pid"
             import -window root build/weekend-runtime-smoke/cutscene-12s.png
             sleep 82
+            kill -0 "$emulator_pid"
             import -window root build/weekend-runtime-smoke/stage-94s.png
             sleep 12
+            kill -0 "$emulator_pid"
             import -window root build/weekend-runtime-smoke/stage-106s.png
             kill "$emulator_pid" 2>/dev/null || true
             wait "$emulator_pid" 2>/dev/null || true
@@ -887,12 +890,19 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           from PIL import Image, ImageStat
-          for path in sorted(Path('build/weekend-runtime-smoke').glob('*.png')):
+          paths=sorted(Path('build/weekend-runtime-smoke').glob('*.png'))
+          spreads={}
+          for path in paths:
               stat=ImageStat.Stat(Image.open(path).convert('RGB'))
               spread=sum(high-low for low,high in stat.extrema)
-              if spread < 24:
-                  raise SystemExit(f'{path}: effectively blank runtime capture')
-              print(f'RUNTIME_FRAME_OK {path} spread={spread}')
+              spreads[path.name]=spread
+              print(f'RUNTIME_FRAME {path} spread={spread}')
+          # A movie can legitimately be on a full-black transition frame at
+          # 12 seconds.  The two post-cutscene frames must contain the stage.
+          for name in ('stage-94s.png','stage-106s.png'):
+              if spreads.get(name,0) < 24:
+                  raise SystemExit(f'{name}: effectively blank post-cutscene runtime capture')
+              print(f'RUNTIME_STAGE_OK {name} spread={spreads[name]}')
           PY
           if grep -Eiq 'fatal|malloc|asyncreadfile|allocation failed' build/weekend-runtime-smoke/emulator.log; then
             exit 1
@@ -902,6 +912,15 @@ jobs:
           cp /tmp/weekend-production/funkin.bin upstream/funkin.bin
           cp /tmp/weekend-production/funkin.cue upstream/funkin.cue
           cp /tmp/weekend-production/main.c upstream/src/main.c
+
+      - name: Upload Weekend 1 runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekend1-runtime-diagnostics-${{ github.sha }}
+          compression-level: 0
+          if-no-files-found: warn
+          path: build/weekend-runtime-smoke/
 
       - name: Package Pico Mixes v1 checkpoint
         run: |
@@ -940,6 +959,13 @@ jobs:
           (cd build/release && find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
           sha256sum build/release/PSXFunkin_v084_Pico_Mixes_v1.bin
           stat -c '%n %s bytes' build/release/PSXFunkin_v084_Pico_Mixes_v1.bin
+
+      - name: Upload runtime-verified checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: psxfunkin-weekend1-runtime-verified-${{ github.sha }}
+          compression-level: 0
+          path: build/release/
 
       - name: Publish Pico Mixes v1 prerelease
         env:
