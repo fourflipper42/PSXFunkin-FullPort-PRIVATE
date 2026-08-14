@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import struct
+from collections import Counter
 from pathlib import Path
 from PIL import Image
 
@@ -11,26 +12,75 @@ from PIL import Image
 def psx_color(r: int, g: int, b: int, a: int) -> int:
     if a < 128:
         return 0
-    value = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10)
-    if a < 255:
-        value |= 0x8000
-    return value
+    # Match CuckyDev's converter: every opaque CLUT entry sets the high bit.
+    # Without it, opaque RGB(0,0,0) becomes the PS1 transparent value and the
+    # defining black Funkin outlines literally disappear.
+    return (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10) | 0x8000
+
+
+def psx_rgb(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Round once to the exact 5-bit colour precision stored by the PS1."""
+    return tuple((channel >> 3) << 3 for channel in rgb)  # type: ignore[return-value]
 
 
 def quantize_rgba(image: Image.Image, colors: int) -> tuple[list[int], bytes]:
     rgba = image.convert("RGBA")
-    alpha = rgba.getchannel("A")
-    opaque = Image.new("RGB", rgba.size, (0, 0, 0))
-    opaque.paste(rgba.convert("RGB"), mask=alpha)
-    q = opaque.quantize(colors=colors - 1, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
-    source_palette = q.getpalette() or []
-    palette = [0]
-    for i in range(colors - 1):
-        base = i * 3
-        rgb = (source_palette[base:base + 3] + [0, 0, 0])[:3]
-        palette.append(psx_color(rgb[0], rgb[1], rgb[2], 255))
-    qdata = bytes((idx + 1 if a >= 128 else 0) for idx, a in zip(q.tobytes(), alpha.tobytes()))
-    return palette, qdata
+    pixels = list(rgba.getdata())
+    opaque = [psx_rgb((r, g, b)) for r, g, b, a in pixels if a >= 128]
+    limit = colors - 1
+    if not opaque:
+        return [0] * colors, bytes(len(pixels))
+
+    counts = Counter(opaque)
+    if len(counts) <= limit:
+        palette_rgb = [rgb for rgb, _ in counts.most_common()]
+    else:
+        # Protect the most-used dark inks before reducing the remaining colours.
+        # This keeps facial features and the heavy Base Funkin outline stable.
+        dark = [(rgb, count) for rgb, count in counts.items()
+                if (rgb[0] * 3 + rgb[1] * 6 + rgb[2]) // 10 <= 80]
+        reserved = [rgb for rgb, _ in sorted(dark, key=lambda row: row[1], reverse=True)[:3]]
+        remaining = [rgb for rgb in opaque if rgb not in reserved]
+        slots = max(1, limit - len(reserved))
+        if remaining:
+            width = min(256, len(remaining))
+            height = (len(remaining) + width - 1) // width
+            sample = Image.new("RGB", (width, height), remaining[-1])
+            sample.putdata(remaining)
+            quantized = sample.quantize(colors=slots, method=Image.Quantize.MEDIANCUT,
+                                        dither=Image.Dither.NONE)
+            raw_palette = quantized.getpalette() or []
+            reduced = [psx_rgb(tuple(raw_palette[i:i + 3]))
+                       for i in range(0, slots * 3, 3)]
+        else:
+            reduced = []
+        palette_rgb = []
+        for rgb in reserved + reduced:
+            if rgb not in palette_rgb:
+                palette_rgb.append(rgb)
+        for rgb, _ in counts.most_common():
+            if len(palette_rgb) >= limit:
+                break
+            if rgb not in palette_rgb:
+                palette_rgb.append(rgb)
+
+    palette_rgb = palette_rgb[:limit]
+    nearest_cache: dict[tuple[int, int, int], int] = {}
+    def nearest(rgb: tuple[int, int, int]) -> int:
+        if rgb not in nearest_cache:
+            nearest_cache[rgb] = min(
+                range(len(palette_rgb)),
+                key=lambda i: (rgb[0] - palette_rgb[i][0]) ** 2
+                              + (rgb[1] - palette_rgb[i][1]) ** 2
+                              + (rgb[2] - palette_rgb[i][2]) ** 2,
+            ) + 1
+        return nearest_cache[rgb]
+
+    indices = bytes(0 if a < 128 else nearest(psx_rgb((r, g, b)))
+                    for r, g, b, a in pixels)
+    palette = [0] + [psx_color(*rgb, 255) for rgb in palette_rgb]
+    palette.extend([0] * (colors - len(palette)))
+    return palette, indices
 
 
 def encode_tim(image: Image.Image, bpp: int, vram_x: int = 0, vram_y: int = 0,

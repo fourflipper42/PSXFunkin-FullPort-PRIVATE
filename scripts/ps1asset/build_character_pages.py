@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Build PSXFunkin-ready 128x128 character cells and 256x256 TIM pages.
+"""Build PSXFunkin-ready variable character frames and 256x256 TIM pages.
 
 Frames are sampled only from actual source frames. No tweening, reconstruction or
-fallback artwork is performed.
+fallback artwork is performed. Frames retain a common world transform, then are
+cropped and shelf-packed with CuckyDev-style per-frame source rectangles/offsets.
 """
 from __future__ import annotations
 
@@ -49,6 +50,64 @@ def sample_count(name: str, duration: int) -> int:
     return min(2, duration)
 
 
+def frame_bounds(atlas: AnimateAtlas, source_frame: int) -> tuple[float, float, float, float]:
+    bounds = [leaf_bounds(leaf) for leaf in atlas.leaves_for_frame(source_frame)]
+    if not bounds:
+        raise ValueError(f"source frame {source_frame} contains no drawable leaves")
+    return (min(row[0] for row in bounds), min(row[1] for row in bounds),
+            max(row[2] for row in bounds), max(row[3] for row in bounds))
+
+
+def reference_bounds(atlas: AnimateAtlas, selected: list[dict[str, Any]]) -> tuple[float, float, float, float]:
+    """Use normal idle/dance art for scale so special poses cannot shrink a character."""
+    normal = [item for item in selected
+              if "idle" in item["label"].lower() or "dance" in item["label"].lower()]
+    if not normal:
+        first_label = selected[0]["label"]
+        normal = [item for item in selected if item["label"] == first_label]
+    bounds = [frame_bounds(atlas, item["source_frame"]) for item in normal]
+    return (min(row[0] for row in bounds), min(row[1] for row in bounds),
+            max(row[2] for row in bounds), max(row[3] for row in bounds))
+
+
+def pack_cells(cells: list[Image.Image]) -> tuple[list[Image.Image], list[tuple[int, int, int]]]:
+    """Pack trimmed cells into 256px pages without changing their dimensions."""
+    pages: list[Image.Image] = []
+    shelves: list[list[dict[str, int]]] = []
+    positions: list[tuple[int, int, int] | None] = [None] * len(cells)
+    for index in sorted(range(len(cells)), key=lambda i: (cells[i].height, cells[i].width), reverse=True):
+        width, height = cells[index].size
+        if width > 256 or height > 256:
+            raise ValueError(f"frame {index} is too large for a TIM page: {width}x{height}")
+        placed = False
+        for page_index, page_shelves in enumerate(shelves):
+            for shelf in page_shelves:
+                if height <= shelf["height"] and shelf["x"] + width <= 256:
+                    x, y = shelf["x"], shelf["y"]
+                    shelf["x"] += width
+                    positions[index] = (page_index, x, y)
+                    placed = True
+                    break
+            if placed:
+                break
+            y = sum(shelf["height"] for shelf in page_shelves)
+            if y + height <= 256:
+                page_shelves.append({"y": y, "height": height, "x": width})
+                positions[index] = (page_index, 0, y)
+                placed = True
+                break
+        if not placed:
+            pages.append(Image.new("RGBA", (256, 256)))
+            shelves.append([{"y": 0, "height": height, "x": width}])
+            positions[index] = (len(pages) - 1, 0, 0)
+    resolved = [position for position in positions if position is not None]
+    if len(resolved) != len(cells):
+        raise RuntimeError("internal frame packing failure")
+    for index, (page_index, x, y) in enumerate(resolved):
+        pages[page_index].alpha_composite(cells[index], (x, y))
+    return pages, resolved
+
+
 def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
           vram_x: int = 0, vram_y: int = 0,
           clut_x: int = 0, clut_y: int = 0,
@@ -58,6 +117,12 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
     all_labels = atlas.labels()
     allowed = PROFILE_LABELS.get(profile)
     labels = [label for label in all_labels if allowed is None or label["name"] in allowed]
+    if sample_counts is not None:
+        requested = set(sample_counts)
+        labels = [label for label in labels if label["name"] in requested]
+        missing = sorted(requested - {label["name"] for label in labels})
+        if missing:
+            raise ValueError(f"requested labels missing from source atlas: {missing}")
     if allowed is not None:
         missing = sorted(allowed - {label["name"] for label in labels})
         if missing:
@@ -72,38 +137,51 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
             selected.append({"label": label["name"], "source_frame": frame,
                              "sequence_index": sequence_index})
 
-    all_bounds = []
-    for item in selected:
-        all_bounds.extend(leaf_bounds(leaf) for leaf in atlas.leaves_for_frame(item["source_frame"]))
-    min_x = min(b[0] for b in all_bounds); min_y = min(b[1] for b in all_bounds)
-    max_x = max(b[2] for b in all_bounds); max_y = max(b[3] for b in all_bounds)
-    padding = 4
-    scale = min((128 - padding * 2) / (max_x - min_x),
-                (128 - padding * 2) / (max_y - min_y))
-    x_pad = (128 - (max_x - min_x) * scale) / 2
-    y_pad = (128 - (max_y - min_y) * scale) / 2
-    world = (scale, 0.0, 0.0, scale, x_pad - min_x * scale, y_pad - min_y * scale)
+    if not selected:
+        raise ValueError(f"{atlas_dir}: no frames selected")
+    min_x, min_y, max_x, max_y = reference_bounds(atlas, selected)
+    reference_height = max_y - min_y
+    if reference_height <= 0:
+        raise ValueError(f"{atlas_dir}: invalid idle/dance reference bounds")
+    target_height = 120
+    scale = target_height / reference_height
+    anchor_x, anchor_y = 128, 236
+    center_x = (min_x + max_x) / 2
+    world = (scale, 0.0, 0.0, scale,
+             anchor_x - center_x * scale, anchor_y - max_y * scale)
 
     output.mkdir(parents=True, exist_ok=True)
     cells_dir = output / "cells"; pages_dir = output / "pages"
     cells_dir.mkdir(exist_ok=True); pages_dir.mkdir(exist_ok=True)
     cells: list[Image.Image] = []
     for index, item in enumerate(selected):
-        cell = render_leaves_fixed(atlas.leaves_for_frame(item["source_frame"]), (128, 128), world)
+        canvas = render_leaves_fixed(atlas.leaves_for_frame(item["source_frame"]), (256, 256), world)
+        alpha = canvas.getchannel("A").point(lambda value: 255 if value >= 8 else 0)
+        bounds = alpha.getbbox()
+        if bounds is None:
+            raise ValueError(f"{atlas_dir}: selected frame {item['source_frame']} rendered empty")
+        left, top, right, bottom = bounds
+        if left == 0 or top == 0 or right == 256 or bottom == 256:
+            raise ValueError(
+                f"{atlas_dir}: frame {item['source_frame']} clips the 256px render canvas; "
+                "use authentic smaller source art or a character-specific scale"
+            )
+        left = max(0, left - 1); top = max(0, top - 1)
+        right = min(256, right + 1); bottom = min(256, bottom + 1)
+        cell = canvas.crop((left, top, right, bottom))
+        cell.putalpha(cell.getchannel("A").point(lambda value: 255 if value >= 64 else 0))
         cell_path = cells_dir / f"{index:03d}_{safe_name(item['label'])}_{item['sequence_index']}.png"
         cell.save(cell_path, optimize=True)
         item.update({"index": index, "cell": str(cell_path.relative_to(output)),
-                     "page": index // 4, "src": [(index % 2) * 128, ((index % 4) // 2) * 128, 128, 128],
-                     "offset": [64, 120]})
+                     "offset": [anchor_x - left, anchor_y - top]})
         cells.append(cell)
 
+    page_images, positions = pack_cells(cells)
+    for item, cell, (page_index, x, y) in zip(selected, cells, positions):
+        item.update({"page": page_index, "src": [x, y, cell.width, cell.height]})
+
     pages = []
-    for page_index in range(math.ceil(len(cells) / 4)):
-        page = Image.new("RGBA", (256, 256))
-        for slot in range(4):
-            idx = page_index * 4 + slot
-            if idx >= len(cells): break
-            page.alpha_composite(cells[idx], ((slot % 2) * 128, (slot // 2) * 128))
+    for page_index, page in enumerate(page_images):
         png_path = pages_dir / f"{name}{page_index:02d}.png"
         tim_path = pages_dir / f"{name}{page_index:02d}.tim"
         page.save(png_path, optimize=True)
@@ -118,11 +196,11 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
     manifest = {
         "name": name, "source": str(atlas_dir), "source_frame_rate": atlas.frame_rate,
         "policy": "authentic-source-frames-only", "bpp": bpp,
-        "cell_size": [128, 128], "page_size": [256, 256], "scale": scale,
+        "frame_layout": "variable-rect-cuckydev-style", "page_size": [256, 256], "scale": scale,
         "vram": {"texture": [vram_x, vram_y], "clut": [clut_x, clut_y]},
         "profile": profile,
         "excluded_labels": [label["name"] for label in all_labels if label not in labels],
-        "world_bounds": [min_x, min_y, max_x, max_y],
+        "reference_bounds": [min_x, min_y, max_x, max_y],
         "frames": selected, "pages": pages, "labels": labels,
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

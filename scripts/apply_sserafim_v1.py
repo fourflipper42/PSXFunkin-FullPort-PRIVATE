@@ -93,6 +93,7 @@ typedef struct
     IO_Data extra_pages[3][8];
     u8 extra_page[3];
     u8 extra_dir[3];
+    u8 extra_frame[3], extra_tick[3];
     fixed_t extra_hold[3];
     u8 visible_mask, singing_mask;
     u16 event_index;
@@ -114,12 +115,6 @@ typedef struct
 static Back_Sserafim *sf_back = NULL;
 static boolean sf_session_active = false;
 
-static const char *const sf_yunjin_pages[] = {
-    "yu00.tim", "yu01.tim", "yu02.tim", "yu03.tim", "yu04.tim", "yu05.tim", "yu06.tim", NULL
-};
-static const char *const sf_chaewon_pages[] = {"ch00.tim", "ch01.tim", NULL};
-static const char *const sf_eunchae_pages[] = {"eu00.tim", "eu01.tim", NULL};
-
 static const SserafimSpriteFrame *SF_ExtraFrame(Back_Sserafim *this, u8 girl)
 {
     if (girl == 0 && this->yunjin_kick)
@@ -132,21 +127,27 @@ static const SserafimSpriteFrame *SF_ExtraFrame(Back_Sserafim *this, u8 girl)
     {
         case 0:
             switch (this->extra_dir[0]) {
-                case 1: return sf_yunjin_left; case 2: return sf_yunjin_down;
-                case 3: return sf_yunjin_up; case 4: return sf_yunjin_right;
-                default: return sf_yunjin_idle;
+                case 1: return &sf_yunjin_left[this->extra_frame[0] % SF_YUNJIN_LEFT_COUNT];
+                case 2: return &sf_yunjin_down[this->extra_frame[0] % SF_YUNJIN_DOWN_COUNT];
+                case 3: return &sf_yunjin_up[this->extra_frame[0] % SF_YUNJIN_UP_COUNT];
+                case 4: return &sf_yunjin_right[this->extra_frame[0] % SF_YUNJIN_RIGHT_COUNT];
+                default: return &sf_yunjin_idle[this->extra_frame[0] % SF_YUNJIN_IDLE_COUNT];
             }
         case 1:
             switch (this->extra_dir[1]) {
-                case 1: return sf_chaewon_left; case 2: return sf_chaewon_down;
-                case 3: return sf_chaewon_up; case 4: return sf_chaewon_right;
-                default: return sf_chaewon_idle;
+                case 1: return &sf_chaewon_left[this->extra_frame[1] % SF_CHAEWON_LEFT_COUNT];
+                case 2: return &sf_chaewon_down[this->extra_frame[1] % SF_CHAEWON_DOWN_COUNT];
+                case 3: return &sf_chaewon_up[this->extra_frame[1] % SF_CHAEWON_UP_COUNT];
+                case 4: return &sf_chaewon_right[this->extra_frame[1] % SF_CHAEWON_RIGHT_COUNT];
+                default: return &sf_chaewon_idle[this->extra_frame[1] % SF_CHAEWON_IDLE_COUNT];
             }
         default:
             switch (this->extra_dir[2]) {
-                case 1: return sf_eunchae_left; case 2: return sf_eunchae_down;
-                case 3: return sf_eunchae_up; case 4: return sf_eunchae_right;
-                default: return sf_eunchae_idle;
+                case 1: return &sf_eunchae_left[this->extra_frame[2] % SF_EUNCHAE_LEFT_COUNT];
+                case 2: return &sf_eunchae_down[this->extra_frame[2] % SF_EUNCHAE_DOWN_COUNT];
+                case 3: return &sf_eunchae_up[this->extra_frame[2] % SF_EUNCHAE_UP_COUNT];
+                case 4: return &sf_eunchae_right[this->extra_frame[2] % SF_EUNCHAE_RIGHT_COUNT];
+                default: return &sf_eunchae_idle[this->extra_frame[2] % SF_EUNCHAE_IDLE_COUNT];
             }
     }
 }
@@ -167,6 +168,11 @@ static void SF_UpdateAnimations(Back_Sserafim *this)
 {
     for (u8 i = 0; i < 3; i++)
     {
+        if (++this->extra_tick[i] >= 3)
+        {
+            this->extra_tick[i] = 0;
+            this->extra_frame[i]++;
+        }
         if (this->extra_hold[i] > 0)
         {
             this->extra_hold[i] -= timer_dt;
@@ -300,7 +306,7 @@ StageBack *Back_Sserafim_New(void)
     this->pulse_intensity[0]=this->pulse_intensity[1]=0;
     this->pulse_index=0; this->player_icon=0; this->opponent_icon=2;
     this->yunjin_kick=this->kick_frame=this->kick_tick=0; this->dust_phase=0;
-    for (u8 i=0;i<3;i++) { this->extra_dir[i]=0; this->extra_hold[i]=0; }
+    for (u8 i=0;i<3;i++) { this->extra_dir[i]=this->extra_frame[i]=this->extra_tick[i]=0; this->extra_hold[i]=0; }
     sf_back=this;
     Gfx_SetClear(0,0,0);
     return (StageBack*)this;
@@ -309,6 +315,7 @@ StageBack *Back_Sserafim_New(void)
 static void SF_SetExtraDirection(Back_Sserafim *this, u8 girl, u8 direction)
 {
     this->extra_dir[girl]=direction+1;
+    this->extra_frame[girl]=this->extra_tick[girl]=0;
     this->extra_hold[girl]=FIXED_DEC(35,100);
 }
 

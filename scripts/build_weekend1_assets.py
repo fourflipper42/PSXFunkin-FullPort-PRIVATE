@@ -121,10 +121,19 @@ def sample_indices(length:int,count:int)->list[int]:
     return sorted({round(i*(length-1)/(count-1)) for i in range(count)})
 
 def stage_fx_cell(image:Image.Image, scale:float)->Image.Image:
+    # Atlas renderers often return a large transparent canvas. Fit the visible
+    # art, not that canvas, or one oversized/offset source makes the sprite tiny.
+    alpha=image.getchannel('A').point(lambda value:255 if value>=8 else 0)
+    bounds=alpha.getbbox()
+    if bounds is None: raise ValueError('cannot pack an empty sprite frame')
+    image=image.crop(bounds)
     nw=max(1,round(image.width*scale)); nh=max(1,round(image.height*scale))
     if nw>124 or nh>124:
         fit=min(124/image.width,124/image.height); nw=max(1,round(image.width*fit)); nh=max(1,round(image.height*fit))
     image=image.resize((nw,nh),Image.Resampling.LANCZOS)
+    # TIM transparency is binary. A deliberate edge threshold keeps the dark
+    # Funkin outline intact instead of silently dropping antialiased pixels.
+    image.putalpha(image.getchannel('A').point(lambda value:255 if value>=64 else 0))
     cell=Image.new('RGBA',(128,128)); cell.alpha_composite(image,((128-nw)//2,128-nh)); return cell
 
 def pack_stage_fx(cells:list[tuple[str,Image.Image]],out:Path,arc_name:str,vram_x:int,clut_x:int)->dict:

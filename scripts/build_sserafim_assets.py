@@ -70,7 +70,8 @@ def merge_one(root: Path, out: Path, name: str, atlas_subdir: str, prefix: str,
         root / "shared/images/characters" / atlas_subdir,
         component, prefix, 4, vram_x, 0, clut_x, 480, "all", selection,
     )
-    manifest = trim_manifest(manifest, component, selection, prefix, vram_x, clut_x)
+    # build_pages now filters sample_counts directly and preserves its precise
+    # variable frame rectangles; do not crush them back into 128px quadrants.
     pages = []
     for page in manifest["pages"]:
         source = component / page["tim"]
@@ -204,6 +205,9 @@ def build_fx(root: Path, out: Path) -> dict:
 def write_extra_header(path: Path, records: dict[str, dict]) -> None:
     lines = ["#ifndef _SSERAFIM_ASSETS_GENERATED_H", "#define _SSERAFIM_ASSETS_GENERATED_H", ""]
     for girl, record in records.items():
+        lines.append(f"static const char *const sf_{girl}_pages[] = {{")
+        lines.extend(f'    "{member}",' for member in record["members"])
+        lines.extend(["    NULL", "};"])
         for label, rows in record["frames"].items():
             ident = "".join(ch if ch.isalnum() else "_" for ch in label.lower())
             lines.append(f"static const SserafimSpriteFrame sf_{girl}_{ident}[] = {{")
@@ -290,9 +294,11 @@ def main() -> None:
 
     extras = {}
     extra_specs = {
-        "yunjin": ("yunjin", 768, 80, [("doorclosed", 1), ("idle", 1), ("left", 1), ("down", 1), ("up", 1), ("right", 1), ("kick1", 4), ("kick2", 10)]),
-        "chaewon": ("chaewon", 832, 96, [("idle", 1), ("left", 1), ("down", 1), ("up", 1), ("right", 1)]),
-        "eunchae": ("eunchae", 896, 112, [("idle", 1), ("left", 1), ("down", 1), ("up", 1), ("right", 1)]),
+        # Preserve the official animation phases. One frame per direction made
+        # the members look like cardboard cut-outs while vocals were active.
+        "yunjin": ("yunjin", 768, 80, [("doorclosed", 1), ("idle", 4), ("left", 3), ("down", 3), ("up", 3), ("right", 3), ("kick1", 4), ("kick2", 10)]),
+        "chaewon": ("chaewon", 832, 96, [("idle", 4), ("left", 3), ("down", 3), ("up", 3), ("right", 3)]),
+        "eunchae": ("eunchae", 896, 112, [("idle", 4), ("left", 3), ("down", 3), ("up", 3), ("right", 3)]),
     }
     extra_iso_names = {"yunjin": "sfyunj.arc", "chaewon": "sfchaw.arc", "eunchae": "sfeunc.arc"}
     for name, (folder, vram_x, clut_x, requests) in extra_specs.items():
