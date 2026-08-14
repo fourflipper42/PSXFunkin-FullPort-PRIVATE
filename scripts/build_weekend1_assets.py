@@ -240,6 +240,6 @@ def main():
     w8=up/'iso/week8'; compose_stage(root,'phillyStreets','weekend1/images',w8,1453,1150,0.22); compose_stage(root,'phillyBlazin','weekend1/images',builddir/'blazinbg',-237,150,0.22); shutil.copyfile(builddir/'blazinbg/back.arc',w8/'blazin.arc')
     fx=build_stage_fx(root,up,builddir)
     for nm,m in [('pico',p),('nene',n),('darnell',d),('picobl',pb),('darnbl',db)]: records.append({'name':nm,'frames':len(m['frames']),'pages':len(m['pages'])})
-    payload={'characters':records,'stage_fx':fx,'policy':'authentic-v0.8.4-source-frames-only'}
+    payload={'characters':records,'stage_fx':fx,'policy':'authentic-v0.8.4-source-frames-only-cuckydev-variable-rects'}
     a.report.parent.mkdir(parents=True,exist_ok=True); a.report.write_text(json.dumps(payload,indent=2)+'\n'); print(json.dumps(payload,indent=2))
 if __name__=='__main__': main()
