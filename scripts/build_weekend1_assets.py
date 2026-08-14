@@ -125,7 +125,9 @@ def stage_fx_cell(image:Image.Image, scale:float)->Image.Image:
     # art, not that canvas, or one oversized/offset source makes the sprite tiny.
     alpha=image.getchannel('A').point(lambda value:255 if value>=8 else 0)
     bounds=alpha.getbbox()
-    if bounds is None: raise ValueError('cannot pack an empty sprite frame')
+    # Fully transparent source frames are valid timing frames (for example the
+    # start/end of the official Blazin' lightning animation).
+    if bounds is None: return Image.new('RGBA',(128,128))
     image=image.crop(bounds)
     nw=max(1,round(image.width*scale)); nh=max(1,round(image.height*scale))
     if nw>124 or nh>124:
