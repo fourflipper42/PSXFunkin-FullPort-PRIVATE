@@ -51,7 +51,7 @@ jobs:
         run: |
           git clone --depth 1 --recurse-submodules --shallow-submodules \
             https://github.com/grumpycoders/pcsx-redux.git openbios-src
-          make -C openbios-src/src/mips/openbios
+          make -C openbios-src/src/mips/openbios BOOT_MODE=fast
           test -s openbios-src/src/mips/openbios/openbios.bin
           sha256sum openbios-src/src/mips/openbios/openbios.bin
 
