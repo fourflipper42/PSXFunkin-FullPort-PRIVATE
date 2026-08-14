@@ -44,7 +44,9 @@ jobs:
             extracted/track
           7z x -y extracted/track01.iso -oextracted/fs
           find extracted/fs -maxdepth 3 -type f | sort | sed -n '1,160p'
-          find extracted/fs -type f -iname '*.exe' -print -quit > extracted/exe-path.txt
+          find extracted/fs -maxdepth 1 -type f \
+            \( -iname '*.exe' -o -iname 'SCUS_*' -o -iname 'SLUS_*' \) \
+            -print -quit > extracted/exe-path.txt
           test -s extracted/exe-path.txt
 
       - name: Download PCSX-Redux with OpenBIOS
