@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   capture:
@@ -84,13 +84,14 @@ jobs:
           file capture/m1-runtime-*.png
           tail -n 200 capture/emulator.log || true
 
-      - name: Upload screenshot and emulator log
+      - name: Save screenshot to private branch
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: m1-runtime-capture-${{ github.sha }}
-          if-no-files-found: warn
-          retention-days: 7
-          path: |
-            capture/m1-runtime-*.png
-            capture/emulator.log
+        run: |
+          CAPTURE_DIR="runtime-captures/${GITHUB_SHA}"
+          mkdir -p "$CAPTURE_DIR"
+          cp capture/m1-runtime-*.png capture/emulator.log "$CAPTURE_DIR/"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$CAPTURE_DIR"
+          git commit -m "Record private M1 runtime capture ${GITHUB_SHA::12}"
+          git push
