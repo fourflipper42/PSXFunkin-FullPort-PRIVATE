@@ -155,7 +155,20 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
     cells_dir.mkdir(exist_ok=True); pages_dir.mkdir(exist_ok=True)
     cells: list[Image.Image] = []
     for index, item in enumerate(selected):
-        canvas = render_leaves_fixed(atlas.leaves_for_frame(item["source_frame"]), (256, 256), world)
+        bounds_world = frame_bounds(atlas, item["source_frame"])
+        projected = (bounds_world[0] * scale + world[4], bounds_world[1] * scale + world[5],
+                     bounds_world[2] * scale + world[4], bounds_world[3] * scale + world[5])
+        if projected[2] - projected[0] > 254 or projected[3] - projected[1] > 254:
+            raise ValueError(
+                f"{atlas_dir}: frame {item['source_frame']} is larger than one 256px TIM page "
+                "at the authentic gameplay scale"
+            )
+        shift_x = max(0.0, 1 - projected[0]) + min(0.0, 255 - projected[2])
+        shift_y = max(0.0, 1 - projected[1]) + min(0.0, 255 - projected[3])
+        frame_world = (world[0], world[1], world[2], world[3],
+                       world[4] + shift_x, world[5] + shift_y)
+        canvas = render_leaves_fixed(atlas.leaves_for_frame(item["source_frame"]),
+                                     (256, 256), frame_world)
         alpha = canvas.getchannel("A").point(lambda value: 255 if value >= 8 else 0)
         bounds = alpha.getbbox()
         if bounds is None:
@@ -163,8 +176,7 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
         left, top, right, bottom = bounds
         if left == 0 or top == 0 or right == 256 or bottom == 256:
             raise ValueError(
-                f"{atlas_dir}: frame {item['source_frame']} clips the 256px render canvas; "
-                "use authentic smaller source art or a character-specific scale"
+                f"{atlas_dir}: frame {item['source_frame']} still clips after offset compensation"
             )
         left = max(0, left - 1); top = max(0, top - 1)
         right = min(256, right + 1); bottom = min(256, bottom + 1)
@@ -173,7 +185,8 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
         cell_path = cells_dir / f"{index:03d}_{safe_name(item['label'])}_{item['sequence_index']}.png"
         cell.save(cell_path, optimize=True)
         item.update({"index": index, "cell": str(cell_path.relative_to(output)),
-                     "offset": [anchor_x - left, anchor_y - top]})
+                     "offset": [round(anchor_x + shift_x - left),
+                                round(anchor_y + shift_y - top)]})
         cells.append(cell)
 
     page_images, positions = pack_cells(cells)
