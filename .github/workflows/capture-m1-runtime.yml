@@ -42,7 +42,8 @@ jobs:
             -o pcsx-redux.AppImage
           chmod +x pcsx-redux.AppImage
           ./pcsx-redux.AppImage --appimage-extract >/dev/null
-          find squashfs-root -type f \( -iname 'openbios.bin' -o -iname 'pcsx-redux' \) -print
+          test -x squashfs-root/AppRun
+          find squashfs-root -maxdepth 4 -type f | sort | sed -n '1,240p'
 
       - name: Boot disc and capture display
         shell: bash
@@ -52,13 +53,17 @@ jobs:
           export HOME="$PWD/capture/home"
           export XDG_CONFIG_HOME="$PWD/capture/config"
           export XDG_DATA_HOME="$PWD/capture/data"
-          EMULATOR="$(find squashfs-root -type f -name pcsx-redux -perm -111 -print -quit)"
-          BIOS="$(find squashfs-root -type f -iname openbios.bin -print -quit)"
-          test -n "$EMULATOR"
-          test -n "$BIOS"
+          EMULATOR="$PWD/squashfs-root/AppRun"
+          BIOS="$(find "$PWD/squashfs-root" -type f -iname 'openbios.bin' -print -quit || true)"
+          test -x "$EMULATOR"
+          : > capture/emulator.log
           xvfb-run -a -s '-screen 0 1280x720x24' bash -c '
             set -uo pipefail
-            "$1" -bios "$2" -iso "$3" -run -interpreter -softgpu > capture/emulator.log 2>&1 &
+            bios_args=()
+            if [[ -n "$2" ]]; then
+              bios_args=(-bios "$2")
+            fi
+            "$1" "${bios_args[@]}" -iso "$3" -run -interpreter -softgpu > capture/emulator.log 2>&1 &
             emulator_pid=$!
             for attempt in $(seq 1 30); do
               if xdotool search --onlyvisible --name "PCSX-Redux" >/dev/null 2>&1; then
@@ -66,13 +71,17 @@ jobs:
               fi
               sleep 1
             done
-            sleep 20
-            import -window root capture/m1-runtime.png
+            sleep 8
+            import -window root capture/m1-runtime-08s.png
+            sleep 8
+            import -window root capture/m1-runtime-16s.png
+            sleep 8
+            import -window root capture/m1-runtime-24s.png
             kill "$emulator_pid" 2>/dev/null || true
             wait "$emulator_pid" 2>/dev/null || true
           ' _ "$EMULATOR" "$BIOS" "$PWD/disc/PSXFunkin_v084_Pico_Mixes_v1.cue"
-          test -s capture/m1-runtime.png
-          file capture/m1-runtime.png
+          test -s capture/m1-runtime-16s.png
+          file capture/m1-runtime-*.png
           tail -n 200 capture/emulator.log || true
 
       - name: Upload screenshot and emulator log
@@ -83,5 +92,5 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: |
-            capture/m1-runtime.png
+            capture/m1-runtime-*.png
             capture/emulator.log
