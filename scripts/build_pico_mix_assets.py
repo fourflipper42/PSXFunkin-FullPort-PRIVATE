@@ -531,6 +531,8 @@ def main() -> None:
     report = {
         "policy": "authentic-v0.8.4-pico-mix-and-freeplay-source-frames-only",
         "characters": {name: {"frames": len(manifest["frames"]), "pages": len(manifest["pages"]),
+                               "page_overflow_clipped": sum(bool(frame.get("page_overflow_clipped"))
+                                                            for frame in manifest["frames"]),
                                "bytes": (upstream / "iso" / name).stat().st_size} for name, manifest in outputs.items()},
         "freeplay": freeplay_report,
         "character_select": charselect_report,

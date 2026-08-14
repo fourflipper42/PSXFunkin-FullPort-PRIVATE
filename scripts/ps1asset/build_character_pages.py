@@ -158,13 +158,15 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
         bounds_world = frame_bounds(atlas, item["source_frame"])
         projected = (bounds_world[0] * scale + world[4], bounds_world[1] * scale + world[5],
                      bounds_world[2] * scale + world[4], bounds_world[3] * scale + world[5])
-        if projected[2] - projected[0] > 254 or projected[3] - projected[1] > 254:
-            raise ValueError(
-                f"{atlas_dir}: frame {item['source_frame']} is larger than one 256px TIM page "
-                "at the authentic gameplay scale"
-            )
-        shift_x = max(0.0, 1 - projected[0]) + min(0.0, 255 - projected[2])
-        shift_y = max(0.0, 1 - projected[1]) + min(0.0, 255 - projected[3])
+        overflow = projected[2] - projected[0] > 254 or projected[3] - projected[1] > 254
+        # A few official attack poses bake a long projectile/effect into the
+        # character frame. One PS1 TIM page cannot exceed 256px. Preserve the
+        # character's body scale and clip only that peripheral overflow rather
+        # than shrinking every frame because of one exceptional effect.
+        shift_x = 0.0 if projected[2] - projected[0] > 254 else \
+            max(0.0, 1 - projected[0]) + min(0.0, 255 - projected[2])
+        shift_y = 0.0 if projected[3] - projected[1] > 254 else \
+            max(0.0, 1 - projected[1]) + min(0.0, 255 - projected[3])
         frame_world = (world[0], world[1], world[2], world[3],
                        world[4] + shift_x, world[5] + shift_y)
         canvas = render_leaves_fixed(atlas.leaves_for_frame(item["source_frame"]),
@@ -174,10 +176,6 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
         if bounds is None:
             raise ValueError(f"{atlas_dir}: selected frame {item['source_frame']} rendered empty")
         left, top, right, bottom = bounds
-        if left == 0 or top == 0 or right == 256 or bottom == 256:
-            raise ValueError(
-                f"{atlas_dir}: frame {item['source_frame']} still clips after offset compensation"
-            )
         left = max(0, left - 1); top = max(0, top - 1)
         right = min(256, right + 1); bottom = min(256, bottom + 1)
         cell = canvas.crop((left, top, right, bottom))
@@ -186,7 +184,8 @@ def build(atlas_dir: Path, output: Path, name: str, bpp: int = 4,
         cell.save(cell_path, optimize=True)
         item.update({"index": index, "cell": str(cell_path.relative_to(output)),
                      "offset": [round(anchor_x + shift_x - left),
-                                round(anchor_y + shift_y - top)]})
+                                round(anchor_y + shift_y - top)],
+                     "page_overflow_clipped": overflow})
         cells.append(cell)
 
     page_images, positions = pack_cells(cells)
