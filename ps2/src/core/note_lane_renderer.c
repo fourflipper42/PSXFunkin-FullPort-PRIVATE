@@ -7,15 +7,23 @@
 #define RECEPTOR_Y 70.0f
 #define OPPONENT_X 64.0f
 #define PLAYER_X   408.0f
+#define CENTER_PLAYER_X 236.0f
 #define LANE_GAP   56.0f
 #define CONFIRM_FRAMES 7
 
 static u8 confirm_frames[2][4];
 static u32 animation_tick;
+static boolean hide_opponent_strumline;
+static boolean center_player_strumline;
 
 static float lane_center(boolean opponent, u8 lane)
 {
-    return (opponent ? OPPONENT_X : PLAYER_X) + (float)(lane & 3) * LANE_GAP;
+    float start;
+    if (opponent)
+        start = OPPONENT_X;
+    else
+        start = center_player_strumline ? CENTER_PLAYER_X : PLAYER_X;
+    return start + (float)(lane & 3) * LANE_GAP;
 }
 
 static boolean lane_held(const Pad *pad, u8 lane)
@@ -47,6 +55,14 @@ void NoteLaneRenderer_Reset(void)
 {
     memset(confirm_frames, 0, sizeof(confirm_frames));
     animation_tick = 0;
+    hide_opponent_strumline = false;
+    center_player_strumline = false;
+}
+
+void NoteLaneRenderer_SetLayout(boolean hide_opponent, boolean center_player)
+{
+    hide_opponent_strumline = hide_opponent;
+    center_player_strumline = center_player;
 }
 
 void NoteLaneRenderer_Tick(GameplayState *game, const Pad *pad)
@@ -148,6 +164,8 @@ void NoteLaneRenderer_Draw(
             continue;
 
         opponent = (note->type & NOTE_FLAG_OPPONENT) != 0;
+        if (opponent && hide_opponent_strumline)
+            continue;
         y = note_y(game, note, opponent);
         if (y < -64.0f || y > 424.0f)
             continue;
@@ -182,6 +200,8 @@ void NoteLaneRenderer_Draw(
             continue;
 
         opponent = (note->type & NOTE_FLAG_OPPONENT) != 0;
+        if (opponent && hide_opponent_strumline)
+            continue;
         y = note_y(game, note, opponent);
         if (y < -64.0f || y > 424.0f)
             continue;
@@ -193,12 +213,14 @@ void NoteLaneRenderer_Draw(
     }
 
     for (lane = 0; lane < 4; ++lane) {
-        NoteStyle_DrawReceptor(
-            gs, style, (u8)lane,
-            receptor_state(true, (u8)lane, pad),
-            animation_tick,
-            lane_center(true, (u8)lane), RECEPTOR_Y,
-            7, white);
+        if (!hide_opponent_strumline) {
+            NoteStyle_DrawReceptor(
+                gs, style, (u8)lane,
+                receptor_state(true, (u8)lane, pad),
+                animation_tick,
+                lane_center(true, (u8)lane), RECEPTOR_Y,
+                7, white);
+        }
         NoteStyle_DrawReceptor(
             gs, style, (u8)lane,
             receptor_state(false, (u8)lane, pad),
