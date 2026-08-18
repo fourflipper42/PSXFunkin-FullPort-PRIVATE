@@ -43,8 +43,10 @@ EE_OBJS = \
 	build/core_weekend1_visual.o \
 	build/core_darnell_intro_visual.o \
 	build/core_blazin_runtime.o \
+	build/core_sserafim_runtime.o \
 	build/core_pointless_pins.o \
 	build/core_session_runtime.o \
+	build/core_session_runtime_hits.o \
 	build/core_session_runtime_frame.o \
 	build/core_session_runtime_cutscene.o \
 	build/core_freeplay_browser.o \
@@ -90,7 +92,10 @@ build/core_gameplay.o: src/core/gameplay.c | build
 		-c $< -o $@
 
 build/core_session_runtime.o: src/core/session_runtime.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DSESSION_RUNTIME_IMPLEMENTATION -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) \
+		-DSESSION_RUNTIME_IMPLEMENTATION \
+		-DSessionRuntime_PlayHitAnimations=SessionRuntime_PlayHitAnimationsCore \
+		-c $< -o $@
 
 build/core_frontend.o: src/core/frontend.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) \
@@ -119,6 +124,8 @@ build/core_stage.o: src/core/stage.c | build
 		-Dtimer_dt=timer_presentation_dt \
 		-DStage_Load=Stage_LoadCore \
 		-DStage_Forget=Stage_ForgetCore \
+		-DStage_Tick=Stage_TickCore \
+		-DStage_Beat=Stage_BeatCore \
 		-DStage_DrawRange=Stage_DrawRangeCore \
 		-c $< -o $@
 
