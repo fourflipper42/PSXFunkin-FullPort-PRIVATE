@@ -28,8 +28,6 @@ boolean SongStream_Open(SongStream *stream, const char *inst_path, const char *v
     if (!AssetFile_Open(&stream->inst, inst_path))
         return false;
 
-    /* Vocals are optional. Instrumental-only songs and metadata variations
-     * with no resolved voice stems must still boot and play normally. */
     if (voices_path != NULL && AssetFile_Open(&stream->voices, voices_path))
         stream->has_voices = true;
 
@@ -37,7 +35,9 @@ boolean SongStream_Open(SongStream *stream, const char *inst_path, const char *v
     stream->voices_enabled = true;
     stream->active = true;
     stream->finished = false;
+    stream->paused = false;
     stream->base_frame = 0;
+    stream->paused_frame = 0;
     return true;
 }
 
@@ -61,7 +61,7 @@ void SongStream_Tick(SongStream *stream)
     size_t sample_count;
     size_t i;
 
-    if (stream == NULL || !stream->active || stream->finished)
+    if (stream == NULL || !stream->active || stream->finished || stream->paused)
         return;
 
     available = Audio_AvailableBytes();
@@ -127,8 +127,42 @@ boolean SongStream_SeekFrame(SongStream *stream, u64 frame)
         return false;
 
     stream->base_frame = frame;
+    stream->paused_frame = frame;
     stream->finished = false;
+    stream->paused = false;
     stream->active = true;
+    return true;
+}
+
+boolean SongStream_Pause(SongStream *stream)
+{
+    u64 frame;
+
+    if (stream == NULL || stream->paused || !AssetFile_IsOpen(&stream->inst))
+        return false;
+
+    frame = SongStream_PlayedFrames(stream);
+    Audio_Stop();
+    stream->paused_frame = frame;
+    stream->base_frame = frame;
+    stream->active = false;
+    stream->paused = true;
+    return true;
+}
+
+boolean SongStream_Resume(SongStream *stream)
+{
+    u64 frame;
+
+    if (stream == NULL || !stream->paused || !AssetFile_IsOpen(&stream->inst))
+        return false;
+
+    frame = stream->paused_frame;
+    if (!SongStream_SeekFrame(stream, frame)) {
+        stream->paused = true;
+        stream->active = false;
+        return false;
+    }
     return true;
 }
 
@@ -136,6 +170,8 @@ u64 SongStream_PlayedFrames(const SongStream *stream)
 {
     if (stream == NULL)
         return 0;
+    if (stream->paused)
+        return stream->paused_frame;
     return stream->base_frame + Audio_PlayedFrames();
 }
 
@@ -149,5 +185,12 @@ boolean SongStream_Finished(const SongStream *stream)
 {
     if (stream == NULL)
         return true;
+    if (stream->paused)
+        return false;
     return stream->finished && Audio_QueuedBytes() == 0;
+}
+
+boolean SongStream_Paused(const SongStream *stream)
+{
+    return stream != NULL && stream->paused;
 }
