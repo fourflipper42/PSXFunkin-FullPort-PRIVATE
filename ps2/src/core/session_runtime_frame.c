@@ -1,6 +1,7 @@
 #define SESSION_RUNTIME_IMPLEMENTATION
 #include "session_runtime.h"
 
+#include "blazin_runtime.h"
 #include "cutscene_controller.h"
 #include "weekend1_runtime.h"
 
@@ -39,11 +40,16 @@ void SessionRuntime_AfterGameplayFrameScaled(
     else
         timer_presentation_dt = elapsed;
 
-    /* Song-specific note rules run first so cancelled/special hits can repair
-     * frame masks and health before note-kind animation, combo, Pins, Perfect
-     * Only, and other generic systems observe this frame. */
+    /* 2hot can cancel/repair note outcomes, so it must run before generic
+     * combo/HUD/note-kind consumers inspect the frame. */
     if (session != NULL && session->song_active)
         Weekend1Runtime_Tick(game, &session->note_kinds, elapsed);
 
     SessionRuntime_AfterGameplayFrame(session, game, elapsed);
+
+    /* Blazin choreography consumes the finalized hit/miss frame after generic
+     * note-kind resolution. Weekend-1 kinds suppress ordinary sing animations,
+     * so these paired fight animations remain authoritative. */
+    if (session != NULL && session->song_active)
+        BlazinRuntime_Tick(game, &session->note_kinds);
 }
