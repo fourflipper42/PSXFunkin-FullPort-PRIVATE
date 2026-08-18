@@ -42,6 +42,7 @@ typedef struct StagePropData {
     float alpha;
     float angle;
     float dance_every;
+    u32 name_offset;
     u32 starting_name_offset;
     u16 animation_count;
     u16 reserved;
@@ -97,6 +98,13 @@ void Stage_DrawRange(
     const StageCamera *camera,
     s32 z_min,
     s32 z_max);
+s32 Stage_FindProp(const Stage *stage, const char *name);
+boolean Stage_PlayNamedAnimation(
+    Stage *stage,
+    const char *target,
+    const char *animation,
+    boolean force);
+boolean Stage_SetNamedBopSpeed(Stage *stage, const char *target, float rate);
 const StageCharacterSlot *Stage_PlayerSlot(const Stage *stage);
 const StageCharacterSlot *Stage_OpponentSlot(const Stage *stage);
 const StageCharacterSlot *Stage_GirlfriendSlot(const Stage *stage);
