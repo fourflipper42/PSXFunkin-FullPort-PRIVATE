@@ -15,9 +15,19 @@ HEADER = struct.Struct("<4sHHII")
 ENTRY = struct.Struct("<III")
 FLAG_PRESONG = 1 << 0
 FLAG_STORY_ONLY = 1 << 1
+FLAG_POSTSONG = 1 << 2
 
-DIRECT_VIDEO = re.compile(r"Paths\.videos\(\s*['\"]([^'\"]+)['\"]\s*\)")
+DIRECT_PLAY = re.compile(
+    r"VideoCutscene\.play\s*\(\s*Paths\.videos\(\s*['\"]([^'\"]+)['\"]\s*\)"
+    r"\s*(?:,\s*CutsceneType\.([A-Za-z_]+))?\s*\)",
+    re.MULTILINE,
+)
 VIDEO_VAR = re.compile(r"(?:var\s+)?videoPath\s*=\s*['\"]([^'\"]+)['\"]")
+VARIABLE_PLAY = re.compile(
+    r"VideoCutscene\.play\s*\(\s*Paths\.videos\(\s*videoPath\s*\)"
+    r"\s*(?:,\s*CutsceneType\.([A-Za-z_]+))?\s*\)",
+    re.MULTILINE,
+)
 VIDEO_PLAY = re.compile(r"VideoCutscene\.play\s*\(")
 
 
@@ -41,28 +51,57 @@ def script_roots(assets_root: Path) -> list[Path]:
     return roots
 
 
+def flags_for_type(cutscene_type: str | None) -> int:
+    flags = FLAG_STORY_ONLY
+    if cutscene_type is not None and cutscene_type.lower() == "ending":
+        flags |= FLAG_POSTSONG
+    else:
+        flags |= FLAG_PRESONG
+    return flags
+
+
 def discover(assets_root: Path) -> list[dict]:
-    found: dict[tuple[str, str], dict] = {}
+    found: dict[tuple[str, str, int], dict] = {}
     for root in script_roots(assets_root):
         for script in sorted(root.rglob("*.hxc")):
             text = script.read_text(encoding="utf-8-sig", errors="replace")
             if not VIDEO_PLAY.search(text):
                 continue
             song_id = script.stem
-            videos = DIRECT_VIDEO.findall(text)
-            if not videos:
-                match = VIDEO_VAR.search(text)
-                if match:
-                    videos = [match.group(1)]
-            for video in videos:
-                key = (song_id, video)
+            relative_source = script.relative_to(assets_root).as_posix()
+
+            for match in DIRECT_PLAY.finditer(text):
+                video = match.group(1)
+                flags = flags_for_type(match.group(2))
+                key = (song_id, video, flags)
                 found[key] = {
                     "songId": song_id,
                     "cutsceneId": video,
-                    "flags": FLAG_PRESONG | FLAG_STORY_ONLY,
-                    "source": script.relative_to(assets_root).as_posix(),
+                    "flags": flags,
+                    "phase": "post" if flags & FLAG_POSTSONG else "pre",
+                    "source": relative_source,
                 }
-    return sorted(found.values(), key=lambda item: (item["songId"], item["cutsceneId"]))
+
+            variable = VIDEO_VAR.search(text)
+            if variable is not None:
+                video = variable.group(1)
+                variable_calls = list(VARIABLE_PLAY.finditer(text))
+                if variable_calls:
+                    for call in variable_calls:
+                        flags = flags_for_type(call.group(1))
+                        key = (song_id, video, flags)
+                        found[key] = {
+                            "songId": song_id,
+                            "cutsceneId": video,
+                            "flags": flags,
+                            "phase": "post" if flags & FLAG_POSTSONG else "pre",
+                            "source": relative_source,
+                        }
+
+    return sorted(
+        found.values(),
+        key=lambda item: (item["songId"], item["phase"], item["cutsceneId"]),
+    )
 
 
 def convert(assets_root: Path, output: Path, manifest: Path | None = None) -> dict:
