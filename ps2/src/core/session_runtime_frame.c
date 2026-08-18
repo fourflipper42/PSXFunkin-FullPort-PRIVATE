@@ -2,6 +2,7 @@
 #include "session_runtime.h"
 
 #include "cutscene_controller.h"
+#include "weekend1_runtime.h"
 
 void SessionRuntime_AfterGameplayFrameScaled(
     SessionRuntime *session,
@@ -37,6 +38,12 @@ void SessionRuntime_AfterGameplayFrameScaled(
         timer_presentation_dt = Gammod_PresentationDelta(&session->gammod, elapsed);
     else
         timer_presentation_dt = elapsed;
+
+    /* Song-specific note rules run first so cancelled/special hits can repair
+     * frame masks and health before note-kind animation, combo, Pins, Perfect
+     * Only, and other generic systems observe this frame. */
+    if (session != NULL && session->song_active)
+        Weekend1Runtime_Tick(game, &session->note_kinds, elapsed);
 
     SessionRuntime_AfterGameplayFrame(session, game, elapsed);
 }
