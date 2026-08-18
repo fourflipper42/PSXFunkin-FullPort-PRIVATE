@@ -10,6 +10,7 @@ EE_OBJS = \
 	build/core_rhythm.o \
 	build/core_pad.o \
 	build/core_audio.o \
+	build/core_song_stream.o \
 	build/audsrv_irx.o
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
@@ -55,6 +56,9 @@ build/core_pad.o: src/core/pad.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_audio.o: src/core/audio.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_song_stream.o: src/core/song_stream.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/audsrv_irx.c: | build
