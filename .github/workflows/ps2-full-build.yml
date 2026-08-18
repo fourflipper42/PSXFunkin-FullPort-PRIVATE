@@ -1,0 +1,129 @@
+name: FNF PS2 Full DVD Build
+
+on:
+  push:
+    branches: [ ps2-full-port ]
+    paths:
+      - '.github/workflows/ps2-full-build.yml'
+      - 'ps2/scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-dvd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg unzip xorriso
+
+      - name: Fetch exact official FNF v0.8.4 release
+        run: |
+          mkdir -p build/official
+          curl -fL --retry 3 --retry-delay 3 \
+            https://github.com/FunkinCrew/Funkin/releases/download/v0.8.4/funkin-linux-64bit.zip \
+            -o build/funkin-linux-64bit.zip
+          echo '50eb30c89de03a6ef34431bb75930219b897aebb59e456a169247d8b0a414321  build/funkin-linux-64bit.zip' | sha256sum -c -
+          unzip -q build/funkin-linux-64bit.zip -d build/official
+
+      - name: Locate official asset roots
+        run: |
+          SONGS_ROOT="$(find build/official -type d -path '*/assets/songs' -print -quit)"
+          if [ -z "$SONGS_ROOT" ]; then
+            echo 'Could not locate assets/songs in official release' >&2
+            exit 1
+          fi
+          ASSETS_ROOT="$(dirname "$SONGS_ROOT")"
+          echo "SONGS_ROOT=$SONGS_ROOT" >> "$GITHUB_ENV"
+          echo "ASSETS_ROOT=$ASSETS_ROOT" >> "$GITHUB_ENV"
+          echo "songs:  $SONGS_ROOT"
+          echo "assets: $ASSETS_ROOT"
+
+      - name: Convert every song to PS2 streaming PCM
+        run: |
+          rm -rf ps2/disc
+          mkdir -p ps2/disc/AUDIO ps2/disc/CHART
+          python3 ps2/scripts/convert_song_audio.py \
+            "$SONGS_ROOT" \
+            ps2/disc/AUDIO \
+            --manifest ps2/disc/AUDIO/AUDIOIDX.JSON
+
+      - name: Convert every chart and variation
+        run: |
+          python3 ps2/scripts/convert_charts.py \
+            "$ASSETS_ROOT" \
+            ps2/disc/CHART \
+            --manifest ps2/disc/CHART/CHARTIDX.JSON
+
+      - name: Build native PS2 ELF
+        run: |
+          docker pull ps2dev/ps2dev:latest
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work/ps2 \
+            ps2dev/ps2dev:latest \
+            /bin/sh -c 'apk add --no-cache make >/dev/null && make clean all'
+          test -s ps2/build/funkin_ps2.elf
+          file ps2/build/funkin_ps2.elf
+          cp ps2/build/funkin_ps2.elf ps2/disc/FUNKIN.ELF
+
+      - name: Prepare PS2 DVD filesystem
+        run: |
+          cat > ps2/disc/SYSTEM.CNF <<'EOF'
+          BOOT2 = cdrom0:\FUNKIN.ELF;1
+          VER = 1.00
+          VMODE = NTSC
+          EOF
+          python3 ps2/scripts/uppercase_iso_tree.py ps2/disc
+          echo 'Disc staging size:'
+          du -sh ps2/disc
+          find ps2/disc/AUDIO -type f | wc -l | xargs echo 'audio files:'
+          find ps2/disc/CHART -name '*.CHT' -type f | wc -l | xargs echo 'charts:'
+
+      - name: Master homebrew PS2 DVD ISO
+        run: |
+          xorriso -as mkisofs \
+            -iso-level 2 \
+            -full-iso9660-filenames \
+            -volid FNFPS2 \
+            -o ps2/FunkinPS2.iso \
+            ps2/disc
+          test -s ps2/FunkinPS2.iso
+          sha256sum ps2/FunkinPS2.iso | tee ps2/FunkinPS2.iso.sha256
+          stat -c 'ISO bytes: %s' ps2/FunkinPS2.iso
+          SIZE="$(stat -c %s ps2/FunkinPS2.iso)"
+          if [ "$SIZE" -gt 4700000000 ]; then
+            echo "ISO exceeds single-layer DVD capacity: $SIZE" >&2
+            exit 1
+          fi
+
+      - name: Split large ISO for GitHub release limits
+        run: |
+          rm -f ps2/FunkinPS2.iso.part*
+          split -b 1900M -d -a 2 ps2/FunkinPS2.iso ps2/FunkinPS2.iso.part
+          ls -lh ps2/FunkinPS2.iso.part*
+
+      - name: Publish private PS2 test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ps2-native-${GITHUB_SHA::12}"
+          TITLE="FNF PS2 native test ${GITHUB_SHA::12}"
+          NOTES=$'Native PS2 development checkpoint.\n\nIncludes the PS2 ELF, DVD ISO split into release-safe parts, SHA-256, and generated asset indexes. Reassemble ISO parts in lexical order before testing.'
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$TITLE" \
+            --notes "$NOTES" \
+            --prerelease \
+            ps2/build/funkin_ps2.elf \
+            ps2/FunkinPS2.iso.sha256 \
+            ps2/FunkinPS2.iso.part* \
+            ps2/disc/AUDIO/AUDIOIDX.JSON \
+            ps2/disc/CHART/CHARTIDX.JSON
