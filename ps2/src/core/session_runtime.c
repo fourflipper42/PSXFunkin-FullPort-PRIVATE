@@ -80,9 +80,6 @@ void SessionRuntime_Init(
 
     Gammod_LoadSave(&session->gammod_config, &session->save);
     Gammod_Init(&session->gammod, &session->gammod_config);
-    HealthDrain_Init(
-        &session->health_drain,
-        (HealthDrainLevel)session->save.health_drain_level);
     EndlessMode_Init(
         &session->endless,
         flag_enabled(&session->save, SAVE_FLAG_ENDLESS_DEFAULT));
@@ -185,10 +182,6 @@ boolean SessionRuntime_BeginSong(
     if (!endless_continuation)
         Gammod_ApplyStartingHealth(&session->gammod, game);
 
-    HealthDrain_Init(
-        &session->health_drain,
-        (HealthDrainLevel)session->save.health_drain_level);
-
     if (!endless_continuation) {
         wanted_endless = flag_enabled(&session->save, SAVE_FLAG_ENDLESS_DEFAULT);
         EndlessMode_Init(&session->endless, wanted_endless);
@@ -286,7 +279,6 @@ void SessionRuntime_AfterGameplayFrame(
 
     NoteKindRuntime_ResolveFrame(&session->note_kinds, game);
     Gammod_OnGameplayFrame(&session->gammod, game, elapsed);
-    HealthDrain_OnFrame(&session->health_drain, game, elapsed);
     EndlessMode_OnGameplayFrame(&session->endless, game);
     ComboSystem_OnGameplayFrame(&session->combo, game);
 
@@ -382,8 +374,6 @@ static PointlessPinsReward award_completion(
 
     judged = game->rhythm.judged_notes;
     sicks = game->rhythm.rating_counts[HIT_SICK];
-    /* Any gameplay miss disqualifies All Sicks without treating empty presses
-     * as chart notes for normal statistics. */
     if (game->misses != 0)
         ++judged;
 
@@ -437,9 +427,6 @@ SessionCompletion SessionRuntime_CompleteSong(
             &session->progression,
             session->story.story != NULL ? session->story.story : NULL,
             completed_level);
-        /* StorySession_Advance clears the session at the end of a level, so
-         * Progression_CompleteLevel needs the catalog that was cached before
-         * the clear. If the pointer was cleared, directly set the validated bit. */
         if (!result.story_level_cleared && completed_level < PROGRESSION_MAX_STORY_LEVELS) {
             session->progression.completed_story_levels |= (1ull << completed_level);
             result.story_level_cleared = true;
