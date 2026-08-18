@@ -155,7 +155,7 @@ build/core_cutscene_controller.o: src/core/cutscene_controller.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_gameplay.o: src/core/gameplay.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DGameplay_Tick=Gameplay_TickCore -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DGameplay_Tick=Gameplay_TickCore -DGameplay_SetPaused=Gameplay_SetPausedCore -c $< -o $@
 
 build/core_gameplay_cutscene_gate.o: src/core/gameplay_cutscene_gate.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
