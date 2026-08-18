@@ -1,11 +1,6 @@
 name: FNF PS2 Full DVD Build
 
 on:
-  push:
-    branches: [ ps2-full-port ]
-    paths:
-      - '.github/workflows/ps2-full-build.yml'
-      - 'ps2/scripts/**'
   workflow_dispatch:
 
 permissions:
@@ -21,7 +16,7 @@ jobs:
       - name: Install host build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg unzip xorriso
+          sudo apt-get install -y ffmpeg unzip xorriso python3-pil
 
       - name: Fetch exact official FNF v0.8.4 release
         run: |
@@ -48,7 +43,7 @@ jobs:
       - name: Convert every song to PS2 streaming PCM
         run: |
           rm -rf ps2/disc
-          mkdir -p ps2/disc/AUDIO ps2/disc/CHART
+          mkdir -p ps2/disc/AUDIO ps2/disc/CHART ps2/disc/GAME
           python3 ps2/scripts/convert_song_audio.py \
             "$SONGS_ROOT" \
             ps2/disc/AUDIO \
@@ -60,6 +55,23 @@ jobs:
             "$ASSETS_ROOT" \
             ps2/disc/CHART \
             --manifest ps2/disc/CHART/CHARTIDX.JSON
+
+      - name: Convert discovered characters and stages
+        run: |
+          python3 ps2/scripts/convert_game_assets.py \
+            "$ASSETS_ROOT" \
+            ps2/disc/GAME
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('ps2/disc/GAME/GAMEIDX.JSON').read_text())
+          print('characters:', len(data['discovered']['characters']))
+          print('stages:', len(data['discovered']['stages']))
+          print('note styles:', len(data['discovered']['noteStyles']))
+          print('conversion failures:', len(data['failures']))
+          for failure in data['failures']:
+              print('WARNING:', failure)
+          PY
 
       - name: Build native PS2 ELF
         run: |
@@ -85,6 +97,8 @@ jobs:
           du -sh ps2/disc
           find ps2/disc/AUDIO -type f | wc -l | xargs echo 'audio files:'
           find ps2/disc/CHART -name '*.CHT' -type f | wc -l | xargs echo 'charts:'
+          find ps2/disc/GAME/CHAR -name 'CHAR.FCHR' -type f 2>/dev/null | wc -l | xargs echo 'characters:'
+          find ps2/disc/GAME/STAGE -name 'STAGE.FSTG' -type f 2>/dev/null | wc -l | xargs echo 'stages:'
 
       - name: Master homebrew PS2 DVD ISO
         run: |
@@ -115,7 +129,7 @@ jobs:
         run: |
           TAG="ps2-native-${GITHUB_SHA::12}"
           TITLE="FNF PS2 native test ${GITHUB_SHA::12}"
-          NOTES=$'Native PS2 development checkpoint.\n\nIncludes the PS2 ELF, DVD ISO split into release-safe parts, SHA-256, and generated asset indexes. Reassemble ISO parts in lexical order before testing.'
+          NOTES=$'Native PS2 development checkpoint.\n\nIncludes the PS2 ELF, DVD ISO split into release-safe parts, SHA-256, generated audio/chart indexes, and the discovered game asset manifest. Reassemble ISO parts in lexical order before testing.'
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
@@ -126,4 +140,5 @@ jobs:
             ps2/FunkinPS2.iso.sha256 \
             ps2/FunkinPS2.iso.part* \
             ps2/disc/AUDIO/AUDIOIDX.JSON \
-            ps2/disc/CHART/CHARTIDX.JSON
+            ps2/disc/CHART/CHARTIDX.JSON \
+            ps2/disc/GAME/GAMEIDX.JSON
