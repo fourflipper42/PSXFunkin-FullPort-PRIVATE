@@ -6,6 +6,7 @@
 #define WEEKEND1_CAN_MAX 8
 #define WEEKEND1_EFFECT_MAX 8
 #define WEEKEND1_FRAME_TIME FIXED_DEC(1, 24)
+#define WEEKEND1_SHOT_EXPLOSION_SCALE 1.25f
 
 typedef enum Weekend1CanState {
     WEEKEND1_CAN_UNUSED = 0,
@@ -188,8 +189,6 @@ void Weekend1Visual_ImpactCan(void)
         return;
     for (i = 0; i < WEEKEND1_CAN_MAX; ++i) {
         if (g_cans[i].state == WEEKEND1_CAN_ARC && !g_cans[i].doomed) {
-            /* Keep the source Can Start animation running. It changes to Hit
-             * Pico only when that arc finishes, but it is no longer shootable. */
             g_cans[i].doomed = true;
             return;
         }
@@ -401,6 +400,8 @@ void Weekend1Visual_DrawRange(
             &x,
             &y,
             &scale);
+        if (effect->kind == WEEKEND1_EFFECT_SHOT)
+            scale *= WEEKEND1_SHOT_EXPLOSION_SCALE;
         SpriteAtlas_DrawFrame(
             gs, atlas, (u16)frame_index,
             x, y, scale, scale, 2, white);
