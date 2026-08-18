@@ -89,7 +89,7 @@ void SessionRuntime_AfterGameplayFrame(
     fixed_t elapsed);
 
 /* Public wrappers keep the stable runtime implementation isolated while
- * layering Story video cutscenes and Gammod presentation-rate behavior. */
+ * layering Story cutscenes, song-specific rules, and Gammod presentation rate. */
 void SessionRuntime_InitCutsceneAware(
     SessionRuntime *session,
     const StoryCatalog *story,
@@ -111,6 +111,7 @@ boolean SessionRuntime_BeginSongCutsceneAware(
     const SongAssetPaths *paths,
     boolean story_mode,
     boolean endless_continuation);
+void SessionRuntime_EndSongCutsceneAware(SessionRuntime *session);
 void SessionRuntime_PreparePadCutsceneAware(
     SessionRuntime *session,
     const GameplayState *game,
@@ -132,6 +133,8 @@ void SessionRuntime_AfterGameplayFrameScaled(
     SessionRuntime_StopStoryCutsceneAware((session))
 #define SessionRuntime_BeginSong(session, gs, game, descriptor, paths, story_mode, endless_continuation) \
     SessionRuntime_BeginSongCutsceneAware((session), (gs), (game), (descriptor), (paths), (story_mode), (endless_continuation))
+#define SessionRuntime_EndSong(session) \
+    SessionRuntime_EndSongCutsceneAware((session))
 #define SessionRuntime_PreparePad(session, game, physical, effective) \
     SessionRuntime_PreparePadCutsceneAware((session), (game), (physical), (effective))
 #define SessionRuntime_AfterGameplayFrame(session, game, elapsed) \
