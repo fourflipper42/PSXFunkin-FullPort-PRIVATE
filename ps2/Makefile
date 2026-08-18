@@ -27,7 +27,9 @@ EE_OBJS = \
 	build/core_song_stream.o \
 	build/core_cutscene_stream.o \
 	build/core_cutscene_map.o \
+	build/core_cutscene_controller.o \
 	build/core_gameplay.o \
+	build/core_gameplay_cutscene_gate.o \
 	build/core_gameplay_scroll.o \
 	build/core_gammod.o \
 	build/core_gammod_restart.o \
@@ -39,6 +41,7 @@ EE_OBJS = \
 	build/core_pointless_pins.o \
 	build/core_session_runtime.o \
 	build/core_session_runtime_frame.o \
+	build/core_session_runtime_cutscene.o \
 	build/core_freeplay_browser.o \
 	build/core_frontend.o \
 	build/core_texture_asset.o \
@@ -47,6 +50,7 @@ EE_OBJS = \
 	build/core_note_lane_renderer.o \
 	build/core_health_icon.o \
 	build/core_hud.o \
+	build/core_hud_cutscene.o \
 	build/core_character.o \
 	build/core_stage.o \
 	build/audsrv_irx.o
@@ -147,7 +151,13 @@ build/core_cutscene_stream.o: src/core/cutscene_stream.c | build
 build/core_cutscene_map.o: src/core/cutscene_map.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
+build/core_cutscene_controller.o: src/core/cutscene_controller.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
 build/core_gameplay.o: src/core/gameplay.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DGameplay_Tick=Gameplay_TickCore -c $< -o $@
+
+build/core_gameplay_cutscene_gate.o: src/core/gameplay_cutscene_gate.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_gameplay_scroll.o: src/core/gameplay_scroll.c | build
@@ -183,6 +193,9 @@ build/core_session_runtime.o: src/core/session_runtime.c | build
 build/core_session_runtime_frame.o: src/core/session_runtime_frame.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
+build/core_session_runtime_cutscene.o: src/core/session_runtime_cutscene.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
 build/core_freeplay_browser.o: src/core/freeplay_browser.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
@@ -205,6 +218,9 @@ build/core_health_icon.o: src/core/health_icon.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_hud.o: src/core/hud.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DHud_Draw=Hud_DrawCore -c $< -o $@
+
+build/core_hud_cutscene.o: src/core/hud_cutscene.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_character.o: src/core/character.c | build
