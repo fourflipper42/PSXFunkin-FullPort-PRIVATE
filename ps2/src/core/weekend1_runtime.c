@@ -2,6 +2,7 @@
 
 #include "mem.h"
 #include "note_lane_renderer.h"
+#include "weekend1_visual.h"
 #include <string.h>
 
 #define WEEKEND1_CAN_DAMAGE 5000
@@ -70,9 +71,6 @@ static void suppress_normal_head_miss(GameplayState *game)
     if (game == NULL)
         return;
 
-    /* Gameplay_CheckHealth clamps a lethal ordinary miss to zero. In that
-     * case restore the health snapshot from the preceding frame, because the
-     * Weekend 1 script explicitly sets this note's normal healthChange to 0. */
     if (game->dead)
         health = g_previous_health;
     else {
@@ -131,8 +129,6 @@ static void undo_uncocked_fire_hit(GameplayState *game, Note *note)
         if (game->rhythm.combo != 0)
             --game->rhythm.combo;
     } else if (rating != HIT_SHIT) {
-        /* The PS2 port normally runs modern, non-Kade scoring. Keep this
-         * fallback conservative for dev charts using the legacy switch. */
         if (game->rhythm.combo != 0)
             --game->rhythm.combo;
     }
@@ -155,6 +151,7 @@ void Weekend1Runtime_EndSong(void)
     g_arcing_cans = 0;
     g_previous_health = 0;
     g_special_death = false;
+    Weekend1Visual_End();
     NoteLaneRenderer_SetLayout(false, false);
 }
 
@@ -169,8 +166,6 @@ void Weekend1Runtime_BeginSong(
         return;
 
     if (strcmp(song_id, "blazin") == 0) {
-        /* The official script permanently hides the opponent strumline and
-         * centers the player's four arrows for this song. */
         NoteLaneRenderer_SetLayout(true, true);
         return;
     }
@@ -179,6 +174,7 @@ void Weekend1Runtime_BeginSong(
         return;
 
     g_twohot = true;
+    Weekend1Visual_Begin2Hot();
     g_previous_health = game->rhythm.health;
     g_processed_count = game->chart.view.note_count;
     if (g_processed_count != 0) {
@@ -201,6 +197,8 @@ void Weekend1Runtime_Tick(
     if (!g_twohot || game == NULL || !game->loaded ||
         note_kinds == NULL || !note_kinds->loaded)
         return;
+
+    Weekend1Visual_Tick(elapsed);
 
     if (g_gun_timer > 0) {
         g_gun_timer -= elapsed;
@@ -239,8 +237,10 @@ void Weekend1Runtime_Tick(
         late_miss = !opponent && fp + safe < game->note_scroll;
 
         if (kind_is(note_kinds, note, "weekend-1-kickcan")) {
-            if (!late_miss)
+            if (!late_miss) {
                 ++g_arcing_cans;
+                Weekend1Visual_KickCan();
+            }
         } else if (kind_is(note_kinds, note, "weekend-1-cockgun")) {
             if (late_miss) {
                 suppress_normal_head_miss(game);
@@ -254,17 +254,16 @@ void Weekend1Runtime_Tick(
                 g_gun_timer = 0;
                 if (g_arcing_cans != 0)
                     --g_arcing_cans;
+                Weekend1Visual_ImpactCan();
                 take_can_damage(game);
             } else if (kind_is(note_kinds, note, "weekend-1-firegun")) {
                 if (g_gun_timer > 0) {
                     g_gun_timer = 0;
                     if (g_arcing_cans != 0)
                         --g_arcing_cans;
+                    Weekend1Visual_ShootCan();
                     g_flash_timer = FIXED_DEC(1, 10);
                 } else {
-                    /* Source cancels the hit entirely when the gun was not
-                     * cocked. Undo the normal judgement and leave the note live
-                     * so it can still be hit or eventually miss normally. */
                     undo_uncocked_fire_hit(game, note);
                     continue;
                 }
