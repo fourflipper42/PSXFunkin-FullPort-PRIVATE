@@ -28,7 +28,6 @@ EE_OBJS = \
 	build/core_gameplay.o \
 	build/core_gameplay_scroll.o \
 	build/core_gammod.o \
-	build/core_health_drain.o \
 	build/core_endless_mode.o \
 	build/core_combo_system.o \
 	build/core_camera_effects.o \
@@ -145,9 +144,6 @@ build/core_gameplay_scroll.o: src/core/gameplay_scroll.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_gammod.o: src/core/gammod.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_health_drain.o: src/core/health_drain.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_endless_mode.o: src/core/endless_mode.c | build
