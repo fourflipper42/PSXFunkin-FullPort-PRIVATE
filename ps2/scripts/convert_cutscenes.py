@@ -12,9 +12,9 @@ from pathlib import Path
 VIDEO_SUFFIXES = {".mp4", ".webm", ".mov", ".mkv", ".avi"}
 
 
-def load_converter():
-    path = Path(__file__).with_name("convert_cutscene_video.py")
-    spec = importlib.util.spec_from_file_location("convert_cutscene_video_bulk", path)
+def load_module(filename: str, module_name: str):
+    path = Path(__file__).with_name(filename)
+    spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"unable to load {path}")
     mod = importlib.util.module_from_spec(spec)
@@ -48,7 +48,8 @@ def convert_all(
     assets_root = assets_root.resolve()
     output_root = output_root.resolve()
     videos_root = assets_root / "videos"
-    converter = load_converter()
+    converter = load_module("convert_cutscene_video.py", "convert_cutscene_video_bulk")
+    map_converter = load_module("convert_cutscene_map.py", "convert_cutscene_map_bulk")
     converted: list[dict] = []
     failures: list[str] = []
 
@@ -63,15 +64,32 @@ def convert_all(
         except Exception as exc:
             failures.append(f"{video}: {exc}")
 
+    map_manifest = output_root / "CUTMAP.JSON"
+    try:
+        cutscene_map = map_converter.convert(
+            assets_root,
+            output_root / "CUTMAP.FCMP",
+            map_manifest,
+        )
+    except Exception as exc:
+        failures.append(f"cutscene map: {exc}")
+        cutscene_map = {"count": 0, "entries": []}
+
     result = {
         "format": "FNF PS2 Cutscene Index",
         "cutscenes": converted,
+        "cutsceneMap": {
+            "binary": (output_root / "CUTMAP.FCMP").as_posix(),
+            "manifest": map_manifest.as_posix(),
+            "count": int(cutscene_map.get("count", 0)),
+        },
         "failures": failures,
     }
     if manifest_path is not None:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"cutscenes: {len(converted)}")
+    print(f"cutscene map entries: {result['cutsceneMap']['count']}")
     print(f"cutscene failures: {len(failures)}")
     if strict and failures:
         raise RuntimeError("cutscene conversion failures:\n" + "\n".join(failures))
