@@ -25,6 +25,7 @@ EE_OBJS = \
 	build/core_note_kinds.o \
 	build/core_note_kind_runtime.o \
 	build/core_song_stream.o \
+	build/core_cutscene_stream.o \
 	build/core_gameplay.o \
 	build/core_gameplay_scroll.o \
 	build/core_gammod.o \
@@ -136,6 +137,9 @@ build/core_note_kind_runtime.o: src/core/note_kind_runtime.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_song_stream.o: src/core/song_stream.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_cutscene_stream.o: src/core/cutscene_stream.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_gameplay.o: src/core/gameplay.c | build
