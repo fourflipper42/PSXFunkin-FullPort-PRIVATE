@@ -87,14 +87,57 @@ void SessionRuntime_AfterGameplayFrame(
     SessionRuntime *session,
     GameplayState *game,
     fixed_t elapsed);
+
+/* Public wrappers keep the stable runtime implementation isolated while
+ * layering Story video cutscenes and Gammod presentation-rate behavior. */
+void SessionRuntime_InitCutsceneAware(
+    SessionRuntime *session,
+    const StoryCatalog *story,
+    const SongCatalog *songs);
+void SessionRuntime_ShutdownCutsceneAware(SessionRuntime *session);
+boolean SessionRuntime_StartStoryCutsceneAware(
+    SessionRuntime *session,
+    const StoryCatalog *story,
+    const SongCatalog *songs,
+    u16 level_index,
+    StoryDifficulty difficulty,
+    SongCatalogEntry *first_song);
+void SessionRuntime_StopStoryCutsceneAware(SessionRuntime *session);
+boolean SessionRuntime_BeginSongCutsceneAware(
+    SessionRuntime *session,
+    GSGLOBAL *gs,
+    GameplayState *game,
+    const SongDescriptor *descriptor,
+    const SongAssetPaths *paths,
+    boolean story_mode,
+    boolean endless_continuation);
+void SessionRuntime_PreparePadCutsceneAware(
+    SessionRuntime *session,
+    const GameplayState *game,
+    const Pad *physical,
+    Pad *effective);
 void SessionRuntime_AfterGameplayFrameScaled(
     SessionRuntime *session,
     GameplayState *game,
     fixed_t elapsed);
+
 #ifndef SESSION_RUNTIME_IMPLEMENTATION
+#define SessionRuntime_Init(session, story, songs) \
+    SessionRuntime_InitCutsceneAware((session), (story), (songs))
+#define SessionRuntime_Shutdown(session) \
+    SessionRuntime_ShutdownCutsceneAware((session))
+#define SessionRuntime_StartStory(session, story, songs, level, difficulty, first_song) \
+    SessionRuntime_StartStoryCutsceneAware((session), (story), (songs), (level), (difficulty), (first_song))
+#define SessionRuntime_StopStory(session) \
+    SessionRuntime_StopStoryCutsceneAware((session))
+#define SessionRuntime_BeginSong(session, gs, game, descriptor, paths, story_mode, endless_continuation) \
+    SessionRuntime_BeginSongCutsceneAware((session), (gs), (game), (descriptor), (paths), (story_mode), (endless_continuation))
+#define SessionRuntime_PreparePad(session, game, physical, effective) \
+    SessionRuntime_PreparePadCutsceneAware((session), (game), (physical), (effective))
 #define SessionRuntime_AfterGameplayFrame(session, game, elapsed) \
     SessionRuntime_AfterGameplayFrameScaled((session), (game), (elapsed))
 #endif
+
 void SessionRuntime_PlayHitAnimations(
     SessionRuntime *session,
     Character *player,
