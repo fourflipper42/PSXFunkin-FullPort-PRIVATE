@@ -10,13 +10,30 @@ jobs:
   build-dvd:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      PS2DEV: /home/runner/ps2dev
+      PS2SDK: /home/runner/ps2dev/ps2sdk
+      GSKIT: /home/runner/ps2dev/gsKit
     steps:
       - uses: actions/checkout@v4
 
       - name: Install host build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg unzip xorriso python3-pil
+          sudo apt-get install -y ffmpeg unzip xorriso python3-pil make file curl
+
+      - name: Install current official PS2DEV toolchain
+        run: |
+          mkdir -p "$PS2DEV"
+          curl -fL --retry 3 --retry-delay 3 \
+            https://github.com/ps2dev/ps2dev/releases/download/latest/ps2dev-ubuntu-latest.tar.gz \
+            -o /tmp/ps2dev-latest.tar.gz
+          tar -xf /tmp/ps2dev-latest.tar.gz --strip-components 1 -C "$PS2DEV"
+          echo "$PS2DEV/bin" >> "$GITHUB_PATH"
+          echo "$PS2DEV/ee/bin" >> "$GITHUB_PATH"
+          echo "$PS2DEV/iop/bin" >> "$GITHUB_PATH"
+          echo "$PS2DEV/dvp/bin" >> "$GITHUB_PATH"
+          echo "$PS2SDK/bin" >> "$GITHUB_PATH"
 
       - name: Fetch exact official FNF v0.8.4 release
         run: |
@@ -56,11 +73,12 @@ jobs:
             ps2/disc/CHART \
             --manifest ps2/disc/CHART/CHARTIDX.JSON
 
-      - name: Convert discovered characters and stages
+      - name: Convert every discovered character, stage and song descriptor
         run: |
           python3 ps2/scripts/convert_game_assets.py \
             "$ASSETS_ROOT" \
-            ps2/disc/GAME
+            ps2/disc/GAME \
+            --strict
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -68,22 +86,20 @@ jobs:
           print('characters:', len(data['discovered']['characters']))
           print('stages:', len(data['discovered']['stages']))
           print('note styles:', len(data['discovered']['noteStyles']))
+          print('song descriptors:', len(data['songDescriptors']))
           print('conversion failures:', len(data['failures']))
-          for failure in data['failures']:
-              print('WARNING:', failure)
+          if data['failures']:
+              raise SystemExit('strict conversion unexpectedly produced failures')
           PY
 
       - name: Build native PS2 ELF
+        working-directory: ps2
         run: |
-          docker pull ps2dev/ps2dev:latest
-          docker run --rm \
-            -v "$PWD:/work" \
-            -w /work/ps2 \
-            ps2dev/ps2dev:latest \
-            /bin/sh -c 'apk add --no-cache make >/dev/null && make clean all'
-          test -s ps2/build/funkin_ps2.elf
-          file ps2/build/funkin_ps2.elf
-          cp ps2/build/funkin_ps2.elf ps2/disc/FUNKIN.ELF
+          command -v mips64r5900el-ps2-elf-gcc
+          make clean all 2>&1 | tee build-full.log
+          test -s build/funkin_ps2.elf
+          file build/funkin_ps2.elf
+          cp build/funkin_ps2.elf disc/FUNKIN.ELF
 
       - name: Prepare PS2 DVD filesystem
         run: |
@@ -99,6 +115,7 @@ jobs:
           find ps2/disc/CHART -name '*.CHT' -type f | wc -l | xargs echo 'charts:'
           find ps2/disc/GAME/CHAR -name 'CHAR.FCHR' -type f 2>/dev/null | wc -l | xargs echo 'characters:'
           find ps2/disc/GAME/STAGE -name 'STAGE.FSTG' -type f 2>/dev/null | wc -l | xargs echo 'stages:'
+          find ps2/disc/GAME/SONG -name '*.FSON' -type f 2>/dev/null | wc -l | xargs echo 'song descriptors:'
 
       - name: Master homebrew PS2 DVD ISO
         run: |
@@ -137,6 +154,7 @@ jobs:
             --notes "$NOTES" \
             --prerelease \
             ps2/build/funkin_ps2.elf \
+            ps2/build-full.log \
             ps2/FunkinPS2.iso.sha256 \
             ps2/FunkinPS2.iso.part* \
             ps2/disc/AUDIO/AUDIOIDX.JSON \
