@@ -163,7 +163,6 @@ static void tick_camera_tween(fixed_t elapsed)
         return;
     }
     t = (float)g_camera_tween_time / (float)g_camera_tween_duration;
-    /* Smoothstep is a close, cheap stand-in for the mostly quad/sine source tweens. */
     t = t * t * (3.0f - 2.0f * t);
     g_camera_x = g_camera_start_x + (g_camera_target_x - g_camera_start_x) * t;
     g_camera_y = g_camera_start_y + (g_camera_target_y - g_camera_start_y) * t;
@@ -254,11 +253,16 @@ static void tick_2hot_native(fixed_t elapsed)
     if (crossed(2.5f) && opponent != NULL)
         Character_Play(opponent, "pissed", true);
     if (crossed(6.0f)) {
-        g_video_visible = true;
         g_native_kind = NATIVE_CUTSCENE_NONE;
         g_camera_x = 0.0f;
         g_camera_y = 0.0f;
-        printf("[PS2] 2hot ending video revealed\n");
+        if (g_stream.loaded) {
+            g_video_visible = true;
+            printf("[PS2] 2hot ending video revealed\n");
+        } else {
+            printf("[PS2] 2hot ending video unavailable; continuing Story\n");
+            finish_active();
+        }
     }
 }
 
@@ -365,6 +369,13 @@ void CutsceneController_HandlePad(const Pad *pad)
     if (!g_active || pad == NULL)
         return;
     if (pad->press & PAD_CROSS) {
+        if (g_start_darnell_after_video) {
+            printf("[PS2] Darnell video skipped; continuing native intro\n");
+            g_start_darnell_after_video = false;
+            stop_video();
+            start_darnell_native();
+            return;
+        }
         printf("[PS2] cutscene skipped\n");
         finish_active();
     }
@@ -379,8 +390,17 @@ void CutsceneController_Tick(void)
         g_open_pending = false;
         if (!CutsceneStream_Open(g_gs, &g_stream, g_pending_base)) {
             printf("[PS2] cutscene open failed: %s\n", g_pending_base);
-            finish_active();
-            return;
+            if (g_start_darnell_after_video) {
+                g_start_darnell_after_video = false;
+                start_darnell_native();
+                return;
+            }
+            if (g_native_kind == NATIVE_CUTSCENE_2HOT_OUTRO) {
+                g_video_visible = false;
+            } else {
+                finish_active();
+                return;
+            }
         }
     }
 
