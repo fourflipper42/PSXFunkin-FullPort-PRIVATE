@@ -20,6 +20,8 @@ typedef struct GameplayFrameEvents {
     boolean just_step;
     boolean song_event_fired;
     boolean camera_focus_changed;
+    boolean player_died;
+    boolean song_finished;
     u8 camera_focus;
     u16 last_song_event_kind;
     const char *last_song_event_name;
@@ -42,6 +44,8 @@ typedef struct GameplayState {
 
     boolean loaded;
     boolean audio_started;
+    boolean paused;
+    boolean dead;
     boolean finished;
 
     GameplayFrameEvents events;
@@ -56,6 +60,10 @@ ChartResult Gameplay_Load(
     boolean ghost,
     fixed_t speed);
 void Gameplay_Free(GameplayState *state);
+boolean Gameplay_SetPaused(GameplayState *state, boolean paused);
+boolean Gameplay_IsPaused(const GameplayState *state);
+boolean Gameplay_IsDead(const GameplayState *state);
+boolean Gameplay_IsFinished(const GameplayState *state);
 void Gameplay_Tick(GameplayState *state, const Pad *pad);
 void Gameplay_PressLane(GameplayState *state, u8 lane);
 void Gameplay_HoldLane(GameplayState *state, u8 lane);
