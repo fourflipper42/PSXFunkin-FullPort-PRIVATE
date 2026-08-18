@@ -22,6 +22,11 @@ typedef struct FptxHeader {
 #define FPTX_FORMAT_T8 8
 #define FPTX_CLUT_BYTES (256u * 4u)
 
+static float draw_x_scale = 1.0f;
+static float draw_y_scale = 1.0f;
+static float draw_x_offset = 0.0f;
+static float draw_y_offset = 0.0f;
+
 static boolean read_exact(AssetFile *file, void *dst, size_t size)
 {
     return AssetFile_Read(file, dst, size) == size;
@@ -119,6 +124,18 @@ void TextureAsset_ClearVRAM(GSGLOBAL *gs)
         gsKit_vram_clear(gs);
 }
 
+void TextureAsset_SetDrawTransform(
+    float x_scale,
+    float y_scale,
+    float x_offset,
+    float y_offset)
+{
+    draw_x_scale = x_scale;
+    draw_y_scale = y_scale;
+    draw_x_offset = x_offset;
+    draw_y_offset = y_offset;
+}
+
 void TextureAsset_Draw(
     GSGLOBAL *gs,
     const TextureAsset *asset,
@@ -139,7 +156,14 @@ void TextureAsset_Draw(
     gsKit_prim_sprite_texture(
         gs,
         &asset->texture,
-        x1, y1, u1, v1,
-        x2, y2, u2, v2,
-        z, color);
+        draw_x_offset + x1 * draw_x_scale,
+        draw_y_offset + y1 * draw_y_scale,
+        u1,
+        v1,
+        draw_x_offset + x2 * draw_x_scale,
+        draw_y_offset + y2 * draw_y_scale,
+        u2,
+        v2,
+        z,
+        color);
 }
