@@ -14,16 +14,17 @@ typedef struct AtlasFrame {
     u16 frame_width;
     u16 frame_height;
     u16 flags;
-    u16 reserved;
+    u16 page_index;
 } __attribute__((packed)) AtlasFrame;
 
 typedef struct SpriteAtlas {
-    TextureAsset texture;
+    TextureAsset *textures;
     void *frame_blob;
     size_t frame_blob_size;
     AtlasFrame *frames;
     char *strings;
     u16 frame_count;
+    u16 texture_count;
     boolean loaded;
 } SpriteAtlas;
 
