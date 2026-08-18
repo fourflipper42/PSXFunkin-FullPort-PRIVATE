@@ -19,14 +19,21 @@ typedef struct AtlasFrame {
 
 typedef struct SpriteAtlas {
     TextureAsset *textures;
+    u32 *page_last_used;
+    u8 *page_failed;
     void *frame_blob;
     size_t frame_blob_size;
     AtlasFrame *frames;
     char *strings;
     u32 string_bytes;
+    u32 draw_serial;
     u16 frame_count;
     u16 texture_count;
+    u16 resident_pages;
+    u16 resident_limit;
+    boolean linear_filter;
     boolean loaded;
+    char texture_path[320];
 } SpriteAtlas;
 
 boolean SpriteAtlas_Load(
