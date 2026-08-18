@@ -63,6 +63,7 @@ typedef struct GameplayState {
     size_t first_note;
     fixed_t note_scroll;
     fixed_t song_time;
+    fixed_t base_scroll_speed;
     fixed_t player_scroll_speed;
     fixed_t opponent_scroll_speed;
     GameplayScrollTween scroll_tween;
@@ -93,6 +94,7 @@ boolean Gameplay_SetPaused(GameplayState *state, boolean paused);
 boolean Gameplay_IsPaused(const GameplayState *state);
 boolean Gameplay_IsDead(const GameplayState *state);
 boolean Gameplay_IsFinished(const GameplayState *state);
+boolean Gameplay_RestartAttempt(GameplayState *state);
 boolean Gameplay_SetCountdownDelay(GameplayState *state, fixed_t delay_seconds);
 boolean Gameplay_SeekIntro(
     GameplayState *state,
