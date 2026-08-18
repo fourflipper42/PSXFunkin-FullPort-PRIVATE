@@ -1,6 +1,7 @@
 #include "hud.h"
 
 #include "cutscene_controller.h"
+#include "sserafim_runtime.h"
 
 void Hud_DrawCore(
     GSGLOBAL *gs,
@@ -21,4 +22,5 @@ void Hud_Draw(
         return;
     }
     Hud_DrawCore(gs, hud, game, save, font);
+    SserafimRuntime_DrawOverlay(gs);
 }
