@@ -2,6 +2,18 @@ name: FNF PS2 Native Build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ps2-full-port
+    paths:
+      - 'ps2/**'
+      - '.github/workflows/ps2-build.yml'
+  pull_request:
+    branches:
+      - full-port-completion
+    paths:
+      - 'ps2/**'
+      - '.github/workflows/ps2-build.yml'
 
 permissions:
   contents: read
