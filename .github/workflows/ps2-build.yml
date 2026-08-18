@@ -29,7 +29,7 @@ jobs:
             -v "$PWD:/work" \
             -w /work/ps2 \
             ps2dev/ps2dev:latest \
-            /bin/sh -lc 'apk add --no-cache make >/dev/null && make clean all'
+            /bin/sh -c 'apk add --no-cache make >/dev/null && command -v mips64r5900el-ps2-elf-gcc && make clean all'
 
       - name: Verify ELF
         run: |
