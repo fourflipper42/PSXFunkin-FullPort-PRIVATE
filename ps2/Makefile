@@ -49,6 +49,7 @@ EE_OBJS = \
 	build/core_session_runtime_cutscene.o \
 	build/core_freeplay_browser.o \
 	build/core_frontend.o \
+	build/core_frontend_shell.o \
 	build/core_texture_asset.o \
 	build/core_sprite_atlas.o \
 	build/core_note_style.o \
@@ -90,6 +91,13 @@ build/core_gameplay.o: src/core/gameplay.c | build
 
 build/core_session_runtime.o: src/core/session_runtime.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DSESSION_RUNTIME_IMPLEMENTATION -c $< -o $@
+
+build/core_frontend.o: src/core/frontend.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) \
+		-DFrontend_Init=Frontend_InitCore \
+		-DFrontend_Update=Frontend_UpdateCore \
+		-DFrontend_Draw=Frontend_DrawCore \
+		-c $< -o $@
 
 build/core_note_lane_renderer.o: src/core/note_lane_renderer.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) \
