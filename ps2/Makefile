@@ -17,6 +17,7 @@ EE_OBJS = \
 	build/core_gameplay.o \
 	build/core_texture_asset.o \
 	build/core_sprite_atlas.o \
+	build/core_character.o \
 	build/audsrv_irx.o
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
@@ -83,6 +84,9 @@ build/core_texture_asset.o: src/core/texture_asset.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_sprite_atlas.o: src/core/sprite_atlas.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_character.o: src/core/character.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/audsrv_irx.c: | build
