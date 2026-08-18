@@ -25,17 +25,16 @@ boolean SongStream_Open(SongStream *stream, const char *inst_path, const char *v
         return false;
 
     memset(stream, 0, sizeof(*stream));
-    stream->inst = fopen(inst_path, "rb");
-    if (stream->inst == NULL)
+    if (!AssetFile_Open(&stream->inst, inst_path))
         return false;
 
     if (voices_path != NULL) {
-        stream->voices = fopen(voices_path, "rb");
-        if (stream->voices == NULL) {
-            fclose(stream->inst);
+        if (!AssetFile_Open(&stream->voices, voices_path)) {
+            AssetFile_Close(&stream->inst);
             memset(stream, 0, sizeof(*stream));
             return false;
         }
+        stream->has_voices = true;
     }
 
     Audio_Stop();
@@ -52,10 +51,8 @@ void SongStream_Close(SongStream *stream)
         return;
 
     Audio_Stop();
-    if (stream->inst != NULL)
-        fclose(stream->inst);
-    if (stream->voices != NULL)
-        fclose(stream->voices);
+    AssetFile_Close(&stream->inst);
+    AssetFile_Close(&stream->voices);
     memset(stream, 0, sizeof(*stream));
 }
 
@@ -82,7 +79,7 @@ void SongStream_Tick(SongStream *stream)
     if (request == 0)
         return;
 
-    inst_read = fread(inst_buffer, 1, request, stream->inst);
+    inst_read = AssetFile_Read(&stream->inst, inst_buffer, request);
     inst_read &= ~(size_t)(AUDIO_FRAME_BYTES - 1);
     if (inst_read == 0) {
         stream->finished = true;
@@ -90,15 +87,15 @@ void SongStream_Tick(SongStream *stream)
     }
 
     memset(voice_buffer, 0, inst_read);
-    if (stream->voices != NULL) {
-        voice_read = fread(voice_buffer, 1, inst_read, stream->voices);
+    if (stream->has_voices) {
+        voice_read = AssetFile_Read(&stream->voices, voice_buffer, inst_read);
         voice_read &= ~(size_t)(AUDIO_FRAME_BYTES - 1);
         if (voice_read < inst_read)
             memset((u8 *)voice_buffer + voice_read, 0, inst_read - voice_read);
     }
 
     sample_count = inst_read / sizeof(s16);
-    if (stream->voices_enabled && stream->voices != NULL) {
+    if (stream->voices_enabled && stream->has_voices) {
         for (i = 0; i < sample_count; ++i)
             mix_buffer[i] = mix_sample(inst_buffer[i], voice_buffer[i]);
     } else {
@@ -120,22 +117,18 @@ boolean SongStream_SeekFrame(SongStream *stream, u64 frame)
 {
     u64 byte_offset;
 
-    if (stream == NULL || stream->inst == NULL)
+    if (stream == NULL || !AssetFile_IsOpen(&stream->inst))
         return false;
 
     byte_offset = frame * AUDIO_FRAME_BYTES;
-    if (byte_offset > 0x7FFFFFFFULL)
+    if (byte_offset > 0xFFFFFFFFULL)
         return false;
 
     Audio_Stop();
-    if (fseek(stream->inst, (long)byte_offset, SEEK_SET) != 0)
+    if (!AssetFile_Seek(&stream->inst, (u32)byte_offset))
         return false;
-    if (stream->voices != NULL && fseek(stream->voices, (long)byte_offset, SEEK_SET) != 0)
+    if (stream->has_voices && !AssetFile_Seek(&stream->voices, (u32)byte_offset))
         return false;
-
-    clearerr(stream->inst);
-    if (stream->voices != NULL)
-        clearerr(stream->voices);
 
     stream->base_frame = frame;
     stream->finished = false;
