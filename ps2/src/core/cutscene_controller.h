@@ -17,5 +17,7 @@ void CutsceneController_HandlePad(const Pad *pad);
 void CutsceneController_Tick(void);
 void CutsceneController_Draw(GSGLOBAL *gs);
 boolean CutsceneController_Active(void);
+float CutsceneController_CameraX(void);
+float CutsceneController_CameraY(void);
 
 #endif
