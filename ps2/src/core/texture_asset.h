@@ -12,6 +12,17 @@ typedef struct TextureAsset {
 boolean TextureAsset_Load(GSGLOBAL *gs, TextureAsset *asset, const char *path, boolean linear_filter);
 void TextureAsset_Forget(TextureAsset *asset);
 void TextureAsset_ClearVRAM(GSGLOBAL *gs);
+
+/* All FNF artwork is authored against the canonical 640x360 logical canvas.
+ * Configure this once when the output aspect mode changes so stage props,
+ * characters, atlases and UI textures land in the same physical region as
+ * untextured gameplay primitives. */
+void TextureAsset_SetDrawTransform(
+    float x_scale,
+    float y_scale,
+    float x_offset,
+    float y_offset);
+
 void TextureAsset_Draw(
     GSGLOBAL *gs,
     const TextureAsset *asset,
