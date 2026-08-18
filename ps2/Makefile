@@ -38,6 +38,7 @@ EE_OBJS = \
 	build/core_camera_effects.o \
 	build/core_camera_movement.o \
 	build/core_presentation_events.o \
+	build/core_presentation_registry.o \
 	build/core_pointless_pins.o \
 	build/core_session_runtime.o \
 	build/core_session_runtime_frame.o \
@@ -52,7 +53,9 @@ EE_OBJS = \
 	build/core_hud.o \
 	build/core_hud_cutscene.o \
 	build/core_character.o \
+	build/core_character_registry.o \
 	build/core_stage.o \
+	build/core_stage_registry.o \
 	build/audsrv_irx.o
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
@@ -184,6 +187,9 @@ build/core_camera_movement.o: src/core/camera_movement.c | build
 build/core_presentation_events.o: src/core/presentation_events.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
+build/core_presentation_registry.o: src/core/presentation_registry.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
 build/core_pointless_pins.o: src/core/pointless_pins.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
@@ -224,10 +230,16 @@ build/core_hud_cutscene.o: src/core/hud_cutscene.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_character.o: src/core/character.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DCharacter_Load=Character_LoadCore -DCharacter_Forget=Character_ForgetCore -c $< -o $@
+
+build/core_character_registry.o: src/core/character_registry.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_stage.o: src/core/stage.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -Dtimer_dt=timer_presentation_dt -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -Dtimer_dt=timer_presentation_dt -DStage_Load=Stage_LoadCore -DStage_Forget=Stage_ForgetCore -c $< -o $@
+
+build/core_stage_registry.o: src/core/stage_registry.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/audsrv_irx.c: | build
 	$(PS2SDK)/bin/bin2c $(PS2SDK)/iop/irx/audsrv.irx $@ audsrv_irx
