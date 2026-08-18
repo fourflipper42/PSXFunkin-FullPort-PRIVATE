@@ -239,7 +239,7 @@ boolean PointlessPins_BuyBox(
         box_index >= catalog->box_count)
         return false;
     box = &catalog->boxes[box_index];
-    if (save->funkbucks < box->cost)
+    if (save->funkbucks < (s32)box->cost)
         return false;
 
     for (i = 0; i < box->chance_count; ++i)
@@ -259,7 +259,7 @@ boolean PointlessPins_BuyBox(
     if (rarity == 0xFFFFu || !select_pin_from_rarity(catalog, rarity, pin_index))
         return false;
 
-    save->funkbucks -= box->cost;
+    save->funkbucks -= (s32)box->cost;
     if (save->opened_box_counts[box_index] != 0xFFFFu)
         ++save->opened_box_counts[box_index];
     PointlessPins_AwardPin(save, *pin_index);
@@ -357,15 +357,12 @@ PointlessPinsReward PointlessPins_AwardSong(
         }
     }
 
-    /* The source mod uses Math.ceil even for negative penalties. */
+    /* The source mod uses Math.ceil even for negative penalties and does not
+     * clamp the balance at zero, so FunkBucks may legitimately go negative. */
     rounded = (s32)ceilf(award);
-    if (rounded >= 0) {
-        save->funkbucks += (u32)rounded;
+    save->funkbucks += rounded;
+    if (rounded > 0)
         save->funkbucks_lifetime += (u32)rounded;
-    } else {
-        u32 loss = (u32)(-rounded);
-        save->funkbucks = loss > save->funkbucks ? 0 : save->funkbucks - loss;
-    }
 
     /* Endless attempts before loop two deliberately do not clear repeats. */
     if (!(endless && endless_loop < 2u))
