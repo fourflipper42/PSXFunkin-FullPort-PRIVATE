@@ -3,6 +3,7 @@
 
 #include "better_alphabet.h"
 #include "freeplay_browser.h"
+#include "gammod.h"
 #include "pointless_pins.h"
 #include "progression.h"
 #include "save_data.h"
@@ -14,6 +15,8 @@ typedef enum FrontendPage {
     FRONTEND_STORY = 0,
     FRONTEND_FREEPLAY,
     FRONTEND_PINS,
+    FRONTEND_GAMMOD,
+    FRONTEND_HUD,
     FRONTEND_OPTIONS,
     FRONTEND_PAGE_COUNT
 } FrontendPage;
@@ -45,6 +48,8 @@ typedef struct Frontend {
     u16 story_selected;
     StoryDifficulty story_difficulty;
     u16 pin_box_selected;
+    u8 gammod_selected;
+    u8 hud_selected;
     u8 option_selected;
     boolean font_ready;
     GSFONTM *rom_font;
@@ -59,6 +64,7 @@ FrontendAction Frontend_Update(
     const ProgressionState *progression,
     const PointlessPinsCatalog *pins,
     FunkinSaveData *save,
+    GammodConfig *gammod,
     const Pad *pad);
 void Frontend_Draw(
     GSGLOBAL *gs,
@@ -69,6 +75,7 @@ void Frontend_Draw(
     const ProgressionState *progression,
     const PointlessPinsCatalog *pins,
     const FunkinSaveData *save,
+    const GammodConfig *gammod,
     BetterAlphabet *alphabet);
 boolean Frontend_PicoSelected(const Frontend *frontend);
 
