@@ -17,6 +17,7 @@ EE_OBJS = \
 	build/core_song_events.o \
 	build/core_song_stream.o \
 	build/core_gameplay.o \
+	build/core_camera_effects.o \
 	build/core_texture_asset.o \
 	build/core_sprite_atlas.o \
 	build/core_note_style.o \
@@ -27,7 +28,7 @@ EE_OBJS = \
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
 EE_LDFLAGS += -L$(GSKIT)/lib
-EE_LIBS = -lgskit -ldmakit -lpad -laudsrv -lpatches -lcdvd -ldebug -lc
+EE_LIBS = -lgskit -ldmakit -lpad -laudsrv -lpatches -lcdvd -ldebug -lm -lc
 
 EE_CFLAGS += -O2 -G0 -Wall -Wextra -Wno-unused-parameter -DFNF_PS2
 
@@ -89,6 +90,9 @@ build/core_song_stream.o: src/core/song_stream.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_gameplay.o: src/core/gameplay.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_camera_effects.o: src/core/camera_effects.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_texture_asset.o: src/core/texture_asset.c | build
