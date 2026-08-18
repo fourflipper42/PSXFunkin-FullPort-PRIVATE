@@ -1,6 +1,7 @@
 #include "weekend1_runtime.h"
 
 #include "mem.h"
+#include "note_lane_renderer.h"
 #include <string.h>
 
 #define WEEKEND1_CAN_DAMAGE 5000
@@ -154,6 +155,7 @@ void Weekend1Runtime_EndSong(void)
     g_arcing_cans = 0;
     g_previous_health = 0;
     g_special_death = false;
+    NoteLaneRenderer_SetLayout(false, false);
 }
 
 void Weekend1Runtime_BeginSong(
@@ -163,8 +165,17 @@ void Weekend1Runtime_BeginSong(
 {
     (void)note_kinds;
     Weekend1Runtime_EndSong();
-    if (song_id == NULL || strcmp(song_id, "2hot") != 0 ||
-        game == NULL || !game->loaded)
+    if (song_id == NULL || game == NULL || !game->loaded)
+        return;
+
+    if (strcmp(song_id, "blazin") == 0) {
+        /* The official script permanently hides the opponent strumline and
+         * centers the player's four arrows for this song. */
+        NoteLaneRenderer_SetLayout(true, true);
+        return;
+    }
+
+    if (strcmp(song_id, "2hot") != 0)
         return;
 
     g_twohot = true;
