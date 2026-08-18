@@ -1,0 +1,55 @@
+name: PS2 Object Diagnostics
+
+on:
+  pull_request:
+    branches: [ ps2-full-port ]
+    paths:
+      - 'ps2/**'
+      - '.github/workflows/ps2-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  object-compile:
+    name: compile-${{ matrix.unit }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - unit: main
+            target: build/main.o
+          - unit: gameplay
+            target: build/core_gameplay.o
+          - unit: texture
+            target: build/core_texture_asset.o
+          - unit: atlas
+            target: build/core_sprite_atlas.o
+          - unit: character
+            target: build/core_character.o
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile ${{ matrix.unit }}
+        run: |
+          docker pull ps2dev/ps2dev:latest
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work/ps2 \
+            ps2dev/ps2dev:latest \
+            /bin/sh -c "apk add --no-cache make >/dev/null && make '${{ matrix.target }}'"
+
+  full-link:
+    name: link-full-elf
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Link full ELF
+        run: |
+          docker pull ps2dev/ps2dev:latest
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work/ps2 \
+            ps2dev/ps2dev:latest \
+            /bin/sh -c 'apk add --no-cache make >/dev/null && make clean all'
