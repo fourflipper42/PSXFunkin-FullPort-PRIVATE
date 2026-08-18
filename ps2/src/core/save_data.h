@@ -21,6 +21,8 @@
 #define SAVE_FLAG_HUD_SCORE_BOUNCE      (1u << 8)
 #define SAVE_FLAG_PIN_MODIFIER_MULT     (1u << 9)
 #define SAVE_FLAG_COMBO_REVERSE_NUMBERS (1u << 10)
+#define SAVE_FLAG_HUD_SCORE_VISIBLE     (1u << 11)
+#define SAVE_FLAG_HUD_DUSTIN_EFFECTS    (1u << 12)
 
 typedef struct FunkinSaveData {
     char magic[4];
@@ -39,6 +41,19 @@ typedef struct FunkinSaveData {
     u8 combo_swoosh_threshold;
     u8 hud_layout;
 
+    /* My Fully Customizable HUD 1.5.4 options, normalized to compact PS2 enums. */
+    u8 hud_health_bar_opacity; /* 0..100 */
+    u8 hud_icons_opacity;      /* 0..100 */
+    u8 hud_icons_position;     /* 0 default, 1 corners, 2 classic */
+    u8 hud_fc_opacity;         /* 0..100 */
+    u8 hud_fc_size_tenths;     /* 5..30 => 0.5x..3.0x */
+    u8 hud_fc_style;           /* 0 FC, 1 FC Death */
+    u8 hud_icon_bounce_style;  /* 0 reworked, 1 classic */
+    u8 hud_score_position;     /* hud, classic, top-left, bottom-left, bottom-right */
+    u8 hud_score_size;         /* 10..72 */
+    u8 hud_combo_style;        /* 0 Dustin, 1 World */
+    u8 reserved_hud[2];
+
     u16 pin_counts[FNF_SAVE_PIN_SLOTS];
     u16 opened_box_counts[FNF_SAVE_BOX_SLOTS];
     u32 previous_song_hashes[FNF_SAVE_PREVIOUS_SONGS];
@@ -52,7 +67,7 @@ typedef struct FunkinSaveData {
     u64 ophelia_anger_timestamp;
 
     s16 gammod_values[FNF_SAVE_GAMMOD_SLOTS];
-    u8 reserved[192];
+    u8 reserved[180];
 } FunkinSaveData;
 
 void SaveData_Defaults(FunkinSaveData *data);
