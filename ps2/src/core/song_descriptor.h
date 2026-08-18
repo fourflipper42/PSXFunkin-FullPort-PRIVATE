@@ -30,6 +30,7 @@ typedef struct SongAssetPaths {
     char inst[256];
     char voices[256];
     char stage_base[256];
+    char note_style_base[256];
     char player_base[256];
     char girlfriend_base[256];
     char opponent_base[256];
