@@ -9,8 +9,27 @@ void SessionRuntime_AfterGameplayFrameScaled(
     fixed_t elapsed)
 {
     if (CutsceneController_Active()) {
-        timer_presentation_dt = 0;
+        /* Native cutscene characters/stage props still need real-time animation
+         * even though chart/audio gameplay is gated. Video frames remain driven
+         * independently by their PCM clock. */
+        timer_presentation_dt = elapsed;
         CutsceneController_Tick();
+
+        if (session != NULL) {
+            if (CutsceneController_Active()) {
+                float x = CutsceneController_CameraX();
+                float y = CutsceneController_CameraY();
+                session->camera_movement.offset_x = x;
+                session->camera_movement.offset_y = y;
+                session->camera_movement.target_x = x;
+                session->camera_movement.target_y = y;
+            } else {
+                /* Let the normal movement smoother return from the final
+                 * cutscene camera position instead of snapping on countdown. */
+                session->camera_movement.target_x = 0.0f;
+                session->camera_movement.target_y = 0.0f;
+            }
+        }
         return;
     }
 
