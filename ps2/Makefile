@@ -37,6 +37,7 @@ EE_OBJS = \
 	build/core_presentation_events.o \
 	build/core_pointless_pins.o \
 	build/core_session_runtime.o \
+	build/core_session_runtime_frame.o \
 	build/core_freeplay_browser.o \
 	build/core_frontend.o \
 	build/core_texture_asset.o \
@@ -173,6 +174,9 @@ build/core_pointless_pins.o: src/core/pointless_pins.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_session_runtime.o: src/core/session_runtime.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DSESSION_RUNTIME_IMPLEMENTATION -c $< -o $@
+
+build/core_session_runtime_frame.o: src/core/session_runtime_frame.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_freeplay_browser.o: src/core/freeplay_browser.c | build
@@ -203,7 +207,7 @@ build/core_character.o: src/core/character.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_stage.o: src/core/stage.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -Dtimer_dt=timer_presentation_dt -c $< -o $@
 
 build/audsrv_irx.c: | build
 	$(PS2SDK)/bin/bin2c $(PS2SDK)/iop/irx/audsrv.irx $@ audsrv_irx
