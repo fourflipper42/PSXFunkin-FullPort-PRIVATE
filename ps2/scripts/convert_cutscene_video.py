@@ -22,6 +22,8 @@ from PIL import Image
 MAGIC = b"FCUT"
 VERSION = 1
 HEADER = struct.Struct("<4sHHHHHHIHHHH")
+AUDIO_RATE = 48000
+AUDIO_FRAME_BYTES = 4
 
 
 def load_texture_converter():
@@ -56,15 +58,29 @@ def extract_frames(video: Path, frame_dir: Path, width: int, height: int, fps: i
     return frames
 
 
-def extract_audio(video: Path, output: Path) -> None:
+def write_silence(output: Path, frame_count: int, fps: int) -> None:
+    audio_frames = math.ceil((frame_count / float(fps)) * AUDIO_RATE)
+    remaining = audio_frames * AUDIO_FRAME_BYTES
+    zeroes = b"\0" * 65536
+    with output.open("wb") as handle:
+        while remaining > 0:
+            chunk = min(remaining, len(zeroes))
+            handle.write(zeroes[:chunk])
+            remaining -= chunk
+
+
+def extract_audio(video: Path, output: Path, frame_count: int, fps: int) -> bool:
     output.parent.mkdir(parents=True, exist_ok=True)
-    run([
+    result = subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(video), "-vn", "-ar", "48000", "-ac", "2",
+        "-i", str(video), "-map", "0:a:0?", "-vn", "-ar", str(AUDIO_RATE), "-ac", "2",
         "-f", "s16le", str(output),
-    ])
-    if not output.exists() or output.stat().st_size == 0:
-        raise RuntimeError(f"ffmpeg produced no cutscene audio for {video}")
+    ], check=False)
+    if result.returncode == 0 and output.exists() and output.stat().st_size != 0:
+        return True
+    output.unlink(missing_ok=True)
+    write_silence(output, frame_count, fps)
+    return False
 
 
 def build_pages(
@@ -126,7 +142,7 @@ def convert(
     with tempfile.TemporaryDirectory(prefix="fnf-ps2-cutscene-") as temp_name:
         frame_dir = Path(temp_name) / "frames"
         frames = extract_frames(video, frame_dir, width, height, fps)
-        extract_audio(video, output / "AUDIO.PCM")
+        had_audio = extract_audio(video, output / "AUDIO.PCM", len(frames), fps)
         page_count = build_pages(frames, output, width, height, columns, rows)
 
     header = HEADER.pack(
@@ -153,6 +169,7 @@ def convert(
         "columns": columns,
         "rows": rows,
         "pages": page_count,
+        "hadAudio": had_audio,
         "audioBytes": (output / "AUDIO.PCM").stat().st_size,
     }
     print(result)
