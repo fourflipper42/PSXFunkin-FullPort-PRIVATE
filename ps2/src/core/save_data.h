@@ -36,7 +36,9 @@ typedef struct FunkinSaveData {
     s32 funkbucks;
     u32 funkbucks_lifetime;
 
-    u8 health_drain_level;
+    /* Byte retained strictly for save-layout compatibility with early PS2
+     * test builds. Health drain now belongs exclusively to Gammod. */
+    u8 reserved_legacy_health_drain;
     u8 camera_movement_intensity;
     u8 combo_swoosh_threshold;
     u8 hud_layout;
