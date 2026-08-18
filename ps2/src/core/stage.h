@@ -56,6 +56,7 @@ typedef struct StagePropRuntime {
     u16 current_frame;
     fixed_t frame_timer;
     boolean finished;
+    boolean dance_right;
     boolean loaded;
 } StagePropRuntime;
 
@@ -89,8 +90,12 @@ boolean Stage_Load(GSGLOBAL *gs, Stage *stage, const char *base_path);
 void Stage_Forget(Stage *stage);
 void Stage_Tick(Stage *stage);
 void Stage_Beat(Stage *stage, s32 beat);
-void Stage_DrawBefore(GSGLOBAL *gs, const Stage *stage, const StageCamera *camera, s32 z_limit);
-void Stage_DrawAfter(GSGLOBAL *gs, const Stage *stage, const StageCamera *camera, s32 z_limit);
+void Stage_DrawRange(
+    GSGLOBAL *gs,
+    const Stage *stage,
+    const StageCamera *camera,
+    s32 z_min,
+    s32 z_max);
 const StageCharacterSlot *Stage_PlayerSlot(const Stage *stage);
 const StageCharacterSlot *Stage_OpponentSlot(const Stage *stage);
 const StageCharacterSlot *Stage_GirlfriendSlot(const Stage *stage);
