@@ -28,6 +28,11 @@ typedef struct RhythmState {
     s16 health;
     u16 combo;
     s32 score;
+
+    /* Head-note judgement totals. Sustains do not increment these, matching
+     * Funkin's rating/accuracy semantics and Pointless Pins' All Sicks check. */
+    u32 judged_notes;
+    u32 rating_counts[4];
 } RhythmState;
 
 typedef struct RhythmHitResult {
