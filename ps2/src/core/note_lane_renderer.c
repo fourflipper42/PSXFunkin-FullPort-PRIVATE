@@ -1,0 +1,190 @@
+#include "note_lane_renderer.h"
+
+#include <string.h>
+
+#define RECEPTOR_Y 70.0f
+#define OPPONENT_X 64.0f
+#define PLAYER_X   408.0f
+#define LANE_GAP   56.0f
+#define CONFIRM_FRAMES 7
+
+static u8 confirm_frames[2][4];
+static u32 animation_tick;
+
+static float lane_center(boolean opponent, u8 lane)
+{
+    return (opponent ? OPPONENT_X : PLAYER_X) + (float)(lane & 3) * LANE_GAP;
+}
+
+static boolean lane_held(const Pad *pad, u8 lane)
+{
+    static const u16 masks[4] = {
+        INPUT_LEFT, INPUT_DOWN, INPUT_UP, INPUT_RIGHT
+    };
+    return pad != NULL && (pad->held & masks[lane & 3]) != 0;
+}
+
+static ReceptorVisualState receptor_state(
+    boolean opponent,
+    u8 lane,
+    const Pad *pad)
+{
+    u8 side = opponent ? 0 : 1;
+
+    if (confirm_frames[side][lane] != 0) {
+        if (!opponent && lane_held(pad, lane))
+            return RECEPTOR_CONFIRM_HOLD;
+        return RECEPTOR_CONFIRM;
+    }
+    if (!opponent && lane_held(pad, lane))
+        return RECEPTOR_PRESS;
+    return RECEPTOR_STATIC;
+}
+
+void NoteLaneRenderer_Reset(void)
+{
+    memset(confirm_frames, 0, sizeof(confirm_frames));
+    animation_tick = 0;
+}
+
+void NoteLaneRenderer_Tick(const GameplayState *game, const Pad *pad)
+{
+    int side;
+    int lane;
+    u8 player_hits;
+    u8 opponent_hits;
+
+    (void)pad;
+    ++animation_tick;
+
+    for (side = 0; side < 2; ++side) {
+        for (lane = 0; lane < 4; ++lane) {
+            if (confirm_frames[side][lane] != 0)
+                --confirm_frames[side][lane];
+        }
+    }
+
+    if (game == NULL)
+        return;
+    player_hits = game->events.player_hit_mask;
+    opponent_hits = game->events.opponent_hit_mask;
+    for (lane = 0; lane < 4; ++lane) {
+        if (opponent_hits & (1u << lane))
+            confirm_frames[0][lane] = CONFIRM_FRAMES;
+        if (player_hits & (1u << lane))
+            confirm_frames[1][lane] = CONFIRM_FRAMES;
+    }
+}
+
+static float note_y(const GameplayState *game, const Note *note)
+{
+    fixed_t delta = Gameplay_NoteDelta(game, note);
+    fixed_t pixel_delta = FIXED_MUL(game->rhythm.note_speed, delta);
+    return RECEPTOR_Y + (float)pixel_delta / (float)FIXED_UNIT;
+}
+
+static float sustain_step_height(const GameplayState *game)
+{
+    fixed_t quarter_step = (fixed_t)12 << FIXED_SHIFT;
+    fixed_t pixels = FIXED_MUL(game->rhythm.note_speed, quarter_step);
+    float value = (float)pixels / (float)FIXED_UNIT;
+    if (value < 4.0f)
+        value = 4.0f;
+    return value;
+}
+
+void NoteLaneRenderer_Draw(
+    GSGLOBAL *gs,
+    const NoteStyle *style,
+    const GameplayState *game,
+    const Pad *pad)
+{
+    const u64 white = GS_SETREG_RGBAQ(0x80, 0x80, 0x80, 0x80, 0x00);
+    const u64 mine_tint = GS_SETREG_RGBAQ(0x28, 0x28, 0x28, 0x80, 0x00);
+    const ChartView *chart;
+    float step_height;
+    size_t i;
+    int lane;
+
+    if (gs == NULL || style == NULL || !style->loaded ||
+        game == NULL || !game->loaded)
+        return;
+
+    chart = &game->chart.view;
+    step_height = sustain_step_height(game);
+
+    /* Trails first so heads and receptors stay cleanly on top. Each generated
+     * sustain piece represents one quarter-step interval in the CHT stream. */
+    for (i = game->first_note; i < chart->note_count; ++i) {
+        const Note *note = &chart->notes[i];
+        boolean opponent;
+        float y;
+        float x;
+
+        if ((note->type & NOTE_FLAG_HIT) || !(note->type & NOTE_FLAG_SUSTAIN))
+            continue;
+        y = note_y(game, note);
+        if (y < -64.0f)
+            continue;
+        if (y > 424.0f)
+            break;
+
+        opponent = (note->type & NOTE_FLAG_OPPONENT) != 0;
+        lane = note->type & 3;
+        x = lane_center(opponent, (u8)lane);
+
+        NoteStyle_DrawHoldPiece(
+            gs, style, (u8)lane,
+            x, y - step_height,
+            step_height + 1.0f,
+            false, 3, white);
+
+        if (note->type & NOTE_FLAG_SUSTAIN_END) {
+            NoteStyle_DrawHoldPiece(
+                gs, style, (u8)lane,
+                x, y - step_height * 0.10f,
+                step_height * 0.90f,
+                true, 4, white);
+        }
+    }
+
+    /* Tap heads use the actual note-style Sparrow animation frame. Mines keep
+     * the same silhouette temporarily but get a dark tint until special-note
+     * assets are softcoded alongside the normal style. */
+    for (i = game->first_note; i < chart->note_count; ++i) {
+        const Note *note = &chart->notes[i];
+        boolean opponent;
+        float y;
+        float x;
+        u64 color;
+
+        if ((note->type & NOTE_FLAG_HIT) || (note->type & NOTE_FLAG_SUSTAIN))
+            continue;
+        y = note_y(game, note);
+        if (y < -64.0f)
+            continue;
+        if (y > 424.0f)
+            break;
+
+        opponent = (note->type & NOTE_FLAG_OPPONENT) != 0;
+        lane = note->type & 3;
+        x = lane_center(opponent, (u8)lane);
+        color = (note->type & NOTE_FLAG_MINE) ? mine_tint : white;
+        NoteStyle_DrawTap(gs, style, (u8)lane, x, y, 5, color);
+    }
+
+    for (lane = 0; lane < 4; ++lane) {
+        NoteStyle_DrawReceptor(
+            gs, style, (u8)lane,
+            receptor_state(true, (u8)lane, pad),
+            animation_tick,
+            lane_center(true, (u8)lane), RECEPTOR_Y,
+            7, white);
+        NoteStyle_DrawReceptor(
+            gs, style, (u8)lane,
+            receptor_state(false, (u8)lane, pad),
+            animation_tick,
+            lane_center(false, (u8)lane), RECEPTOR_Y,
+            7, white);
+    }
+}
