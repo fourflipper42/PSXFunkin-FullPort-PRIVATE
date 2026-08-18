@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define GAMEPLAY_HEALTH_MAX 20000
+
 static const u16 lane_buttons[4] = {
     INPUT_LEFT, INPUT_DOWN, INPUT_UP, INPUT_RIGHT
 };
@@ -141,8 +143,6 @@ static void Gameplay_LateMiss(GameplayState *state, Note *note)
     SongStream_SetVoices(&state->song, false);
 
     if (note->type & NOTE_FLAG_SUSTAIN) {
-        /* Kade-style sustain pieces only cut vocals; vanilla also keeps the
-         * miss light. The sustain head/end owns the large miss penalty. */
         if (!state->rhythm.kade)
             state->rhythm.health -= 100;
         state->events.player_missed = true;
@@ -200,6 +200,24 @@ static void Gameplay_ProcessAutomaticNotes(GameplayState *state)
     }
 }
 
+static boolean Gameplay_CheckHealth(GameplayState *state)
+{
+    if (state->rhythm.health > GAMEPLAY_HEALTH_MAX)
+        state->rhythm.health = GAMEPLAY_HEALTH_MAX;
+
+    if (state->rhythm.health > 0 || state->dead)
+        return state->dead;
+
+    state->rhythm.health = 0;
+    state->dead = true;
+    state->paused = true;
+    state->events.player_died = true;
+
+    if (state->audio_started && !SongStream_Paused(&state->song))
+        SongStream_Pause(&state->song);
+    return true;
+}
+
 ChartResult Gameplay_Load(
     GameplayState *state,
     const char *chart_path,
@@ -247,10 +265,13 @@ ChartResult Gameplay_Load(
     }
     Rhythm_ChangeBPM(&state->rhythm, first_bpm, 0);
 
-    state->note_scroll = -(192 << FIXED_SHIFT); /* four-beat-countdown pre-roll */
+    state->note_scroll = -(192 << FIXED_SHIFT);
     state->song_time = FIXED_DIV(state->note_scroll, state->rhythm.step_crochet);
     state->song_step = scroll_to_song_step(state->note_scroll);
     state->loaded = true;
+    state->paused = false;
+    state->dead = false;
+    state->finished = false;
     Gameplay_ResetEvents(state);
     return CHART_OK;
 }
@@ -265,13 +286,49 @@ void Gameplay_Free(GameplayState *state)
     memset(state, 0, sizeof(*state));
 }
 
+boolean Gameplay_SetPaused(GameplayState *state, boolean paused)
+{
+    if (state == NULL || !state->loaded || state->dead || state->finished)
+        return false;
+    if (state->paused == paused)
+        return true;
+
+    if (paused) {
+        if (state->audio_started && !SongStream_Pause(&state->song))
+            return false;
+        state->paused = true;
+        return true;
+    }
+
+    if (state->audio_started && !SongStream_Resume(&state->song))
+        return false;
+    state->paused = false;
+    return true;
+}
+
+boolean Gameplay_IsPaused(const GameplayState *state)
+{
+    return state != NULL && state->paused;
+}
+
+boolean Gameplay_IsDead(const GameplayState *state)
+{
+    return state != NULL && state->dead;
+}
+
+boolean Gameplay_IsFinished(const GameplayState *state)
+{
+    return state != NULL && state->finished;
+}
+
 void Gameplay_PressLane(GameplayState *state, u8 lane)
 {
     ChartView *chart;
     size_t i;
     boolean hit = false;
 
-    if (state == NULL || !state->loaded || lane > 3)
+    if (state == NULL || !state->loaded || state->paused || state->dead ||
+        state->finished || lane > 3)
         return;
 
     chart = &state->chart.view;
@@ -331,7 +388,8 @@ void Gameplay_HoldLane(GameplayState *state, u8 lane)
     ChartView *chart;
     size_t i;
 
-    if (state == NULL || !state->loaded || lane > 3)
+    if (state == NULL || !state->loaded || state->paused || state->dead ||
+        state->finished || lane > 3)
         return;
 
     chart = &state->chart.view;
@@ -361,7 +419,7 @@ void Gameplay_Tick(GameplayState *state, const Pad *pad)
     fixed_t old_scroll;
     int lane;
 
-    if (state == NULL || !state->loaded || state->finished)
+    if (state == NULL || !state->loaded || state->paused || state->dead || state->finished)
         return;
 
     Gameplay_ResetEvents(state);
@@ -409,8 +467,13 @@ void Gameplay_Tick(GameplayState *state, const Pad *pad)
     }
 
     Gameplay_ProcessAutomaticNotes(state);
-    if (state->audio_started && SongStream_Finished(&state->song))
+    if (Gameplay_CheckHealth(state))
+        return;
+
+    if (state->audio_started && SongStream_Finished(&state->song)) {
         state->finished = true;
+        state->events.song_finished = true;
+    }
 }
 
 fixed_t Gameplay_NoteDelta(const GameplayState *state, const Note *note)
