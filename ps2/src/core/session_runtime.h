@@ -5,7 +5,6 @@
 #include "combo_system.h"
 #include "endless_mode.h"
 #include "gammod.h"
-#include "health_drain.h"
 #include "hud.h"
 #include "note_kind_runtime.h"
 #include "pointless_pins.h"
@@ -37,7 +36,6 @@ typedef struct SessionRuntime {
 
     GammodConfig gammod_config;
     GammodRuntime gammod;
-    HealthDrain health_drain;
     EndlessMode endless;
     ComboSystem combo;
     CameraMovement camera_movement;
