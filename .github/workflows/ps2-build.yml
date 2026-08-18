@@ -6,6 +6,11 @@ on:
     paths:
       - 'ps2/**'
       - '.github/workflows/ps2-build.yml'
+  pull_request:
+    branches: [ full-port-completion ]
+    paths:
+      - 'ps2/**'
+      - '.github/workflows/ps2-build.yml'
   workflow_dispatch:
 
 permissions:
