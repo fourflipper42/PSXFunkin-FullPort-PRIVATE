@@ -2,17 +2,29 @@
 
 #include "asset_file.h"
 #include "mem.h"
+#include <stdio.h>
 #include <string.h>
 
-typedef struct AtlasHeader {
+typedef struct AtlasHeaderV1 {
     char magic[4];
     u16 version;
     u16 frame_count;
     u32 string_bytes;
     u32 record_size;
-} __attribute__((packed)) AtlasHeader;
+} __attribute__((packed)) AtlasHeaderV1;
 
-#define ATLAS_VERSION 1
+typedef struct AtlasHeaderV2 {
+    char magic[4];
+    u16 version;
+    u16 frame_count;
+    u32 string_bytes;
+    u32 record_size;
+    u16 page_count;
+    u16 reserved;
+} __attribute__((packed)) AtlasHeaderV2;
+
+#define ATLAS_VERSION_V1 1
+#define ATLAS_VERSION_V2 2
 
 static boolean starts_with(const char *text, const char *prefix)
 {
@@ -23,6 +35,41 @@ static boolean starts_with(const char *text, const char *prefix)
     return strncmp(text, prefix, n) == 0;
 }
 
+static boolean atlas_page_path(
+    char *out,
+    size_t out_size,
+    const char *page0_path,
+    u16 page_index)
+{
+    const char *ext;
+    size_t prefix_len;
+    int written;
+
+    if (out == NULL || out_size == 0 || page0_path == NULL)
+        return false;
+    if (page_index == 0) {
+        written = snprintf(out, out_size, "%s", page0_path);
+        return written >= 0 && (size_t)written < out_size;
+    }
+
+    ext = strstr(page0_path, ".FPTX");
+    if (ext == NULL)
+        ext = strstr(page0_path, ".fptx");
+    if (ext == NULL)
+        return false;
+
+    prefix_len = (size_t)(ext - page0_path);
+    written = snprintf(
+        out,
+        out_size,
+        "%.*s_P%03u%s",
+        (int)prefix_len,
+        page0_path,
+        (unsigned)page_index,
+        ext);
+    return written >= 0 && (size_t)written < out_size;
+}
+
 boolean SpriteAtlas_Load(
     GSGLOBAL *gs,
     SpriteAtlas *atlas,
@@ -31,9 +78,15 @@ boolean SpriteAtlas_Load(
     boolean linear_filter)
 {
     AssetFile file;
-    AtlasHeader *header;
+    AtlasHeaderV1 *base_header;
+    size_t header_size;
     size_t minimum;
     size_t got;
+    u16 frame_count;
+    u16 page_count;
+    u32 string_bytes;
+    u32 record_size;
+    u16 i;
 
     if (gs == NULL || atlas == NULL || texture_path == NULL || frames_path == NULL)
         return false;
@@ -41,13 +94,13 @@ boolean SpriteAtlas_Load(
     memset(atlas, 0, sizeof(*atlas));
     memset(&file, 0, sizeof(file));
 
-    if (!TextureAsset_Load(gs, &atlas->texture, texture_path, linear_filter))
-        return false;
-
+    /* Read frame metadata first. Version 2 tells us how many texture pages the
+     * converter emitted, so giant desktop Sparrow sheets never need to exist
+     * as one impossible GS texture. */
     if (!AssetFile_Open(&file, frames_path))
         goto fail;
     atlas->frame_blob_size = AssetFile_Size(&file);
-    if (atlas->frame_blob_size < sizeof(AtlasHeader))
+    if (atlas->frame_blob_size < sizeof(AtlasHeaderV1))
         goto fail;
 
     atlas->frame_blob = Mem_Alloc(atlas->frame_blob_size);
@@ -58,54 +111,116 @@ boolean SpriteAtlas_Load(
     if (got != atlas->frame_blob_size)
         goto fail;
 
-    header = (AtlasHeader *)atlas->frame_blob;
-    if (memcmp(header->magic, "FATL", 4) != 0 ||
-        header->version != ATLAS_VERSION ||
-        header->frame_count == 0 ||
-        header->record_size != sizeof(AtlasFrame))
+    base_header = (AtlasHeaderV1 *)atlas->frame_blob;
+    if (memcmp(base_header->magic, "FATL", 4) != 0)
         goto fail;
 
-    minimum = sizeof(AtlasHeader) +
-        ((size_t)header->frame_count * sizeof(AtlasFrame)) +
-        header->string_bytes;
+    if (base_header->version == ATLAS_VERSION_V1) {
+        header_size = sizeof(AtlasHeaderV1);
+        frame_count = base_header->frame_count;
+        string_bytes = base_header->string_bytes;
+        record_size = base_header->record_size;
+        page_count = 1;
+    } else if (base_header->version == ATLAS_VERSION_V2) {
+        AtlasHeaderV2 *header;
+        if (atlas->frame_blob_size < sizeof(AtlasHeaderV2))
+            goto fail;
+        header = (AtlasHeaderV2 *)atlas->frame_blob;
+        header_size = sizeof(AtlasHeaderV2);
+        frame_count = header->frame_count;
+        string_bytes = header->string_bytes;
+        record_size = header->record_size;
+        page_count = header->page_count;
+    } else {
+        goto fail;
+    }
+
+    if (frame_count == 0 || page_count == 0 || record_size != sizeof(AtlasFrame))
+        goto fail;
+
+    minimum = header_size +
+        ((size_t)frame_count * sizeof(AtlasFrame)) +
+        string_bytes;
     if (minimum > atlas->frame_blob_size)
         goto fail;
 
-    atlas->frames = (AtlasFrame *)((u8 *)atlas->frame_blob + sizeof(AtlasHeader));
-    atlas->strings = (char *)(atlas->frames + header->frame_count);
-    atlas->frame_count = header->frame_count;
+    atlas->frames = (AtlasFrame *)((u8 *)atlas->frame_blob + header_size);
+    atlas->strings = (char *)(atlas->frames + frame_count);
+    atlas->string_bytes = string_bytes;
+    atlas->frame_count = frame_count;
+    atlas->texture_count = page_count;
+
+    for (i = 0; i < frame_count; ++i) {
+        if (base_header->version == ATLAS_VERSION_V1)
+            atlas->frames[i].page_index = 0;
+        if (atlas->frames[i].page_index >= page_count)
+            goto fail;
+        if (atlas->frames[i].name_offset >= string_bytes)
+            goto fail;
+    }
+
+    atlas->textures = (TextureAsset *)Mem_Alloc(sizeof(TextureAsset) * page_count);
+    if (atlas->textures == NULL)
+        goto fail;
+    memset(atlas->textures, 0, sizeof(TextureAsset) * page_count);
+
+    for (i = 0; i < page_count; ++i) {
+        char page_path[320];
+        if (!atlas_page_path(page_path, sizeof(page_path), texture_path, i))
+            goto fail;
+        if (!TextureAsset_Load(gs, &atlas->textures[i], page_path, linear_filter)) {
+            printf("[PS2] atlas page %u failed: %s\n", (unsigned)i, page_path);
+            goto fail;
+        }
+    }
+
     atlas->loaded = true;
     return true;
 
 fail:
     AssetFile_Close(&file);
+    if (atlas->textures != NULL) {
+        for (i = 0; i < atlas->texture_count; ++i)
+            TextureAsset_Forget(&atlas->textures[i]);
+        Mem_Free(atlas->textures);
+    }
     if (atlas->frame_blob != NULL)
         Mem_Free(atlas->frame_blob);
-    atlas->frame_blob = NULL;
-    TextureAsset_Forget(&atlas->texture);
     memset(atlas, 0, sizeof(*atlas));
     return false;
 }
 
 void SpriteAtlas_Forget(SpriteAtlas *atlas)
 {
+    u16 i;
     if (atlas == NULL)
         return;
+    if (atlas->textures != NULL) {
+        for (i = 0; i < atlas->texture_count; ++i)
+            TextureAsset_Forget(&atlas->textures[i]);
+        Mem_Free(atlas->textures);
+    }
     if (atlas->frame_blob != NULL)
         Mem_Free(atlas->frame_blob);
-    TextureAsset_Forget(&atlas->texture);
     memset(atlas, 0, sizeof(*atlas));
 }
 
 const char *SpriteAtlas_FrameName(const SpriteAtlas *atlas, u16 frame_index)
 {
     u32 offset;
+    const char *value;
+    size_t remaining;
+
     if (atlas == NULL || !atlas->loaded || frame_index >= atlas->frame_count)
         return NULL;
     offset = atlas->frames[frame_index].name_offset;
-    if (offset >= atlas->frame_blob_size)
+    if (offset >= atlas->string_bytes)
         return NULL;
-    return atlas->strings + offset;
+    value = atlas->strings + offset;
+    remaining = atlas->string_bytes - offset;
+    if (memchr(value, '\0', remaining) == NULL)
+        return NULL;
+    return value;
 }
 
 s32 SpriteAtlas_FindExact(const SpriteAtlas *atlas, const char *name)
@@ -166,6 +281,7 @@ void SpriteAtlas_DrawFrameEx(
     u64 color)
 {
     const AtlasFrame *frame;
+    const TextureAsset *texture;
     float trim_x;
     float trim_y;
     float dx;
@@ -181,8 +297,11 @@ void SpriteAtlas_DrawFrameEx(
         return;
 
     frame = &atlas->frames[frame_index];
+    if (frame->page_index >= atlas->texture_count)
+        return;
     if (frame->flags & 1u)
         return; /* Rotated Sparrow frames are not used by base FNF sheets. */
+    texture = &atlas->textures[frame->page_index];
 
     trim_x = -(float)frame->frame_x;
     trim_y = -(float)frame->frame_y;
@@ -213,7 +332,7 @@ void SpriteAtlas_DrawFrameEx(
 
     TextureAsset_Draw(
         gs,
-        &atlas->texture,
+        texture,
         dx,
         dy,
         dx + dw,
