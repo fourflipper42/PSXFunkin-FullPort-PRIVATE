@@ -49,6 +49,7 @@ EE_OBJS = \
 	build/core_sprite_atlas.o \
 	build/core_note_style.o \
 	build/core_note_lane_renderer.o \
+	build/core_note_lane_cutscene.o \
 	build/core_health_icon.o \
 	build/core_hud.o \
 	build/core_hud_cutscene.o \
@@ -218,6 +219,9 @@ build/core_note_style.o: src/core/note_style.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_note_lane_renderer.o: src/core/note_lane_renderer.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DNoteLaneRenderer_Tick=NoteLaneRenderer_TickCore -DNoteLaneRenderer_Draw=NoteLaneRenderer_DrawCore -c $< -o $@
+
+build/core_note_lane_cutscene.o: src/core/note_lane_cutscene.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_health_icon.o: src/core/health_icon.c | build
