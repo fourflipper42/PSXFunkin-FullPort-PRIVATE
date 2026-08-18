@@ -18,6 +18,7 @@ EE_OBJS = \
 	build/core_story_session.o \
 	build/core_progression.o \
 	build/core_save_data.o \
+	build/core_ps2_glyph.o \
 	build/core_song_descriptor.o \
 	build/core_song_events.o \
 	build/core_song_stream.o \
@@ -101,6 +102,9 @@ build/core_progression.o: src/core/progression.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_save_data.o: src/core/save_data.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_ps2_glyph.o: src/core/ps2_glyph.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_song_descriptor.o: src/core/song_descriptor.c | build
