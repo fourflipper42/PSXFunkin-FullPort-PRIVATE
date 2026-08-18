@@ -14,6 +14,7 @@
 #include "song_descriptor.h"
 #include "story_catalog.h"
 #include "story_session.h"
+#include "timer.h"
 
 typedef enum SessionCompletionAction {
     SESSION_COMPLETE_RETURN = 0,
@@ -86,6 +87,14 @@ void SessionRuntime_AfterGameplayFrame(
     SessionRuntime *session,
     GameplayState *game,
     fixed_t elapsed);
+void SessionRuntime_AfterGameplayFrameScaled(
+    SessionRuntime *session,
+    GameplayState *game,
+    fixed_t elapsed);
+#ifndef SESSION_RUNTIME_IMPLEMENTATION
+#define SessionRuntime_AfterGameplayFrame(session, game, elapsed) \
+    SessionRuntime_AfterGameplayFrameScaled((session), (game), (elapsed))
+#endif
 void SessionRuntime_PlayHitAnimations(
     SessionRuntime *session,
     Character *player,
