@@ -71,7 +71,22 @@ def focus_at_beat(beat:float, events:list[tuple[float,int]])->int:
         focus=event_focus
     return focus
 
-def convert(chart:dict[str,Any],metadata:dict[str,Any],difficulty:str,section_count:int|None=None)->bytes:
+def note_kind_key(item:dict[str,Any])->tuple[str,str]|None:
+    kind=str(item.get('k') or '').strip()
+    if not kind: return None
+    params=item.get('p')
+    if params is None: params=item.get('params')
+    if params is None: params=[]
+    encoded=json.dumps(params,separators=(',',':'),sort_keys=True,ensure_ascii=False)
+    return kind,encoded
+
+def convert(
+    chart:dict[str,Any],
+    metadata:dict[str,Any],
+    difficulty:str,
+    section_count:int|None=None,
+    note_kind_ids:dict[tuple[str,str],int]|None=None,
+)->bytes:
     changes=read_time_changes(metadata)
     source_notes=chart['notes'][difficulty]
     notes=[]; max_beat=0.0
@@ -83,17 +98,24 @@ def convert(chart:dict[str,Any],metadata:dict[str,Any],difficulty:str,section_co
         kind=str(item.get('k','')).lower()
         if 'mine' in kind: note_type |= NOTE_FLAG_MINE
         if item.get('alt') is True or 'alt' in kind: note_type |= NOTE_FLAG_ALT_ANIM
+        kind_index=0
+        if note_kind_ids is not None:
+            key=note_kind_key(item)
+            if key is not None:
+                kind_index=int(note_kind_ids.get(key,0))
+                if not 0 <= kind_index <= 0xFF:
+                    raise ValueError(f'note kind index out of range: {kind_index}')
         sustain_ms=max(0.0,float(item.get('l',0)))
         sustain_steps=0
         if sustain_ms>0:
             start_beat=time_to_beat(time_ms,changes); end_beat=time_to_beat(time_ms+sustain_ms,changes)
             sustain_steps=max(0,round_half_up((end_beat-start_beat)*4.0)-1)
             note_type |= NOTE_FLAG_SUSTAIN_END
-        notes.append((pos,note_type))
+        notes.append((pos,note_type,kind_index))
         for index in range(sustain_steps+(1 if sustain_ms>0 else 0)):
             sustain_type=note_type|NOTE_FLAG_SUSTAIN
             if index != sustain_steps: sustain_type &= ~NOTE_FLAG_SUSTAIN_END
-            notes.append((pos+(index+1)*UNITS_PER_STEP,sustain_type))
+            notes.append((pos+(index+1)*UNITS_PER_STEP,sustain_type,kind_index))
         max_beat=max(max_beat,time_to_beat(time_ms+sustain_ms,changes))
     notes.sort(key=lambda n:(n[0],1 if (n[1]&NOTE_FLAG_SUSTAIN) else 0))
     events=focus_events(chart,changes)
@@ -105,13 +127,13 @@ def convert(chart:dict[str,Any],metadata:dict[str,Any],difficulty:str,section_co
         bpm_flag=round_half_up(bpm_at_beat(start_beat,changes)*24.0)&SECTION_FLAG_BPM_MASK
         if focus_at_beat(start_beat,events)==1: bpm_flag|=SECTION_FLAG_OPPFOCUS
         sections.append((end_pos,bpm_flag))
-    sections.append((0xFFFF,sections[-1][1])); notes.append((0xFFFF,NOTE_FLAG_HIT))
+    sections.append((0xFFFF,sections[-1][1])); notes.append((0xFFFF,NOTE_FLAG_HIT,0))
     notes_offset=2+len(sections)*4
     out=bytearray(struct.pack('<H',notes_offset))
     for end_pos,flags in sections: out += struct.pack('<HH',end_pos,flags)
-    for pos,note_type in notes:
+    for pos,note_type,kind_index in notes:
         if not 0<=pos<=0xFFFF: raise ValueError(f'note position out of range: {pos}')
-        out += struct.pack('<HBB',pos,note_type,0)
+        out += struct.pack('<HBB',pos,note_type,kind_index)
     return bytes(out)
 
 def main():
