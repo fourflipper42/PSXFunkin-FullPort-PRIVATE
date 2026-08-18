@@ -46,10 +46,11 @@ void TextureAsset_InitStreaming(GSGLOBAL *gs)
         ? GS_VRAM_BYTES - gs->CurrentPointer
         : 0;
 
-    /* Direct transfers avoid consuming the one-shot render queue with large
-     * atlas uploads. The manager still caches and evicts textures by use. */
+    /* Keep uploads in the GS render queue. If two large sheets reuse the same
+     * cache block in one frame, queued upload -> draw ordering prevents the
+     * later sheet from replacing the earlier one before its primitive runs. */
     gsKit_TexManager_init(gs);
-    gsKit_TexManager_setmode(gs, ETM_DIRECT);
+    gsKit_TexManager_setmode(gs, ETM_INLINE);
 
     printf("[PS2] streamed texture VRAM: %u KiB available\n",
         (unsigned)(streaming_capacity / 1024u));
