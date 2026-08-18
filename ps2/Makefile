@@ -39,6 +39,7 @@ EE_OBJS = \
 	build/core_camera_movement.o \
 	build/core_presentation_events.o \
 	build/core_presentation_registry.o \
+	build/core_weekend1_runtime.o \
 	build/core_pointless_pins.o \
 	build/core_session_runtime.o \
 	build/core_session_runtime_frame.o \
@@ -189,6 +190,9 @@ build/core_presentation_events.o: src/core/presentation_events.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_presentation_registry.o: src/core/presentation_registry.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_weekend1_runtime.o: src/core/weekend1_runtime.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_pointless_pins.o: src/core/pointless_pins.c | build
