@@ -1,6 +1,13 @@
 name: FNF PS2 Full DVD Build
 
 on:
+  push:
+    branches:
+      - ps2-full-port
+    paths:
+      - 'ps2/**'
+      - '.github/workflows/ps2-full-build.yml'
+      - 'scripts/psxfunkin_chartc_v2.py'
   workflow_dispatch:
     inputs:
       modpack_bundle_url:
