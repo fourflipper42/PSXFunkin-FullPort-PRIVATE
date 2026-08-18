@@ -5,7 +5,8 @@ EE_OBJS = \
 	build/core_animation.o \
 	build/core_random.o \
 	build/core_mem.o \
-	build/core_object.o
+	build/core_object.o \
+	build/core_chart.o
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
 EE_LDFLAGS += -L$(GSKIT)/lib
@@ -38,6 +39,9 @@ build/core_mem.o: src/core/mem.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_object.o: src/core/object.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_chart.o: src/core/chart.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 clean:
