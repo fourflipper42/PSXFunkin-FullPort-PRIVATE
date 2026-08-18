@@ -13,7 +13,7 @@ VERSION = 1
 NO_STRING = 0xFFFFFFFF
 
 HEADER = struct.Struct("<4sHHHHIIIIII")
-RARITY = struct.Struct("<IiHH")
+RARITY = struct.Struct("<IIHH")
 PIN = struct.Struct("<IIIIfHH")
 BOX = struct.Struct("<IIIHHHHI")
 CHANCE = struct.Struct("<HH")
