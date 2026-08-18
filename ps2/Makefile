@@ -14,6 +14,10 @@ EE_OBJS = \
 	build/core_disc.o \
 	build/core_asset_file.o \
 	build/core_song_catalog.o \
+	build/core_story_catalog.o \
+	build/core_story_session.o \
+	build/core_progression.o \
+	build/core_save_data.o \
 	build/core_song_descriptor.o \
 	build/core_song_events.o \
 	build/core_song_stream.o \
@@ -32,7 +36,7 @@ EE_OBJS = \
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
 EE_LDFLAGS += -L$(GSKIT)/lib
-EE_LIBS = -lgskit -ldmakit -lpad -laudsrv -lpatches -lcdvd -ldebug -lm -lc
+EE_LIBS = -lgskit -ldmakit -lpad -lmc -laudsrv -lpatches -lcdvd -ldebug -lm -lc
 
 EE_CFLAGS += -O2 -G0 -Wall -Wextra -Wno-unused-parameter -DFNF_PS2
 
@@ -85,6 +89,18 @@ build/core_asset_file.o: src/core/asset_file.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_song_catalog.o: src/core/song_catalog.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_story_catalog.o: src/core/story_catalog.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_story_session.o: src/core/story_session.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_progression.o: src/core/progression.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_save_data.o: src/core/save_data.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_song_descriptor.o: src/core/song_descriptor.c | build
