@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   build-ps2:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       PS2DEV: /home/runner/ps2dev
       PS2SDK: /home/runner/ps2dev/ps2sdk
