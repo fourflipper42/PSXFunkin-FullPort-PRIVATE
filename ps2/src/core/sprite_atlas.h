@@ -38,6 +38,18 @@ const char *SpriteAtlas_FrameName(const SpriteAtlas *atlas, u16 frame_index);
 s32 SpriteAtlas_FindExact(const SpriteAtlas *atlas, const char *name);
 u16 SpriteAtlas_CountPrefix(const SpriteAtlas *atlas, const char *prefix);
 s32 SpriteAtlas_FindPrefixNth(const SpriteAtlas *atlas, const char *prefix, u16 nth);
+void SpriteAtlas_DrawFrameEx(
+    GSGLOBAL *gs,
+    const SpriteAtlas *atlas,
+    u16 frame_index,
+    float x,
+    float y,
+    float scale_x,
+    float scale_y,
+    boolean flip_x,
+    boolean flip_y,
+    int z,
+    u64 color);
 void SpriteAtlas_DrawFrame(
     GSGLOBAL *gs,
     const SpriteAtlas *atlas,
