@@ -174,6 +174,9 @@ boolean SongDescriptor_BuildDiscPaths(const SongDescriptor *song, SongAssetPaths
     if (!format_path(paths->stage_base, sizeof(paths->stage_base),
         "\\GAME\\STAGE\\%s", song->stage, "", ""))
         return false;
+    if (!format_path(paths->note_style_base, sizeof(paths->note_style_base),
+        "\\GAME\\NOTESTYLE\\%s", song->note_style, "", ""))
+        return false;
     if (!format_path(paths->player_base, sizeof(paths->player_base),
         "\\GAME\\CHAR\\%s", song->player, "", ""))
         return false;
