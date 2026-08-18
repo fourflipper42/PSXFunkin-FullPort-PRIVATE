@@ -7,6 +7,7 @@ EE_OBJS = \
 	build/core_mem.o \
 	build/core_object.o \
 	build/core_chart.o \
+	build/core_chart_asset.o \
 	build/core_rhythm.o \
 	build/core_pad.o \
 	build/core_audio.o \
@@ -49,6 +50,9 @@ build/core_object.o: src/core/object.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_chart.o: src/core/chart.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_chart_asset.o: src/core/chart_asset.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_rhythm.o: src/core/rhythm.c | build
