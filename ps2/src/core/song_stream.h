@@ -2,11 +2,12 @@
 #define FNF_PS2_SONG_STREAM_H
 
 #include "audio.h"
-#include <stdio.h>
+#include "asset_file.h"
 
 typedef struct SongStream {
-    FILE *inst;
-    FILE *voices;
+    AssetFile inst;
+    AssetFile voices;
+    boolean has_voices;
     boolean voices_enabled;
     boolean active;
     boolean finished;
