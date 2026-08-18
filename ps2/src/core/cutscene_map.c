@@ -86,10 +86,11 @@ void CutsceneMap_Free(CutsceneMap *map)
     memset(map, 0, sizeof(*map));
 }
 
-boolean CutsceneMap_FindPreSong(
+static boolean find_phase(
     const CutsceneMap *map,
     const char *song_id,
     boolean story_mode,
+    u32 phase_flag,
     const char **cutscene_id)
 {
     u16 i;
@@ -101,7 +102,7 @@ boolean CutsceneMap_FindPreSong(
     for (i = 0; i < map->count; ++i) {
         const CutsceneMapEntry *entry = &map->entries[i];
         const char *mapped_song;
-        if (!(entry->flags & CUTSCENE_MAP_FLAG_PRESONG))
+        if (!(entry->flags & phase_flag))
             continue;
         if ((entry->flags & CUTSCENE_MAP_FLAG_STORY_ONLY) && !story_mode)
             continue;
@@ -113,4 +114,24 @@ boolean CutsceneMap_FindPreSong(
         }
     }
     return false;
+}
+
+boolean CutsceneMap_FindPreSong(
+    const CutsceneMap *map,
+    const char *song_id,
+    boolean story_mode,
+    const char **cutscene_id)
+{
+    return find_phase(
+        map, song_id, story_mode, CUTSCENE_MAP_FLAG_PRESONG, cutscene_id);
+}
+
+boolean CutsceneMap_FindPostSong(
+    const CutsceneMap *map,
+    const char *song_id,
+    boolean story_mode,
+    const char **cutscene_id)
+{
+    return find_phase(
+        map, song_id, story_mode, CUTSCENE_MAP_FLAG_POSTSONG, cutscene_id);
 }
