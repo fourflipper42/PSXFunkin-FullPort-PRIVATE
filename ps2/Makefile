@@ -36,6 +36,7 @@ EE_OBJS = \
 	build/core_presentation_events.o \
 	build/core_pointless_pins.o \
 	build/core_freeplay_browser.o \
+	build/core_frontend.o \
 	build/core_texture_asset.o \
 	build/core_sprite_atlas.o \
 	build/core_note_style.o \
@@ -167,6 +168,9 @@ build/core_pointless_pins.o: src/core/pointless_pins.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_freeplay_browser.o: src/core/freeplay_browser.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_frontend.o: src/core/frontend.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_texture_asset.o: src/core/texture_asset.c | build
