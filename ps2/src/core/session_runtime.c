@@ -44,6 +44,30 @@ static void configure_camera_movement(SessionRuntime *session)
         intensity);
 }
 
+static void reset_note_kind_attempt_state(NoteKindRuntime *runtime)
+{
+    int lane;
+    if (runtime == NULL)
+        return;
+    memset(runtime->player, 0, sizeof(runtime->player));
+    memset(runtime->opponent, 0, sizeof(runtime->opponent));
+    for (lane = 0; lane < 4; ++lane) {
+        runtime->last_player_pos[lane] = 0xFFFFu;
+        runtime->last_opponent_pos[lane] = 0xFFFFu;
+    }
+}
+
+static void reset_hud_attempt_state(HudRuntime *hud)
+{
+    if (hud == NULL)
+        return;
+    hud->popup_combo = 0;
+    hud->swoosh_combo = 0;
+    hud->popup_timer = 0;
+    hud->swoosh_timer = 0;
+    hud->swoosh_sound_pending = false;
+}
+
 static void build_completion_id(
     SessionRuntime *session,
     const SongDescriptor *descriptor)
@@ -109,9 +133,6 @@ boolean SessionRuntime_Save(SessionRuntime *session)
     if (session == NULL)
         return false;
     SaveData_SetProgression(&session->save, &session->progression);
-    /* Frontend edits Gammod through the compact save blob so it can keep the
-     * legacy main-loop API. Pull those values into the authoritative runtime
-     * config before writing the card and before the next song starts. */
     Gammod_LoadSave(&session->gammod_config, &session->save);
     Gammod_StoreSave(&session->gammod_config, &session->save);
     if (!session->memcard_ready)
@@ -221,6 +242,7 @@ boolean SessionRuntime_BeginSong(
     if (endless_continuation)
         EndlessMode_RestoreLoop(&session->endless, game);
 
+    session->active_game = game;
     session->song_active = true;
     return true;
 }
@@ -233,6 +255,7 @@ void SessionRuntime_EndSong(SessionRuntime *session)
     Gammod_FreeChart(&session->gammod);
     NoteKindRuntime_Free(&session->note_kinds);
     Hud_ForgetSong(&session->hud);
+    session->active_game = NULL;
     session->song_active = false;
     session->story_mode = false;
     session->endless_continuation = false;
@@ -343,6 +366,17 @@ void SessionRuntime_OnDeath(SessionRuntime *session)
 {
     if (session == NULL)
         return;
+
+    if (Gammod_ResetOnDeath(&session->gammod) && session->active_game != NULL &&
+        Gammod_RestartAttempt(&session->gammod, session->active_game)) {
+        configure_combo(session);
+        configure_camera_movement(session);
+        reset_note_kind_attempt_state(&session->note_kinds);
+        reset_hud_attempt_state(&session->hud);
+        printf("[PS2] Gammod reset-on-death restart\n");
+        return;
+    }
+
     EndlessMode_OnDeath(&session->endless);
 }
 
