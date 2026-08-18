@@ -60,22 +60,21 @@ void SaveData_Defaults(FunkinSaveData *data)
         SAVE_FLAG_HUD_SCORE_BOUNCE |
         SAVE_FLAG_HUD_SCORE_VISIBLE |
         SAVE_FLAG_HUD_DUSTIN_EFFECTS;
-    data->health_drain_level = 6; /* AUTO PRO, matching the supplied mod. */
+    data->reserved_legacy_health_drain = 0;
     data->camera_movement_intensity = 80;
     data->combo_swoosh_threshold = 1;
     data->hud_layout = 0;
 
-    /* My Fully Customizable HUD 1.5.4 defaults. */
     data->hud_health_bar_opacity = 100;
     data->hud_icons_opacity = 100;
-    data->hud_icons_position = 0;    /* default */
+    data->hud_icons_position = 0;
     data->hud_fc_opacity = 100;
-    data->hud_fc_size_tenths = 10;  /* 1.0x */
-    data->hud_fc_style = 0;          /* FC */
-    data->hud_icon_bounce_style = 0; /* reworked */
-    data->hud_score_position = 0;    /* hud */
+    data->hud_fc_size_tenths = 10;
+    data->hud_fc_style = 0;
+    data->hud_icon_bounce_style = 0;
+    data->hud_score_position = 0;
     data->hud_score_size = 20;
-    data->hud_combo_style = 0;       /* Dustin */
+    data->hud_combo_style = 0;
 
     data->checksum = save_checksum(data);
 }
@@ -89,8 +88,6 @@ boolean SaveData_Init(void)
 
     g_memcard_ready = false;
 
-    /* Pad_Init already loads SIO2MAN. Use the matching ROM memory-card stack
-     * rather than loading XSIO2MAN on top of an active pad driver. */
     ret = SifLoadModule("rom0:MCMAN", 0, NULL);
     if (ret < 0)
         printf("[PS2] MCMAN load returned %d\n", ret);
@@ -166,7 +163,6 @@ boolean SaveData_Write(const FunkinSaveData *data)
     out.size = sizeof(out);
     out.checksum = save_checksum(&out);
 
-    /* Existing directories return an error here; that is harmless. */
     mkdir(SAVE_DIRECTORY, 0777);
     fd = open(SAVE_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if (fd < 0) {
