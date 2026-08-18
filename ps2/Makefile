@@ -13,6 +13,7 @@ EE_OBJS = \
 	build/core_audio.o \
 	build/core_disc.o \
 	build/core_asset_file.o \
+	build/core_song_descriptor.o \
 	build/core_song_stream.o \
 	build/core_gameplay.o \
 	build/core_texture_asset.o \
@@ -73,6 +74,9 @@ build/core_disc.o: src/core/disc.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_asset_file.o: src/core/asset_file.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_song_descriptor.o: src/core/song_descriptor.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_song_stream.o: src/core/song_stream.c | build
