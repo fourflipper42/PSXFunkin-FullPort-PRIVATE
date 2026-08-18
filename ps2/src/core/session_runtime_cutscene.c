@@ -3,6 +3,7 @@
 
 #include "blazin_runtime.h"
 #include "cutscene_controller.h"
+#include "darnell_intro_visual.h"
 #include "weekend1_runtime.h"
 #include <string.h>
 
@@ -12,11 +13,13 @@ void SessionRuntime_InitCutsceneAware(
     const SongCatalog *songs)
 {
     SessionRuntime_Init(session, story, songs);
+    DarnellIntroVisual_SetSong(NULL);
     CutsceneController_Init();
 }
 
 void SessionRuntime_ShutdownCutsceneAware(SessionRuntime *session)
 {
+    DarnellIntroVisual_SetSong(NULL);
     BlazinRuntime_End();
     Weekend1Runtime_EndSong();
     CutsceneController_Shutdown();
@@ -42,6 +45,7 @@ boolean SessionRuntime_StartStoryCutsceneAware(
 
 void SessionRuntime_StopStoryCutsceneAware(SessionRuntime *session)
 {
+    DarnellIntroVisual_SetSong(NULL);
     CutsceneController_ResetStory();
     SessionRuntime_StopStory(session);
 }
@@ -67,6 +71,7 @@ boolean SessionRuntime_BeginSongCutsceneAware(
     if (!result)
         return false;
 
+    DarnellIntroVisual_SetSong(song_id);
     Weekend1Runtime_BeginSong(
         song_id,
         game,
@@ -83,6 +88,7 @@ boolean SessionRuntime_BeginSongCutsceneAware(
 
 void SessionRuntime_EndSongCutsceneAware(SessionRuntime *session)
 {
+    DarnellIntroVisual_SetSong(NULL);
     BlazinRuntime_End();
     Weekend1Runtime_EndSong();
     SessionRuntime_EndSong(session);
