@@ -56,6 +56,7 @@ void NoteLaneRenderer_Tick(GameplayState *game, const Pad *pad)
     u8 player_hits;
     u8 opponent_hits;
     u8 event_index;
+    fixed_t event_dt;
 
     (void)pad;
     ++animation_tick;
@@ -70,14 +71,19 @@ void NoteLaneRenderer_Tick(GameplayState *game, const Pad *pad)
     if (game == NULL)
         return;
 
-    for (event_index = 0;
-        event_index < game->events.song_event_count;
-        ++event_index) {
-        const GameplaySongEventFrame *event =
-            &game->events.song_events[event_index];
-        GameplayScroll_HandleEvent(game, event->name, event->value);
+    if (!game->block_scroll_events) {
+        for (event_index = 0;
+            event_index < game->events.song_event_count;
+            ++event_index) {
+            const GameplaySongEventFrame *event =
+                &game->events.song_events[event_index];
+            GameplayScroll_HandleEvent(game, event->name, event->value);
+        }
     }
-    GameplayScroll_Tick(game, timer_dt);
+    event_dt = timer_dt;
+    if (game->event_time_scale > 0)
+        event_dt = FIXED_MUL(event_dt, game->event_time_scale);
+    GameplayScroll_Tick(game, event_dt);
 
     player_hits = game->events.player_hit_mask;
     opponent_hits = game->events.opponent_hit_mask;
