@@ -9,6 +9,11 @@ typedef struct TextureAsset {
     boolean loaded;
 } TextureAsset;
 
+/* Initialize after gsKit_init_screen(), once the frame buffers own their GS
+ * memory. Remaining VRAM becomes a cache for FNF textures kept in EE RAM. */
+void TextureAsset_InitStreaming(GSGLOBAL *gs);
+void TextureAsset_EndFrame(GSGLOBAL *gs);
+
 boolean TextureAsset_Load(GSGLOBAL *gs, TextureAsset *asset, const char *path, boolean linear_filter);
 void TextureAsset_Forget(TextureAsset *asset);
 void TextureAsset_ClearVRAM(GSGLOBAL *gs);
