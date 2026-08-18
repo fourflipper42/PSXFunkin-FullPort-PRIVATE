@@ -16,6 +16,7 @@
 #include "core/texture_asset.h"
 #include "core/note_style.h"
 #include "core/note_lane_renderer.h"
+#include "core/camera_effects.h"
 #include "core/stage.h"
 #include "core/character.h"
 
@@ -57,6 +58,7 @@ static GameplayState g_gameplay;
 static SongDescriptor g_song_descriptor;
 static SongAssetPaths g_song_paths;
 static NoteStyle g_note_style;
+static CameraEffects g_camera_effects;
 static Stage g_stage;
 static StageCamera g_stage_camera;
 static Character g_player;
@@ -454,6 +456,15 @@ static void tick_camera(void)
     float dt;
     float alpha;
 
+    if (g_gameplay_loaded) {
+        CameraEffects_Tick(
+            &g_camera_effects,
+            &g_gameplay.rhythm,
+            g_gameplay.song_step,
+            timer_dt);
+        g_stage_camera.zoom = CameraEffects_Zoom(&g_camera_effects);
+    }
+
     if (slot == NULL)
         return;
 
@@ -476,6 +487,8 @@ static void tick_camera(void)
 
 static void load_presentation_assets(GSGLOBAL *gs)
 {
+    CameraEffects_Init(&g_camera_effects, 1.0f);
+
     if (!g_descriptor_loaded)
         return;
 
@@ -493,6 +506,7 @@ static void load_presentation_assets(GSGLOBAL *gs)
             g_stage_camera.zoom = Stage_CameraZoom(&g_stage);
             if (g_stage_camera.zoom <= 0.0f)
                 g_stage_camera.zoom = 1.0f;
+            CameraEffects_Init(&g_camera_effects, g_stage_camera.zoom);
             printf("[PS2] stage loaded: %s (%u props, zoom %.3f)\n",
                 g_song_descriptor.stage,
                 (unsigned)g_stage.prop_count,
@@ -554,6 +568,8 @@ static void dance_character_on_beat(Character *character, s32 beat)
 
 static void consume_gameplay_events(void)
 {
+    boolean camera_event_handled = false;
+
     if (g_gameplay.events.camera_focus_changed) {
         g_camera_focus = g_gameplay.events.camera_focus;
         printf("[PS2] FocusCamera -> %s\n",
@@ -562,12 +578,20 @@ static void consume_gameplay_events(void)
     }
 
     if (g_gameplay.events.song_event_fired &&
-        g_gameplay.events.last_song_event_kind == SONG_EVENT_GENERIC &&
         g_gameplay.events.last_song_event_name != NULL &&
         g_gameplay.events.last_song_event_value != NULL) {
-        printf("[PS2] event %s value=%s\n",
+        camera_event_handled = CameraEffects_OnSongEvent(
+            &g_camera_effects,
+            &g_gameplay.rhythm,
             g_gameplay.events.last_song_event_name,
             g_gameplay.events.last_song_event_value);
+
+        if (!camera_event_handled &&
+            g_gameplay.events.last_song_event_kind == SONG_EVENT_GENERIC) {
+            printf("[PS2] event %s value=%s\n",
+                g_gameplay.events.last_song_event_name,
+                g_gameplay.events.last_song_event_value);
+        }
     }
 }
 
@@ -670,6 +694,7 @@ int main(int argc, char **argv)
     apply_video_transform(aspect);
     Timer_Init();
     NoteLaneRenderer_Reset();
+    CameraEffects_Init(&g_camera_effects, 1.0f);
 
     Animatable_Init(&g_boot_anim, g_boot_anims);
     Animatable_SetAnim(&g_boot_anim, 0);
