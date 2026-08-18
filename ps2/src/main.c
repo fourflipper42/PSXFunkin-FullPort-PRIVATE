@@ -1,9 +1,5 @@
 #include <stdio.h>
-#include <string.h>
-#include <kernel.h>
 #include <sifrpc.h>
-#include <loadfile.h>
-#include <libpad.h>
 #include <tamtypes.h>
 
 #include <gsKit.h>
@@ -11,6 +7,7 @@
 
 #include "core/timer.h"
 #include "core/animation.h"
+#include "core/pad.h"
 
 #define LOGICAL_W 640.0f
 #define LOGICAL_H 360.0f
@@ -28,11 +25,6 @@ typedef struct VideoTransform {
     float x_offset;
     float y_offset;
 } VideoTransform;
-
-static char g_pad_buf[256] __attribute__((aligned(64)));
-static u32 g_buttons = 0;
-static u32 g_buttons_prev = 0;
-static int g_pad_ready = 0;
 
 static u8 g_boot_anim_frame = 0;
 static const u8 g_boot_anim_script[] = {
@@ -93,62 +85,6 @@ static void draw_logical_rect(
         video_x(t, x2), video_y(t, y2),
         z,
         color);
-}
-
-static int init_pad(void)
-{
-    int ret;
-
-    ret = SifLoadModule("rom0:SIO2MAN", 0, NULL);
-    if (ret < 0) {
-        printf("[PS2] SIO2MAN load failed: %d\n", ret);
-        return 0;
-    }
-
-    ret = SifLoadModule("rom0:PADMAN", 0, NULL);
-    if (ret < 0) {
-        printf("[PS2] PADMAN load failed: %d\n", ret);
-        return 0;
-    }
-
-    if (!padInit(0)) {
-        printf("[PS2] padInit failed\n");
-        return 0;
-    }
-
-    if (!padPortOpen(0, 0, g_pad_buf)) {
-        printf("[PS2] padPortOpen failed\n");
-        return 0;
-    }
-
-    padSetMainMode(0, 0, PAD_MMODE_DUALSHOCK, PAD_MMODE_LOCK);
-    printf("[PS2] DualShock 2 initialized\n");
-    return 1;
-}
-
-static void update_pad(void)
-{
-    struct padButtonStatus status;
-    int state;
-
-    g_buttons_prev = g_buttons;
-    g_buttons = 0;
-
-    if (!g_pad_ready)
-        return;
-
-    state = padGetState(0, 0);
-    if (state != PAD_STATE_STABLE && state != PAD_STATE_FINDCTP1)
-        return;
-
-    memset(&status, 0, sizeof(status));
-    if (padRead(0, 0, &status))
-        g_buttons = 0xFFFFu ^ status.btns;
-}
-
-static int button_pressed(u32 button)
-{
-    return ((g_buttons & button) != 0) && ((g_buttons_prev & button) == 0);
 }
 
 static GSGLOBAL *init_video(void)
@@ -234,7 +170,7 @@ int main(int argc, char **argv)
     printf("TRIANGLE: toggle 16:9 / 4:3 letterbox\n");
 
     SifInitRpc(0);
-    g_pad_ready = init_pad();
+    Pad_Init();
     gs = init_video();
 
     Timer_Init();
@@ -242,11 +178,11 @@ int main(int argc, char **argv)
     Animatable_SetAnim(&g_boot_anim, 0);
 
     for (;;) {
-        update_pad();
+        Pad_Update();
         Timer_Tick();
         Animatable_Animate(&g_boot_anim, &g_boot_anim_frame, boot_set_frame);
 
-        if (button_pressed(PAD_TRIANGLE)) {
+        if (pad_state.press & PAD_TRIANGLE) {
             aspect = (aspect == ASPECT_WIDE_ANAMORPHIC)
                 ? ASPECT_LETTERBOX_4_3
                 : ASPECT_WIDE_ANAMORPHIC;
