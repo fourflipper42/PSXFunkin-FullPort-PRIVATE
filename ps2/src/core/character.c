@@ -235,7 +235,7 @@ void Character_Tick(Character *character)
         return;
 
     frame_duration = FIXED_DEC(1, anim->frame_rate);
-    character->frame_timer += timer_dt;
+    character->frame_timer += timer_presentation_dt;
     while (character->frame_timer >= frame_duration) {
         character->frame_timer -= frame_duration;
         ++character->current_frame;
