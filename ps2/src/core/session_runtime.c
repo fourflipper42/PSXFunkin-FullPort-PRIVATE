@@ -165,6 +165,8 @@ boolean SessionRuntime_BeginSong(
     boolean endless_continuation)
 {
     boolean wanted_endless;
+    boolean cinema;
+    boolean act_like_opponent;
 
     if (session == NULL || gs == NULL || game == NULL || !game->loaded ||
         descriptor == NULL || paths == NULL || session->song_active)
@@ -212,6 +214,12 @@ boolean SessionRuntime_BeginSong(
             paths->player_base,
             paths->opponent_base))
         printf("[PS2] HUD icons incomplete; using fallbacks\n");
+
+    cinema = session->gammod_config.autoplay == GAMMOD_AUTOPLAY_CINEMA;
+    act_like_opponent =
+        session->gammod_config.autoplay != GAMMOD_AUTOPLAY_DISABLED &&
+        session->gammod_config.autoplay_act_like_opponent;
+    Hud_SetGameplayMode(&session->hud, cinema, act_like_opponent);
 
     if (endless_continuation)
         EndlessMode_RestoreLoop(&session->endless, game);
