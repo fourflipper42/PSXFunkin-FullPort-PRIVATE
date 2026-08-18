@@ -11,6 +11,8 @@ static CutsceneStream g_stream;
 static GSGLOBAL *g_gs;
 static boolean g_map_loaded;
 static boolean g_active;
+static boolean g_open_pending;
+static char g_pending_base[256];
 static char g_last_story_song[96];
 
 static void uppercase_ascii(char *text)
@@ -27,9 +29,11 @@ static void uppercase_ascii(char *text)
 
 static void close_active(void)
 {
-    if (g_active || g_stream.loaded)
+    if (g_stream.loaded)
         CutsceneStream_Close(&g_stream);
     g_active = false;
+    g_open_pending = false;
+    g_pending_base[0] = '\0';
 }
 
 boolean CutsceneController_Init(void)
@@ -38,6 +42,8 @@ boolean CutsceneController_Init(void)
     memset(&g_stream, 0, sizeof(g_stream));
     g_gs = NULL;
     g_active = false;
+    g_open_pending = false;
+    g_pending_base[0] = '\0';
     g_last_story_song[0] = '\0';
     g_map_loaded = CutsceneMap_Load(&g_map, CUTSCENE_MAP_PATH);
     printf("[PS2] cutscene map=%s entries=%u\n",
@@ -70,7 +76,6 @@ boolean CutsceneController_BeginSong(
 {
     const char *cutscene_id;
     char id[128];
-    char base[256];
 
     close_active();
     if (!g_map_loaded || gs == NULL || song_id == NULL || !story_mode)
@@ -89,18 +94,14 @@ boolean CutsceneController_BeginSong(
     strncpy(id, cutscene_id, sizeof(id) - 1);
     id[sizeof(id) - 1] = '\0';
     uppercase_ascii(id);
-    snprintf(base, sizeof(base), "\\GAME\\CUTSCENE\\%s", id);
-
-    if (!CutsceneStream_Open(gs, &g_stream, base)) {
-        printf("[PS2] cutscene unavailable for %s: %s\n", song_id, base);
-        return false;
-    }
+    snprintf(g_pending_base, sizeof(g_pending_base), "\\GAME\\CUTSCENE\\%s", id);
 
     strncpy(g_last_story_song, song_id, sizeof(g_last_story_song) - 1);
     g_last_story_song[sizeof(g_last_story_song) - 1] = '\0';
     g_gs = gs;
+    g_open_pending = true;
     g_active = true;
-    printf("[PS2] Story cutscene: %s -> %s\n", song_id, cutscene_id);
+    printf("[PS2] Story cutscene queued: %s -> %s\n", song_id, cutscene_id);
     return true;
 }
 
@@ -109,8 +110,6 @@ void CutsceneController_HandlePad(const Pad *pad)
     if (!g_active || pad == NULL)
         return;
 
-    /* CROSS is the PS2-native cutscene skip. START is deliberately left to
-     * the normal gameplay pause path so the two states never fight over it. */
     if (pad->press & PAD_CROSS) {
         printf("[PS2] cutscene skipped\n");
         close_active();
@@ -121,6 +120,18 @@ void CutsceneController_Tick(void)
 {
     if (!g_active || g_gs == NULL)
         return;
+
+    /* Open on the first actual cutscene frame, after load_descriptor_song has
+     * completed stage/character texture setup and any cache reset it requires. */
+    if (g_open_pending) {
+        g_open_pending = false;
+        if (!CutsceneStream_Open(g_gs, &g_stream, g_pending_base)) {
+            printf("[PS2] cutscene open failed: %s\n", g_pending_base);
+            close_active();
+            return;
+        }
+    }
+
     CutsceneStream_Tick(g_gs, &g_stream);
     if (CutsceneStream_Finished(&g_stream)) {
         printf("[PS2] cutscene finished\n");
@@ -131,7 +142,7 @@ void CutsceneController_Tick(void)
 void CutsceneController_Draw(GSGLOBAL *gs)
 {
     const u64 white = GS_SETREG_RGBAQ(0x80, 0x80, 0x80, 0x80, 0);
-    if (!g_active || gs == NULL)
+    if (!g_active || g_open_pending || gs == NULL)
         return;
     CutsceneStream_Draw(gs, &g_stream, 30, white);
 }
