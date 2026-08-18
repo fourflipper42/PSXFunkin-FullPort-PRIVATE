@@ -2,6 +2,11 @@ name: FNF PS2 Full DVD Build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ps2-full-port
+    paths:
+      - '.github/workflows/ps2-full-build.yml'
 
 permissions:
   contents: write
