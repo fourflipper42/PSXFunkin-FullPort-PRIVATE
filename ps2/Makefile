@@ -41,6 +41,7 @@ EE_OBJS = \
 	build/core_presentation_registry.o \
 	build/core_weekend1_runtime.o \
 	build/core_weekend1_visual.o \
+	build/core_darnell_intro_visual.o \
 	build/core_blazin_runtime.o \
 	build/core_pointless_pins.o \
 	build/core_session_runtime.o \
