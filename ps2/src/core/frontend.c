@@ -170,6 +170,8 @@ void Frontend_Init(Frontend *frontend, GSFONTM *rom_font)
     frontend->page = FRONTEND_STORY;
     frontend->player = FRONTEND_PLAYER_BF;
     frontend->story_difficulty = STORY_DIFFICULTY_NORMAL;
+    Gammod_Defaults(&frontend->gammod_cache);
+    frontend->gammod_cache_loaded = false;
     frontend->rom_font = rom_font;
     frontend->font_ready = rom_font != NULL;
 }
@@ -278,15 +280,22 @@ static boolean adjust_bool(boolean *value, int direction)
 
 static FrontendAction update_gammod(
     Frontend *frontend,
-    GammodConfig *config,
+    FunkinSaveData *save,
     const Pad *pad)
 {
     FrontendAction action;
+    GammodConfig *config;
     int direction;
     boolean changed = false;
     memset(&action, 0, sizeof(action));
-    if (frontend == NULL || config == NULL || pad == NULL)
+    if (frontend == NULL || save == NULL || pad == NULL)
         return action;
+
+    if (!frontend->gammod_cache_loaded) {
+        Gammod_LoadSave(&frontend->gammod_cache, save);
+        frontend->gammod_cache_loaded = true;
+    }
+    config = &frontend->gammod_cache;
 
     if (pad->press & PAD_UP) move_selection(&frontend->gammod_selected, FRONTEND_GAMMOD_COUNT, -1);
     if (pad->press & PAD_DOWN) move_selection(&frontend->gammod_selected, FRONTEND_GAMMOD_COUNT, 1);
@@ -393,8 +402,10 @@ static FrontendAction update_gammod(
         default: break;
     }
 
-    if (changed)
+    if (changed) {
+        Gammod_StoreSave(config, save);
         action.type = FRONTEND_ACTION_SAVE_CHANGED;
+    }
     return action;
 }
 
@@ -523,7 +534,6 @@ FrontendAction Frontend_Update(
     const ProgressionState *progression,
     const PointlessPinsCatalog *pins,
     FunkinSaveData *save,
-    GammodConfig *gammod,
     const Pad *pad)
 {
     FrontendAction action;
@@ -542,7 +552,7 @@ FrontendAction Frontend_Update(
         case FRONTEND_PINS:
             return update_pins(frontend, pins, pad);
         case FRONTEND_GAMMOD:
-            return update_gammod(frontend, gammod, pad);
+            return update_gammod(frontend, save, pad);
         case FRONTEND_HUD:
             return update_hud(frontend, save, pad);
         case FRONTEND_OPTIONS:
@@ -790,14 +800,18 @@ static void gammod_line_bridge(char *out, size_t out_size, u8 index, const void 
 static void draw_gammod(
     GSGLOBAL *gs,
     Frontend *frontend,
-    const GammodConfig *config,
+    const FunkinSaveData *save,
     BetterAlphabet *alphabet)
 {
-    if (config == NULL)
+    if (frontend == NULL || save == NULL)
         return;
+    if (!frontend->gammod_cache_loaded) {
+        Gammod_LoadSave(&frontend->gammod_cache, save);
+        frontend->gammod_cache_loaded = true;
+    }
     draw_scrolling_settings(gs, frontend, alphabet,
         frontend->gammod_selected, FRONTEND_GAMMOD_COUNT,
-        gammod_line_bridge, config);
+        gammod_line_bridge, &frontend->gammod_cache);
 }
 
 static const char *icon_position_name(u8 value)
@@ -896,7 +910,6 @@ void Frontend_Draw(
     const ProgressionState *progression,
     const PointlessPinsCatalog *pins,
     const FunkinSaveData *save,
-    const GammodConfig *gammod,
     BetterAlphabet *alphabet)
 {
     const u64 black = GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x80, 0);
@@ -922,7 +935,7 @@ void Frontend_Draw(
                 draw_pins(gs, frontend, pins, save, alphabet);
                 break;
             case FRONTEND_GAMMOD:
-                draw_gammod(gs, frontend, gammod, alphabet);
+                draw_gammod(gs, frontend, save, alphabet);
                 break;
             case FRONTEND_HUD:
                 draw_hud(gs, frontend, save, alphabet);
