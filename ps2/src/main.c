@@ -14,6 +14,8 @@
 #include "core/gameplay.h"
 #include "core/song_descriptor.h"
 #include "core/texture_asset.h"
+#include "core/note_style.h"
+#include "core/note_lane_renderer.h"
 #include "core/stage.h"
 #include "core/character.h"
 
@@ -54,6 +56,7 @@ static Animatable g_boot_anim;
 static GameplayState g_gameplay;
 static SongDescriptor g_song_descriptor;
 static SongAssetPaths g_song_paths;
+static NoteStyle g_note_style;
 static Stage g_stage;
 static StageCamera g_stage_camera;
 static Character g_player;
@@ -61,6 +64,7 @@ static Character g_opponent;
 static Character g_girlfriend;
 static boolean g_gameplay_loaded;
 static boolean g_descriptor_loaded;
+static boolean g_note_style_loaded;
 static boolean g_stage_loaded;
 static boolean g_player_loaded;
 static boolean g_opponent_loaded;
@@ -297,34 +301,26 @@ static void render_world(GSGLOBAL *gs)
     Stage_DrawRange(gs, &g_stage, &g_stage_camera, z_cursor, STAGE_Z_MAX);
 }
 
-static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game)
+static void render_fallback_lanes(
+    GSGLOBAL *gs,
+    const VideoTransform *t,
+    GameplayState *game)
 {
     const u64 black = GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x80, 0x00);
-    const u64 fallback_bg = GS_SETREG_RGBAQ(0x1b, 0x16, 0x25, 0x80, 0x00);
     const u64 receptor = GS_SETREG_RGBAQ(0xe8, 0xe8, 0xe8, 0x80, 0x00);
     const u64 mine = GS_SETREG_RGBAQ(0x10, 0x10, 0x10, 0x80, 0x00);
-    const u64 health_bg = GS_SETREG_RGBAQ(0x38, 0x38, 0x38, 0x80, 0x00);
-    const u64 health_fg = GS_SETREG_RGBAQ(0xe8, 0xe8, 0xe8, 0x80, 0x00);
     const float receptor_y = 54.0f;
-    VideoTransform t = video_transform(aspect);
     ChartView *chart = &game->chart.view;
     size_t i;
     int lane;
-    float health_ratio;
-
-    gsKit_clear(gs, black);
-    if (g_stage_loaded)
-        render_world(gs);
-    else
-        draw_logical_rect(gs, &t, 0.0f, 0.0f, 640.0f, 360.0f, 1, fallback_bg);
 
     for (lane = 0; lane < 4; ++lane) {
         float ox = lane_x(true, (u8)lane);
         float px = lane_x(false, (u8)lane);
-        draw_logical_rect(gs, &t, ox, receptor_y, ox + 30.0f, receptor_y + 30.0f, 4, receptor);
-        draw_logical_rect(gs, &t, px, receptor_y, px + 30.0f, receptor_y + 30.0f, 4, receptor);
-        draw_logical_rect(gs, &t, ox + 3.0f, receptor_y + 3.0f, ox + 27.0f, receptor_y + 27.0f, 5, black);
-        draw_logical_rect(gs, &t, px + 3.0f, receptor_y + 3.0f, px + 27.0f, receptor_y + 27.0f, 5, black);
+        draw_logical_rect(gs, t, ox, receptor_y, ox + 30.0f, receptor_y + 30.0f, 4, receptor);
+        draw_logical_rect(gs, t, px, receptor_y, px + 30.0f, receptor_y + 30.0f, 4, receptor);
+        draw_logical_rect(gs, t, ox + 3.0f, receptor_y + 3.0f, ox + 27.0f, receptor_y + 27.0f, 5, black);
+        draw_logical_rect(gs, t, px + 3.0f, receptor_y + 3.0f, px + 27.0f, receptor_y + 27.0f, 5, black);
     }
 
     for (i = game->first_note; i < chart->note_count; ++i) {
@@ -339,7 +335,6 @@ static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game
 
         if (note->type & NOTE_FLAG_HIT)
             continue;
-
         delta = Gameplay_NoteDelta(game, note);
         pixel_delta = FIXED_MUL(game->rhythm.note_speed, delta);
         y = receptor_y + ((float)pixel_delta / (float)FIXED_UNIT);
@@ -358,16 +353,37 @@ static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game
             w = 30.0f;
             h = 30.0f;
         }
-        draw_logical_rect(gs, &t, x, y, x + w, y + h, 3, color);
+        draw_logical_rect(gs, t, x, y, x + w, y + h, 3, color);
     }
+}
+
+static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game)
+{
+    const u64 black = GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x80, 0x00);
+    const u64 fallback_bg = GS_SETREG_RGBAQ(0x1b, 0x16, 0x25, 0x80, 0x00);
+    const u64 health_bg = GS_SETREG_RGBAQ(0x38, 0x38, 0x38, 0x80, 0x00);
+    const u64 health_fg = GS_SETREG_RGBAQ(0xe8, 0xe8, 0xe8, 0x80, 0x00);
+    VideoTransform t = video_transform(aspect);
+    float health_ratio;
+
+    gsKit_clear(gs, black);
+    if (g_stage_loaded)
+        render_world(gs);
+    else
+        draw_logical_rect(gs, &t, 0.0f, 0.0f, 640.0f, 360.0f, 1, fallback_bg);
+
+    if (g_note_style_loaded)
+        NoteLaneRenderer_Draw(gs, &g_note_style, game, &pad_state);
+    else
+        render_fallback_lanes(gs, &t, game);
 
     health_ratio = (float)game->rhythm.health / 20000.0f;
     if (health_ratio < 0.0f)
         health_ratio = 0.0f;
     if (health_ratio > 1.0f)
         health_ratio = 1.0f;
-    draw_logical_rect(gs, &t, 170.0f, 330.0f, 470.0f, 340.0f, 5, health_bg);
-    draw_logical_rect(gs, &t, 170.0f, 330.0f, 170.0f + 300.0f * health_ratio, 340.0f, 6, health_fg);
+    draw_logical_rect(gs, &t, 170.0f, 330.0f, 470.0f, 340.0f, 8, health_bg);
+    draw_logical_rect(gs, &t, 170.0f, 330.0f, 170.0f + 300.0f * health_ratio, 340.0f, 9, health_fg);
 
     gsKit_queue_exec(gs);
     gsKit_sync_flip(gs);
@@ -462,6 +478,12 @@ static void load_presentation_assets(GSGLOBAL *gs)
 {
     if (!g_descriptor_loaded)
         return;
+
+    g_note_style_loaded = NoteStyle_Load(gs, &g_note_style, g_song_paths.note_style_base);
+    NoteLaneRenderer_Reset();
+    printf("[PS2] note style %s: %s\n",
+        g_song_descriptor.note_style,
+        g_note_style_loaded ? "ok" : "missing");
 
     if (g_song_paths.stage_base[0] != '\0') {
         g_stage_loaded = Stage_Load(gs, &g_stage, g_song_paths.stage_base);
@@ -599,8 +621,9 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
         g_song_descriptor.display_name,
         g_song_descriptor.variation,
         g_song_descriptor.difficulty);
-    printf("[PS2] stage=%s player=%s opponent=%s gf=%s\n",
+    printf("[PS2] stage=%s notes=%s player=%s opponent=%s gf=%s\n",
         g_song_descriptor.stage,
+        g_song_descriptor.note_style,
         g_song_descriptor.player,
         g_song_descriptor.opponent,
         g_song_descriptor.girlfriend);
@@ -646,6 +669,7 @@ int main(int argc, char **argv)
     TextureAsset_InitStreaming(gs);
     apply_video_transform(aspect);
     Timer_Init();
+    NoteLaneRenderer_Reset();
 
     Animatable_Init(&g_boot_anim, g_boot_anims);
     Animatable_SetAnim(&g_boot_anim, 0);
@@ -692,6 +716,7 @@ int main(int argc, char **argv)
 
         if (g_gameplay_loaded) {
             Gameplay_Tick(&g_gameplay, &pad_state);
+            NoteLaneRenderer_Tick(&g_gameplay, &pad_state);
             tick_presentation();
             render_gameplay(gs, aspect, &g_gameplay);
         } else {
