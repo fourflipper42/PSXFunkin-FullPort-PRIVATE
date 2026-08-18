@@ -1,0 +1,42 @@
+name: FNF PS2 Native Build
+
+on:
+  push:
+    branches: [ ps2-full-port ]
+    paths:
+      - 'ps2/**'
+      - '.github/workflows/ps2-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ps2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build PS2 ELF with current ps2dev environment
+        run: |
+          docker pull ps2dev/ps2dev:latest
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work/ps2 \
+            ps2dev/ps2dev:latest \
+            make clean all
+
+      - name: Verify ELF
+        run: |
+          test -s ps2/build/funkin_ps2.elf
+          file ps2/build/funkin_ps2.elf
+          sha256sum ps2/build/funkin_ps2.elf | tee ps2/build/SHA256SUMS.txt
+
+      - name: Upload PS2 bootstrap
+        uses: actions/upload-artifact@v4
+        with:
+          name: fnf-ps2-bootstrap
+          compression-level: 0
+          path: |
+            ps2/build/funkin_ps2.elf
+            ps2/build/SHA256SUMS.txt
