@@ -1,6 +1,7 @@
 #define SESSION_RUNTIME_IMPLEMENTATION
 #include "session_runtime.h"
 
+#include "blazin_runtime.h"
 #include "cutscene_controller.h"
 #include "weekend1_runtime.h"
 #include <string.h>
@@ -16,6 +17,7 @@ void SessionRuntime_InitCutsceneAware(
 
 void SessionRuntime_ShutdownCutsceneAware(SessionRuntime *session)
 {
+    BlazinRuntime_End();
     Weekend1Runtime_EndSong();
     CutsceneController_Shutdown();
     SessionRuntime_Shutdown(session);
@@ -53,6 +55,7 @@ boolean SessionRuntime_BeginSongCutsceneAware(
     boolean story_mode,
     boolean endless_continuation)
 {
+    const char *song_id = descriptor != NULL ? descriptor->song_id : NULL;
     boolean result = SessionRuntime_BeginSong(
         session,
         gs,
@@ -65,17 +68,22 @@ boolean SessionRuntime_BeginSongCutsceneAware(
         return false;
 
     Weekend1Runtime_BeginSong(
-        descriptor != NULL ? descriptor->song_id : NULL,
+        song_id,
         game,
         session != NULL ? &session->note_kinds : NULL);
 
-    if (!endless_continuation && descriptor != NULL && descriptor->song_id != NULL)
-        CutsceneController_BeginSong(gs, descriptor->song_id, story_mode);
+    BlazinRuntime_End();
+    if (song_id != NULL && strcmp(song_id, "blazin") == 0)
+        BlazinRuntime_Begin(game);
+
+    if (!endless_continuation && song_id != NULL)
+        CutsceneController_BeginSong(gs, song_id, story_mode);
     return true;
 }
 
 void SessionRuntime_EndSongCutsceneAware(SessionRuntime *session)
 {
+    BlazinRuntime_End();
     Weekend1Runtime_EndSong();
     SessionRuntime_EndSong(session);
 }
