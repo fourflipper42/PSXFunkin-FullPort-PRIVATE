@@ -167,11 +167,11 @@ def convert(assets_root: Path, stage_id: str, output_dir: Path) -> dict:
 
         if animated:
             xml = find_case_path(images_root, asset_path, ".xml")
-            texture_converter.convert(png, out_stem.with_suffix(".FPTX"))
-            atlas_frames = atlas_converter.convert_frames(xml, out_stem.with_suffix(".FATL"))
+            atlas_frames, atlas_pages = atlas_converter.convert(png, xml, out_stem)
         else:
             texture_converter.convert(png, out_stem.with_suffix(".FPTX"))
             atlas_frames = 0
+            atlas_pages = 0
 
         name_off = add_string(strings, string_cache, name)
         starting = prop.get("startingAnimation")
@@ -264,6 +264,7 @@ def convert(assets_root: Path, stage_id: str, output_dir: Path) -> dict:
                 "assetPath": asset_path,
                 "animated": animated,
                 "atlasFrames": atlas_frames,
+                "atlasPages": atlas_pages,
                 "animations": anim_count,
                 "zIndex": z,
             }
