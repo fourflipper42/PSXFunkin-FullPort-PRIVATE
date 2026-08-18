@@ -55,8 +55,8 @@ void NoteLaneRenderer_Reset(void)
 {
     memset(confirm_frames, 0, sizeof(confirm_frames));
     animation_tick = 0;
-    hide_opponent_strumline = false;
-    center_player_strumline = false;
+    /* Layout is song state, not animation state. Weekend1Runtime_EndSong()
+     * explicitly restores the normal layout when leaving Blazin. */
 }
 
 void NoteLaneRenderer_SetLayout(boolean hide_opponent, boolean center_player)
