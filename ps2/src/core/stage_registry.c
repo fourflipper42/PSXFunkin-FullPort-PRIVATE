@@ -1,5 +1,6 @@
 #include "stage.h"
 
+#include "darnell_intro_visual.h"
 #include "presentation_registry.h"
 #include "weekend1_visual.h"
 
@@ -37,4 +38,5 @@ void Stage_DrawRange(
 {
     Stage_DrawRangeCore(gs, stage, camera, z_min, z_max);
     Weekend1Visual_DrawRange(gs, stage, camera, z_min, z_max);
+    DarnellIntroVisual_DrawRange(gs, stage, camera, z_min, z_max);
 }
