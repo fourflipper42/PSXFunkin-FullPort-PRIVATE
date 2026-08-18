@@ -12,6 +12,7 @@ boolean CutsceneController_BeginSong(
     GSGLOBAL *gs,
     const char *song_id,
     boolean story_mode);
+boolean CutsceneController_BeginPostSong(void);
 void CutsceneController_HandlePad(const Pad *pad);
 void CutsceneController_Tick(void);
 void CutsceneController_Draw(GSGLOBAL *gs);
