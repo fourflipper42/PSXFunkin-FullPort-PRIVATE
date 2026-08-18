@@ -45,8 +45,9 @@ void Stage_Tick(Stage *stage)
 
 void Stage_Beat(Stage *stage, s32 beat)
 {
+    /* Extra Sserafim AnimateAtlas characters own their one-shot choreography.
+     * Do not force a generic beat dance here or kick1/kick2 can be interrupted. */
     Stage_BeatCore(stage, beat);
-    SserafimRuntime_Beat(beat);
 }
 
 void Stage_DrawRange(
