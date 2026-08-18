@@ -4,8 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GAMMOD_SAVE_MARKER 0x474D
+#define GAMMOD_SAVE_MARKER 0x474E
 #define GAMMOD_NOTE_MARGIN_MS 100
+#define GAMMOD_HOLD_DRAIN_UNITS_SEC 960
+#define GAMMOD_DRAIN_FLOOR 100
 
 #define GMS_AUTOPLAY 0
 #define GMS_LONG_NOTES 1
@@ -36,11 +38,18 @@
 #define GMS_PERFECT_FAIL_GHOST 26
 #define GMS_AUTOPLAY_ACT_OPP 27
 #define GMS_PLAYBACK_FLAGS 28
+#define GMS_CUSTOM_OPP_SCROLL_X10 29
+#define GMS_MISC_FLAGS 30
 #define GMS_MARKER 31
 
 #define PLAYBACK_FLAG_STAGE       (1 << 0)
 #define PLAYBACK_FLAG_EVENTS      (1 << 1)
 #define PLAYBACK_FLAG_SCROLL      (1 << 2)
+
+#define MISC_FLAG_OPP_SEPARATE    (1 << 0)
+#define MISC_FLAG_SCROLL_MULT     (1 << 1)
+#define MISC_COUNTDOWN_SHIFT      2
+#define MISC_COUNTDOWN_MASK       (0x1F << MISC_COUNTDOWN_SHIFT)
 
 static u16 gammod_lane_button(u8 lane)
 {
@@ -48,6 +57,18 @@ static u16 gammod_lane_button(u8 lane)
         INPUT_LEFT, INPUT_DOWN, INPUT_UP, INPUT_RIGHT
     };
     return buttons[lane & 3];
+}
+
+static fixed_t gammod_float_fixed(float value)
+{
+    return (fixed_t)(value * (float)FIXED_UNIT + (value >= 0.0f ? 0.5f : -0.5f));
+}
+
+static float gammod_clampf(float value, float low, float high)
+{
+    if (value < low) return low;
+    if (value > high) return high;
+    return value;
 }
 
 static u32 gammod_rand(u32 *seed)
@@ -78,7 +99,7 @@ static boolean same_lane_side(const Note *a, const Note *b)
 static u16 bpm_for_pos(const GameplayState *game, u16 pos)
 {
     const ChartView *chart;
-    u16 bpm = 100;
+    u16 bpm = 100 * 24;
     size_t i;
 
     if (game == NULL)
@@ -93,6 +114,42 @@ static u16 bpm_for_pos(const GameplayState *game, u16 pos)
             break;
     }
     return bpm;
+}
+
+static fixed_t chart_time_for_pos(const GameplayState *game, u16 pos)
+{
+    const ChartView *chart;
+    u32 start = 0;
+    u16 bpm = 100 * 24;
+    float seconds = 0.0f;
+    size_t i;
+
+    if (game == NULL)
+        return 0;
+    chart = &game->chart.view;
+    for (i = 0; i < chart->section_count && start < pos; ++i) {
+        const Section *section = &chart->sections[i];
+        u32 end;
+        u16 value = section->flag & SECTION_FLAG_BPM_MASK;
+        float actual_bpm;
+        float units_per_second;
+        u32 segment_end;
+
+        if (value != 0)
+            bpm = value;
+        end = section->end == 0xFFFFu ? (u32)pos : (u32)section->end;
+        segment_end = end < (u32)pos ? end : (u32)pos;
+        if (segment_end > start) {
+            actual_bpm = (float)bpm / 24.0f;
+            units_per_second = actual_bpm * 0.8f;
+            if (units_per_second > 0.0f)
+                seconds += (float)(segment_end - start) / units_per_second;
+        }
+        if (end >= (u32)pos || section->end == 0xFFFFu)
+            break;
+        start = end;
+    }
+    return gammod_float_fixed(seconds);
 }
 
 static size_t transform_capacity(const ChartView *chart)
@@ -237,7 +294,7 @@ static boolean transform_long_notes(
             continue;
         }
         heads[head_count].note = *note;
-        heads[head_count].note.type &= (u8)~NOTE_FLAG_HIT;
+        heads[head_count].note.type &= (u8)~(NOTE_FLAG_HIT | NOTE_FLAG_SUSTAIN | NOTE_FLAG_SUSTAIN_END);
         heads[head_count].had_sustain = false;
         last_head[side][lane] = (s32)head_count;
         ++head_count;
@@ -291,7 +348,7 @@ static boolean transform_long_notes(
             sustain.pos = (u16)p;
             sustain.type = (head->note.type & (NOTE_FLAG_OPPONENT | NOTE_FLAG_ALT_ANIM | 3)) |
                 NOTE_FLAG_SUSTAIN;
-            sustain.pad = 0;
+            sustain.pad = head->note.pad;
             notes[out++] = sustain;
         }
         if (out > 0 && (notes[out - 1].type & NOTE_FLAG_SUSTAIN) &&
@@ -318,10 +375,14 @@ void Gammod_Defaults(GammodConfig *config)
     config->scroll_velocities = true;
     config->custom_scroll_speed_enabled = false;
     config->custom_scroll_speed = 2.0f;
+    config->custom_opponent_scroll_speed = 2.0f;
+    config->custom_scroll_opponent_separate = false;
+    config->custom_scroll_as_multiplier = false;
     config->health_drain = 0.0f;
     config->health_gain = 1.0f;
     config->health_loss = 1.0f;
     config->playback_rate = 1.0f;
+    config->skip_countdown_delay = 0.5f;
     config->starting_health_percent = 50;
     config->sick_window_ms = 45;
     config->good_window_ms = 90;
@@ -339,6 +400,7 @@ void Gammod_Defaults(GammodConfig *config)
 void Gammod_LoadSave(GammodConfig *config, const FunkinSaveData *save)
 {
     int flags;
+    int misc;
 
     Gammod_Defaults(config);
     if (config == NULL || save == NULL || save->gammod_values[GMS_MARKER] != GAMMOD_SAVE_MARKER)
@@ -376,11 +438,21 @@ void Gammod_LoadSave(GammodConfig *config, const FunkinSaveData *save)
     config->playback_stage_rate = (flags & PLAYBACK_FLAG_STAGE) != 0;
     config->playback_match_event_durations = (flags & PLAYBACK_FLAG_EVENTS) != 0;
     config->playback_match_scroll_speed = (flags & PLAYBACK_FLAG_SCROLL) != 0;
+
+    config->custom_opponent_scroll_speed =
+        (float)save->gammod_values[GMS_CUSTOM_OPP_SCROLL_X10] / 10.0f;
+    misc = save->gammod_values[GMS_MISC_FLAGS];
+    config->custom_scroll_opponent_separate = (misc & MISC_FLAG_OPP_SEPARATE) != 0;
+    config->custom_scroll_as_multiplier = (misc & MISC_FLAG_SCROLL_MULT) != 0;
+    config->skip_countdown_delay =
+        (float)((misc & MISC_COUNTDOWN_MASK) >> MISC_COUNTDOWN_SHIFT) / 10.0f;
 }
 
 void Gammod_StoreSave(const GammodConfig *config, FunkinSaveData *save)
 {
     int flags = 0;
+    int misc = 0;
+    int delay_tenths;
     if (config == NULL || save == NULL)
         return;
     save->gammod_values[GMS_AUTOPLAY] = config->autoplay;
@@ -415,6 +487,14 @@ void Gammod_StoreSave(const GammodConfig *config, FunkinSaveData *save)
     if (config->playback_match_event_durations) flags |= PLAYBACK_FLAG_EVENTS;
     if (config->playback_match_scroll_speed) flags |= PLAYBACK_FLAG_SCROLL;
     save->gammod_values[GMS_PLAYBACK_FLAGS] = (s16)flags;
+
+    save->gammod_values[GMS_CUSTOM_OPP_SCROLL_X10] =
+        (s16)(config->custom_opponent_scroll_speed * 10.0f + 0.5f);
+    if (config->custom_scroll_opponent_separate) misc |= MISC_FLAG_OPP_SEPARATE;
+    if (config->custom_scroll_as_multiplier) misc |= MISC_FLAG_SCROLL_MULT;
+    delay_tenths = (int)(gammod_clampf(config->skip_countdown_delay, 0.0f, 2.0f) * 10.0f + 0.5f);
+    misc |= (delay_tenths << MISC_COUNTDOWN_SHIFT) & MISC_COUNTDOWN_MASK;
+    save->gammod_values[GMS_MISC_FLAGS] = (s16)misc;
     save->gammod_values[GMS_MARKER] = GAMMOD_SAVE_MARKER;
 }
 
@@ -438,6 +518,114 @@ void Gammod_FreeChart(GammodRuntime *runtime)
     runtime->transformed_notes = NULL;
     runtime->transformed_count = 0;
     runtime->transformed = false;
+    runtime->intro_skip_pending = false;
+    runtime->intro_skip_time = 0;
+    runtime->intro_skip_scroll = 0;
+}
+
+static void gammod_configure_timing(GammodRuntime *runtime, GameplayState *game)
+{
+    float rate_float;
+    fixed_t rate;
+    fixed_t base_speed;
+    fixed_t player_speed;
+    fixed_t opponent_speed;
+    fixed_t factor;
+
+    rate_float = gammod_clampf(runtime->config.playback_rate, 0.5f, 3.0f);
+    runtime->config.playback_rate = rate_float;
+    rate = gammod_float_fixed(rate_float);
+    SongStream_SetPlaybackRate(&game->song, rate);
+
+    Rhythm_SetJudgementWindowsMs(
+        &game->rhythm,
+        runtime->config.custom_judgements ? runtime->config.sick_window_ms : 45,
+        runtime->config.custom_judgements ? runtime->config.good_window_ms : 90,
+        runtime->config.custom_judgements ? runtime->config.bad_window_ms : 135,
+        runtime->config.custom_judgements ? runtime->config.shit_window_ms : 160,
+        rate);
+    Rhythm_SetHealthMultipliers(
+        &game->rhythm,
+        gammod_float_fixed(gammod_clampf(runtime->config.health_gain, 0.0f, 66.0f)),
+        gammod_float_fixed(gammod_clampf(runtime->config.health_loss, 0.0f, 25.0f)));
+
+    game->block_scroll_events = !runtime->config.scroll_velocities;
+    game->event_time_scale = runtime->config.playback_match_event_durations
+        ? rate : FIXED_DEC(1, 1);
+
+    base_speed = game->rhythm.speed;
+    player_speed = base_speed;
+    opponent_speed = base_speed;
+    factor = runtime->config.playback_match_scroll_speed
+        ? rate : FIXED_DEC(1, 1);
+
+    if (runtime->config.custom_scroll_speed_enabled) {
+        fixed_t player_value = gammod_float_fixed(
+            gammod_clampf(runtime->config.custom_scroll_speed, 0.1f, 20.0f));
+        fixed_t opponent_value = runtime->config.custom_scroll_opponent_separate
+            ? gammod_float_fixed(gammod_clampf(
+                runtime->config.custom_opponent_scroll_speed, 0.1f, 20.0f))
+            : player_value;
+        player_value = FIXED_MUL(player_value, factor);
+        opponent_value = FIXED_MUL(opponent_value, factor);
+        if (runtime->config.custom_scroll_as_multiplier) {
+            player_speed = FIXED_MUL(base_speed, player_value);
+            opponent_speed = FIXED_MUL(base_speed, opponent_value);
+        } else {
+            player_speed = player_value;
+            opponent_speed = opponent_value;
+        }
+    }
+
+    /* Gammod's playback modifier divides strum speed when matchScrollSpeed is
+     * disabled, keeping the visual scroll rate stable while audio runs faster. */
+    if (!runtime->config.playback_match_scroll_speed && rate != FIXED_DEC(1, 1)) {
+        player_speed = FIXED_DIV(player_speed, rate);
+        opponent_speed = FIXED_DIV(opponent_speed, rate);
+    }
+    if (player_speed < FIXED_DEC(1, 10)) player_speed = FIXED_DEC(1, 10);
+    if (opponent_speed < FIXED_DEC(1, 10)) opponent_speed = FIXED_DEC(1, 10);
+
+    game->rhythm.speed = player_speed;
+    game->player_scroll_speed = player_speed;
+    game->opponent_scroll_speed = opponent_speed;
+    Rhythm_ChangeBPM(&game->rhythm, game->rhythm.last_bpm, game->rhythm.step_base);
+}
+
+static void gammod_prepare_intro_skip(GammodRuntime *runtime, const GameplayState *game)
+{
+    const ChartView *chart;
+    size_t i;
+    u16 first_pos = 0;
+    u32 safety_units;
+    u16 target;
+
+    runtime->intro_skip_pending = false;
+    if (runtime->config.skip_silence != GAMMOD_SKIP_SILENCE_INTRO ||
+        game == NULL || !game->loaded)
+        return;
+
+    chart = &game->chart.view;
+    for (i = 0; i < chart->note_count; ++i) {
+        const Note *note = &chart->notes[i];
+        if (note->pos == 0xFFFFu || (note->type & (NOTE_FLAG_HIT | NOTE_FLAG_SUSTAIN)))
+            continue;
+        if (!runtime->config.skip_count_enemy_notes &&
+            (note->type & NOTE_FLAG_OPPONENT))
+            continue;
+        first_pos = note->pos;
+        break;
+    }
+    if (first_pos == 0)
+        return;
+
+    safety_units = (u32)runtime->config.skip_safety_beats * 48u;
+    target = first_pos > safety_units ? (u16)(first_pos - safety_units) : 0;
+    if (target == 0)
+        return;
+    runtime->intro_skip_scroll = (fixed_t)target << FIXED_SHIFT;
+    runtime->intro_skip_time = chart_time_for_pos(game, target);
+    runtime->intro_skip_pending = runtime->intro_skip_time > 0;
 }
 
 boolean Gammod_TransformChart(GammodRuntime *runtime, GameplayState *game)
@@ -477,14 +665,15 @@ boolean Gammod_TransformChart(GammodRuntime *runtime, GameplayState *game)
     runtime->transformed = true;
 
     game->rhythm.ghost = runtime->config.ghost_tapping;
-    if (runtime->config.custom_scroll_speed_enabled) {
-        fixed_t speed = (fixed_t)(runtime->config.custom_scroll_speed * (float)FIXED_UNIT);
-        if (speed < FIXED_DEC(1, 10)) speed = FIXED_DEC(1, 10);
-        game->rhythm.speed = speed;
-        game->player_scroll_speed = speed;
-        game->opponent_scroll_speed = speed;
-        Rhythm_ChangeBPM(&game->rhythm, game->rhythm.last_bpm, 0);
+    gammod_configure_timing(runtime, game);
+
+    if (runtime->config.skip_countdown) {
+        Gameplay_SetCountdownDelay(
+            game,
+            gammod_float_fixed(gammod_clampf(
+                runtime->config.skip_countdown_delay, 0.0f, 2.0f)));
     }
+    gammod_prepare_intro_skip(runtime, game);
     return true;
 
 fail:
@@ -548,34 +737,120 @@ void Gammod_PreparePad(
     }
 }
 
-static void gammod_apply_health_drain(GammodRuntime *runtime, GameplayState *game)
+static boolean gammod_opponent_tap_this_frame(const GameplayState *game, u8 lane)
+{
+    const ChartView *chart;
+    size_t i;
+    s32 current;
+
+    if (game == NULL || !game->loaded)
+        return false;
+    chart = &game->chart.view;
+    current = game->note_scroll >> FIXED_SHIFT;
+    for (i = 0; i < chart->note_count; ++i) {
+        const Note *note = &chart->notes[i];
+        s32 delta;
+        if (!(note->type & NOTE_FLAG_HIT) || !(note->type & NOTE_FLAG_OPPONENT) ||
+            (note->type & 3) != (lane & 3))
+            continue;
+        delta = (s32)note->pos - current;
+        if (delta < -2 || delta > 2)
+            continue;
+        if (!(note->type & NOTE_FLAG_SUSTAIN))
+            return true;
+    }
+    return false;
+}
+
+static boolean gammod_opponent_hold_active(const GameplayState *game)
+{
+    const ChartView *chart;
+    s32 current;
+    int lane;
+
+    if (game == NULL || !game->loaded)
+        return false;
+    chart = &game->chart.view;
+    current = game->note_scroll >> FIXED_SHIFT;
+
+    for (lane = 0; lane < 4; ++lane) {
+        const Note *latest = NULL;
+        size_t i;
+        for (i = 0; i < chart->note_count; ++i) {
+            const Note *note = &chart->notes[i];
+            s32 delta;
+            if (!(note->type & NOTE_FLAG_HIT) || !(note->type & NOTE_FLAG_OPPONENT) ||
+                !(note->type & NOTE_FLAG_SUSTAIN) || (note->type & 3) != lane)
+                continue;
+            delta = current - (s32)note->pos;
+            if (delta < 0 || delta > 16)
+                continue;
+            if (latest == NULL || note->pos > latest->pos)
+                latest = note;
+        }
+        if (latest != NULL && !(latest->type & NOTE_FLAG_SUSTAIN_END))
+            return true;
+    }
+    return false;
+}
+
+static void gammod_drain_nonlethal(GameplayState *game, s32 amount)
+{
+    if (game == NULL || amount <= 0 || game->rhythm.health <= GAMMOD_DRAIN_FLOOR)
+        return;
+    game->rhythm.health -= amount;
+    if (game->rhythm.health < GAMMOD_DRAIN_FLOOR)
+        game->rhythm.health = GAMMOD_DRAIN_FLOOR;
+}
+
+static void gammod_apply_health_drain(
+    GammodRuntime *runtime,
+    GameplayState *game,
+    fixed_t elapsed)
 {
     u8 mask;
     int lane;
-    float drain;
+    float tap_drain;
+    float seconds;
 
     if (runtime->config.health_drain <= 0.0f)
         return;
     mask = game->events.opponent_hit_mask;
-    drain = runtime->config.health_drain == 66.0f ? 100.0f : runtime->config.health_drain;
+    tap_drain = runtime->config.health_drain == 66.0f
+        ? 100.0f : runtime->config.health_drain;
     for (lane = 0; lane < 4; ++lane) {
-        if (mask & (1u << lane)) {
-            s32 amount = (s32)(300.0f * drain + 0.5f);
-            if (game->rhythm.health - amount <= 0)
-                game->rhythm.health = 100;
-            else
-                game->rhythm.health -= amount;
+        if ((mask & (1u << lane)) && gammod_opponent_tap_this_frame(game, (u8)lane)) {
+            s32 amount = (s32)(300.0f * tap_drain + 0.5f);
+            gammod_drain_nonlethal(game, amount);
         }
+    }
+
+    if (gammod_opponent_hold_active(game)) {
+        seconds = (float)elapsed / (float)FIXED_UNIT;
+        gammod_drain_nonlethal(
+            game,
+            (s32)(runtime->config.health_drain *
+                (float)GAMMOD_HOLD_DRAIN_UNITS_SEC * seconds + 0.5f));
     }
 }
 
 void Gammod_OnGameplayFrame(GammodRuntime *runtime, GameplayState *game, fixed_t elapsed)
 {
-    (void)elapsed;
     if (runtime == NULL || game == NULL || !game->loaded)
         return;
 
-    gammod_apply_health_drain(runtime, game);
+    if (runtime->intro_skip_pending && game->audio_started) {
+        if (Gameplay_SeekIntro(
+                game,
+                runtime->intro_skip_time,
+                runtime->intro_skip_scroll)) {
+            runtime->intro_skip_pending = false;
+            return;
+        }
+        runtime->intro_skip_pending = false;
+    }
+
+    gammod_apply_health_drain(runtime, game, elapsed);
 
     if (runtime->config.perfect_only != GAMMOD_PERFECT_DISABLED) {
         boolean bad_judgement = false;
@@ -608,4 +883,18 @@ boolean Gammod_ResetOnDeath(const GammodRuntime *runtime)
 boolean Gammod_PerfectFailed(const GammodRuntime *runtime)
 {
     return runtime != NULL && runtime->perfect_failed;
+}
+
+fixed_t Gammod_PlaybackRate(const GammodRuntime *runtime)
+{
+    if (runtime == NULL)
+        return FIXED_DEC(1, 1);
+    return gammod_float_fixed(gammod_clampf(runtime->config.playback_rate, 0.5f, 3.0f));
+}
+
+fixed_t Gammod_PresentationDelta(const GammodRuntime *runtime, fixed_t elapsed)
+{
+    if (runtime == NULL || !runtime->config.playback_stage_rate)
+        return elapsed;
+    return FIXED_MUL(elapsed, Gammod_PlaybackRate(runtime));
 }
