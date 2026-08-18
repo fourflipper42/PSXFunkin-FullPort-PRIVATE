@@ -2,10 +2,8 @@
 """Discover official FNF runtime assets and convert them for the PS2 port.
 
 Besides characters/stages, this writes one compact FSON descriptor per
-song/variation/difficulty. The runtime can therefore load a song without any
-hard-coded Week/Tutorial knowledge: the descriptor names its characters,
-stage, note style, instrumental selection, and scroll speed while chart/audio
-paths follow the same song/variation/difficulty directory convention.
+song/variation/difficulty plus GAME.FCAT, a binary catalog the PS2 runtime can
+browse without parsing JSON or hard-coding song names.
 """
 
 from __future__ import annotations
@@ -20,6 +18,12 @@ from pathlib import Path
 FSON_MAGIC = b"FSON"
 FSON_VERSION = 1
 FSON_HEADER = struct.Struct("<4sHHI10If")
+
+FCAT_MAGIC = b"FCAT"
+FCAT_VERSION = 1
+FCAT_HEADER = struct.Struct("<4sHHIII")
+FCAT_ENTRY = struct.Struct("<IIIII")
+
 NO_STRING = 0xFFFFFFFF
 
 
@@ -140,6 +144,41 @@ def write_song_descriptor(
     return out
 
 
+def descriptor_disc_path(relative: str) -> str:
+    return ("\\GAME\\" + relative.replace("/", "\\") + ";1").upper()
+
+
+def write_song_catalog(output_root: Path, descriptors: list[dict]) -> Path:
+    strings = bytearray()
+    cache: dict[str, int] = {}
+    records = bytearray()
+
+    for item in descriptors:
+        values = [
+            str(item["song"]),
+            str(item["displayName"]),
+            str(item["variation"]),
+            str(item["difficulty"]),
+            descriptor_disc_path(str(item["file"])),
+        ]
+        offsets = [add_string(strings, cache, value) for value in values]
+        if any(offset == NO_STRING for offset in offsets):
+            raise ValueError(f"catalog entry contains an empty required string: {item}")
+        records.extend(FCAT_ENTRY.pack(*offsets))
+
+    header = FCAT_HEADER.pack(
+        FCAT_MAGIC,
+        FCAT_VERSION,
+        0,
+        len(descriptors),
+        FCAT_ENTRY.size,
+        len(strings),
+    )
+    path = output_root / "GAME.FCAT"
+    path.write_bytes(header + records + strings)
+    return path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("assets_root", type=Path)
@@ -221,6 +260,7 @@ def main() -> int:
             descriptors.append(
                 {
                     "song": song_id,
+                    "displayName": display_name,
                     "variation": variation,
                     "difficulty": difficulty,
                     "file": descriptor_path.relative_to(output_root).as_posix(),
@@ -273,9 +313,11 @@ def main() -> int:
             failures.append(f"stage {stage_id}: {exc}")
             print(f"ERROR stage {stage_id}: {exc}", file=sys.stderr)
 
+    catalog_path = write_song_catalog(output_root, descriptors)
     manifest = {
         "songs": songs,
         "songDescriptors": descriptors,
+        "runtimeCatalog": catalog_path.relative_to(output_root).as_posix(),
         "discovered": {
             "characters": sorted(characters),
             "stages": sorted(stages),
@@ -295,6 +337,7 @@ def main() -> int:
         f"{len(note_styles)} note styles from {len(songs)} metadata files"
     )
     print(f"runtime song descriptors: {len(descriptors)}")
+    print(f"runtime catalog: {catalog_path}")
     print(f"conversion failures: {len(failures)}")
     print(f"manifest: {manifest_path}")
 
