@@ -25,6 +25,7 @@ typedef struct AtlasHeaderV2 {
 
 #define ATLAS_VERSION_V1 1
 #define ATLAS_VERSION_V2 2
+#define ATLAS_DEFAULT_RESIDENT_PAGES 2
 
 static boolean starts_with(const char *text, const char *prefix)
 {
@@ -70,6 +71,85 @@ static boolean atlas_page_path(
     return written >= 0 && (size_t)written < out_size;
 }
 
+static void atlas_reset_usage_if_wrapped(SpriteAtlas *atlas)
+{
+    u16 i;
+    if (atlas->draw_serial != 0)
+        return;
+    atlas->draw_serial = 1;
+    for (i = 0; i < atlas->texture_count; ++i) {
+        if (atlas->textures[i].loaded)
+            atlas->page_last_used[i] = 1;
+        else
+            atlas->page_last_used[i] = 0;
+    }
+}
+
+static TextureAsset *atlas_page_for_draw(
+    GSGLOBAL *gs,
+    const SpriteAtlas *atlas_const,
+    u16 page_index)
+{
+    SpriteAtlas *atlas = (SpriteAtlas *)atlas_const;
+    u16 i;
+
+    if (gs == NULL || atlas == NULL || !atlas->loaded ||
+        page_index >= atlas->texture_count)
+        return NULL;
+    if (atlas->page_failed[page_index])
+        return NULL;
+
+    ++atlas->draw_serial;
+    atlas_reset_usage_if_wrapped(atlas);
+
+    if (atlas->textures[page_index].loaded) {
+        atlas->page_last_used[page_index] = atlas->draw_serial;
+        return &atlas->textures[page_index];
+    }
+
+    while (atlas->resident_pages >= atlas->resident_limit) {
+        u16 victim = atlas->texture_count;
+        u32 oldest = 0xffffffffu;
+
+        for (i = 0; i < atlas->texture_count; ++i) {
+            if (i == page_index || !atlas->textures[i].loaded)
+                continue;
+            if (atlas->page_last_used[i] <= oldest) {
+                oldest = atlas->page_last_used[i];
+                victim = i;
+            }
+        }
+
+        if (victim >= atlas->texture_count)
+            break;
+
+        TextureAsset_Forget(&atlas->textures[victim]);
+        atlas->page_last_used[victim] = 0;
+        if (atlas->resident_pages > 0)
+            --atlas->resident_pages;
+    }
+
+    {
+        char page_path[320];
+        if (!atlas_page_path(page_path, sizeof(page_path), atlas->texture_path, page_index) ||
+            !TextureAsset_Load(
+                gs,
+                &atlas->textures[page_index],
+                page_path,
+                atlas->linear_filter)) {
+            atlas->page_failed[page_index] = 1;
+            printf("[PS2] atlas page %u failed: %s\n",
+                (unsigned)page_index,
+                atlas->texture_path);
+            return NULL;
+        }
+    }
+
+    ++atlas->resident_pages;
+    atlas->page_last_used[page_index] = atlas->draw_serial;
+    return &atlas->textures[page_index];
+}
+
 boolean SpriteAtlas_Load(
     GSGLOBAL *gs,
     SpriteAtlas *atlas,
@@ -87,16 +167,18 @@ boolean SpriteAtlas_Load(
     u32 string_bytes;
     u32 record_size;
     u16 i;
+    int written;
 
-    if (gs == NULL || atlas == NULL || texture_path == NULL || frames_path == NULL)
+    (void)gs;
+
+    if (atlas == NULL || texture_path == NULL || frames_path == NULL)
         return false;
 
     memset(atlas, 0, sizeof(*atlas));
     memset(&file, 0, sizeof(file));
 
-    /* Read frame metadata first. Version 2 tells us how many texture pages the
-     * converter emitted, so giant desktop Sparrow sheets never need to exist
-     * as one impossible GS texture. */
+    /* Metadata is tiny and stays resident. Texture page pixels are intentionally
+     * not loaded here: each atlas keeps only a tiny LRU page window in EE RAM. */
     if (!AssetFile_Open(&file, frames_path))
         goto fail;
     atlas->frame_blob_size = AssetFile_Size(&file);
@@ -149,6 +231,14 @@ boolean SpriteAtlas_Load(
     atlas->string_bytes = string_bytes;
     atlas->frame_count = frame_count;
     atlas->texture_count = page_count;
+    atlas->linear_filter = linear_filter;
+    atlas->resident_limit = page_count < ATLAS_DEFAULT_RESIDENT_PAGES
+        ? page_count
+        : ATLAS_DEFAULT_RESIDENT_PAGES;
+
+    written = snprintf(atlas->texture_path, sizeof(atlas->texture_path), "%s", texture_path);
+    if (written < 0 || (size_t)written >= sizeof(atlas->texture_path))
+        goto fail;
 
     for (i = 0; i < frame_count; ++i) {
         if (base_header->version == ATLAS_VERSION_V1)
@@ -160,19 +250,13 @@ boolean SpriteAtlas_Load(
     }
 
     atlas->textures = (TextureAsset *)Mem_Alloc(sizeof(TextureAsset) * page_count);
-    if (atlas->textures == NULL)
+    atlas->page_last_used = (u32 *)Mem_Alloc(sizeof(u32) * page_count);
+    atlas->page_failed = (u8 *)Mem_Alloc(sizeof(u8) * page_count);
+    if (atlas->textures == NULL || atlas->page_last_used == NULL || atlas->page_failed == NULL)
         goto fail;
     memset(atlas->textures, 0, sizeof(TextureAsset) * page_count);
-
-    for (i = 0; i < page_count; ++i) {
-        char page_path[320];
-        if (!atlas_page_path(page_path, sizeof(page_path), texture_path, i))
-            goto fail;
-        if (!TextureAsset_Load(gs, &atlas->textures[i], page_path, linear_filter)) {
-            printf("[PS2] atlas page %u failed: %s\n", (unsigned)i, page_path);
-            goto fail;
-        }
-    }
+    memset(atlas->page_last_used, 0, sizeof(u32) * page_count);
+    memset(atlas->page_failed, 0, sizeof(u8) * page_count);
 
     atlas->loaded = true;
     return true;
@@ -184,6 +268,10 @@ fail:
             TextureAsset_Forget(&atlas->textures[i]);
         Mem_Free(atlas->textures);
     }
+    if (atlas->page_last_used != NULL)
+        Mem_Free(atlas->page_last_used);
+    if (atlas->page_failed != NULL)
+        Mem_Free(atlas->page_failed);
     if (atlas->frame_blob != NULL)
         Mem_Free(atlas->frame_blob);
     memset(atlas, 0, sizeof(*atlas));
@@ -200,6 +288,10 @@ void SpriteAtlas_Forget(SpriteAtlas *atlas)
             TextureAsset_Forget(&atlas->textures[i]);
         Mem_Free(atlas->textures);
     }
+    if (atlas->page_last_used != NULL)
+        Mem_Free(atlas->page_last_used);
+    if (atlas->page_failed != NULL)
+        Mem_Free(atlas->page_failed);
     if (atlas->frame_blob != NULL)
         Mem_Free(atlas->frame_blob);
     memset(atlas, 0, sizeof(*atlas));
@@ -281,7 +373,7 @@ void SpriteAtlas_DrawFrameEx(
     u64 color)
 {
     const AtlasFrame *frame;
-    const TextureAsset *texture;
+    TextureAsset *texture;
     float trim_x;
     float trim_y;
     float dx;
@@ -301,7 +393,10 @@ void SpriteAtlas_DrawFrameEx(
         return;
     if (frame->flags & 1u)
         return; /* Rotated Sparrow frames are not used by base FNF sheets. */
-    texture = &atlas->textures[frame->page_index];
+
+    texture = atlas_page_for_draw(gs, atlas, frame->page_index);
+    if (texture == NULL)
+        return;
 
     trim_x = -(float)frame->frame_x;
     trim_y = -(float)frame->frame_y;
