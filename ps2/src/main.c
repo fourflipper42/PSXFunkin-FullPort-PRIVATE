@@ -72,6 +72,7 @@ static boolean g_player_loaded;
 static boolean g_opponent_loaded;
 static boolean g_girlfriend_loaded;
 static int g_camera_focus;
+static char g_current_descriptor[320] = DEFAULT_DESCRIPTOR;
 
 static void boot_set_frame(void *user, u8 frame)
 {
@@ -359,6 +360,41 @@ static void render_fallback_lanes(
     }
 }
 
+static void render_flow_overlay(
+    GSGLOBAL *gs,
+    const VideoTransform *t,
+    const GameplayState *game)
+{
+    const u64 panel = GS_SETREG_RGBAQ(0x10, 0x10, 0x18, 0x70, 0x00);
+    const u64 white = GS_SETREG_RGBAQ(0xff, 0xff, 0xff, 0x80, 0x00);
+    const u64 red = GS_SETREG_RGBAQ(0xff, 0x32, 0x32, 0x80, 0x00);
+    const u64 green = GS_SETREG_RGBAQ(0x42, 0xff, 0x72, 0x80, 0x00);
+
+    if (game == NULL)
+        return;
+
+    if (Gameplay_IsDead(game)) {
+        draw_logical_rect(gs, t, 205.0f, 125.0f, 435.0f, 235.0f, 20, panel);
+        draw_logical_rect(gs, t, 254.0f, 151.0f, 386.0f, 165.0f, 21, red);
+        draw_logical_rect(gs, t, 254.0f, 195.0f, 386.0f, 209.0f, 21, red);
+        draw_logical_rect(gs, t, 270.0f, 173.0f, 370.0f, 187.0f, 21, white);
+        return;
+    }
+
+    if (Gameplay_IsFinished(game)) {
+        draw_logical_rect(gs, t, 205.0f, 125.0f, 435.0f, 235.0f, 20, panel);
+        draw_logical_rect(gs, t, 240.0f, 151.0f, 400.0f, 167.0f, 21, green);
+        draw_logical_rect(gs, t, 270.0f, 180.0f, 370.0f, 196.0f, 21, white);
+        return;
+    }
+
+    if (Gameplay_IsPaused(game)) {
+        draw_logical_rect(gs, t, 245.0f, 125.0f, 395.0f, 235.0f, 20, panel);
+        draw_logical_rect(gs, t, 285.0f, 151.0f, 305.0f, 209.0f, 21, white);
+        draw_logical_rect(gs, t, 335.0f, 151.0f, 355.0f, 209.0f, 21, white);
+    }
+}
+
 static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game)
 {
     const u64 black = GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x80, 0x00);
@@ -386,6 +422,8 @@ static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game
         health_ratio = 1.0f;
     draw_logical_rect(gs, &t, 170.0f, 330.0f, 470.0f, 340.0f, 8, health_bg);
     draw_logical_rect(gs, &t, 170.0f, 330.0f, 170.0f + 300.0f * health_ratio, 340.0f, 9, health_fg);
+
+    render_flow_overlay(gs, &t, game);
 
     gsKit_queue_exec(gs);
     gsKit_sync_flip(gs);
@@ -483,6 +521,44 @@ static void tick_camera(void)
 
     g_stage_camera.scroll_x += (target_x - g_stage_camera.scroll_x) * alpha;
     g_stage_camera.scroll_y += (target_y - g_stage_camera.scroll_y) * alpha;
+}
+
+static void unload_presentation_assets(void)
+{
+    if (g_note_style_loaded)
+        NoteStyle_Free(&g_note_style);
+    if (g_player_loaded)
+        Character_Forget(&g_player);
+    if (g_opponent_loaded)
+        Character_Forget(&g_opponent);
+    if (g_girlfriend_loaded)
+        Character_Forget(&g_girlfriend);
+    if (g_stage_loaded)
+        Stage_Forget(&g_stage);
+
+    g_note_style_loaded = false;
+    g_player_loaded = false;
+    g_opponent_loaded = false;
+    g_girlfriend_loaded = false;
+    g_stage_loaded = false;
+    NoteLaneRenderer_Reset();
+}
+
+static void unload_current_song(GSGLOBAL *gs)
+{
+    unload_presentation_assets();
+
+    if (g_gameplay_loaded || g_gameplay.loaded)
+        Gameplay_Free(&g_gameplay);
+    if (g_descriptor_loaded)
+        SongDescriptor_Free(&g_song_descriptor);
+
+    memset(&g_song_paths, 0, sizeof(g_song_paths));
+    g_gameplay_loaded = false;
+    g_descriptor_loaded = false;
+    g_camera_focus = 0;
+    CameraEffects_Init(&g_camera_effects, 1.0f);
+    TextureAsset_ClearVRAM(gs);
 }
 
 static void load_presentation_assets(GSGLOBAL *gs)
@@ -628,6 +704,12 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
 {
     ChartResult result;
 
+    if (descriptor_path == NULL || descriptor_path[0] == '\0')
+        return false;
+
+    strncpy(g_current_descriptor, descriptor_path, sizeof(g_current_descriptor) - 1);
+    g_current_descriptor[sizeof(g_current_descriptor) - 1] = '\0';
+
     if (!SongDescriptor_Load(&g_song_descriptor, descriptor_path)) {
         printf("[PS2] song descriptor load failed: %s\n", descriptor_path);
         return false;
@@ -662,6 +744,9 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
         g_song_descriptor.scroll_speed);
     if (result != CHART_OK) {
         printf("[PS2] gameplay load failed: %s\n", Chart_ResultString(result));
+        SongDescriptor_Free(&g_song_descriptor);
+        memset(&g_song_paths, 0, sizeof(g_song_paths));
+        g_descriptor_loaded = false;
         return false;
     }
 
@@ -675,6 +760,20 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
     return true;
 }
 
+static boolean retry_current_song(GSGLOBAL *gs)
+{
+    char descriptor[sizeof(g_current_descriptor)];
+
+    if (!g_descriptor_loaded && g_current_descriptor[0] == '\0')
+        return false;
+
+    strncpy(descriptor, g_current_descriptor, sizeof(descriptor) - 1);
+    descriptor[sizeof(descriptor) - 1] = '\0';
+    printf("[PS2] retry: %s\n", descriptor);
+    unload_current_song(gs);
+    return load_descriptor_song(gs, descriptor);
+}
+
 int main(int argc, char **argv)
 {
     GSGLOBAL *gs;
@@ -685,6 +784,7 @@ int main(int argc, char **argv)
     printf("\nFNF PS2 native port\n");
     printf("logical canvas: 640x360\n");
     printf("SELECT: toggle 16:9 / 4:3 letterbox\n");
+    printf("START: pause/resume | CROSS/START: retry after death/end\n");
     printf("notes: d-pad OR square/cross/triangle/circle\n");
 
     SifInitRpc(0);
@@ -715,6 +815,7 @@ int main(int argc, char **argv)
                 FIXED_DEC(1, 1));
             if (result == CHART_OK) {
                 g_gameplay_loaded = true;
+                g_current_descriptor[0] = '\0';
                 printf("[PS2] direct gameplay loaded: %u notes\n",
                     (unsigned)g_gameplay.chart.view.note_count);
             } else {
@@ -740,10 +841,46 @@ int main(int argc, char **argv)
         }
 
         if (g_gameplay_loaded) {
-            Gameplay_Tick(&g_gameplay, &pad_state);
-            NoteLaneRenderer_Tick(&g_gameplay, &pad_state);
-            tick_presentation();
-            render_gameplay(gs, aspect, &g_gameplay);
+            if (Gameplay_IsDead(&g_gameplay)) {
+                if (pad_state.press & (PAD_CROSS | PAD_START)) {
+                    if (!retry_current_song(gs))
+                        printf("[PS2] retry unavailable\n");
+                }
+            } else if (Gameplay_IsFinished(&g_gameplay)) {
+                if (pad_state.press & (PAD_CROSS | PAD_START)) {
+                    if (!retry_current_song(gs))
+                        printf("[PS2] replay unavailable\n");
+                } else if (pad_state.press & PAD_CIRCLE) {
+                    printf("[PS2] leaving completed song\n");
+                    unload_current_song(gs);
+                }
+            } else {
+                if (pad_state.press & PAD_START) {
+                    boolean want_pause = !Gameplay_IsPaused(&g_gameplay);
+                    if (Gameplay_SetPaused(&g_gameplay, want_pause))
+                        printf("[PS2] %s\n", want_pause ? "paused" : "resumed");
+                }
+
+                if (!Gameplay_IsPaused(&g_gameplay)) {
+                    Gameplay_Tick(&g_gameplay, &pad_state);
+                    NoteLaneRenderer_Tick(&g_gameplay, &pad_state);
+                    tick_presentation();
+
+                    if (g_gameplay.events.player_died)
+                        printf("[PS2] GAME OVER score=%d misses=%u\n",
+                            (int)g_gameplay.rhythm.score,
+                            (unsigned)g_gameplay.misses);
+                    if (g_gameplay.events.song_finished)
+                        printf("[PS2] SONG COMPLETE score=%d misses=%u\n",
+                            (int)g_gameplay.rhythm.score,
+                            (unsigned)g_gameplay.misses);
+                }
+            }
+
+            if (g_gameplay_loaded)
+                render_gameplay(gs, aspect, &g_gameplay);
+            else
+                render_boot_test(gs, aspect);
         } else {
             render_boot_test(gs, aspect);
         }
