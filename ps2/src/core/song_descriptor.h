@@ -26,6 +26,7 @@ typedef struct SongDescriptor {
 
 typedef struct SongAssetPaths {
     char chart[256];
+    char events[256];
     char inst[256];
     char voices[256];
     char stage_base[256];
