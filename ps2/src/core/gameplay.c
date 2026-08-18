@@ -156,16 +156,18 @@ static void Gameplay_LateMiss(GameplayState *state, Note *note)
 
     if (note->type & NOTE_FLAG_SUSTAIN) {
         if (!state->rhythm.kade)
-            state->rhythm.health -= 100;
+            Rhythm_ApplyHealthChange(&state->rhythm, -100);
         state->events.player_missed = true;
         return;
     }
 
     if (state->rhythm.combo != 0)
         state->rhythm.combo = 0;
-    state->rhythm.health -= state->rhythm.kade
-        ? ((note->type & NOTE_FLAG_SUSTAIN_END) ? 2000 : 1000)
-        : 1000;
+    Rhythm_ApplyHealthChange(
+        &state->rhythm,
+        state->rhythm.kade
+            ? ((note->type & NOTE_FLAG_SUSTAIN_END) ? -2000 : -1000)
+            : -1000);
     state->rhythm.score -= 1;
     ++state->misses;
     state->events.player_missed = true;
@@ -278,6 +280,8 @@ ChartResult Gameplay_Load(
     Rhythm_ChangeBPM(&state->rhythm, first_bpm, 0);
     state->player_scroll_speed = state->rhythm.speed;
     state->opponent_scroll_speed = state->rhythm.speed;
+    state->event_time_scale = FIXED_DEC(1, 1);
+    state->block_scroll_events = false;
 
     state->note_scroll = -(192 << FIXED_SHIFT);
     state->song_time = FIXED_DIV(state->note_scroll, state->rhythm.step_crochet);
@@ -335,6 +339,53 @@ boolean Gameplay_IsFinished(const GameplayState *state)
     return state != NULL && state->finished;
 }
 
+boolean Gameplay_SetCountdownDelay(GameplayState *state, fixed_t delay_seconds)
+{
+    if (state == NULL || !state->loaded || state->audio_started ||
+        state->dead || state->finished)
+        return false;
+    if (delay_seconds < 0)
+        delay_seconds = 0;
+    if (delay_seconds > FIXED_DEC(2, 1))
+        delay_seconds = FIXED_DEC(2, 1);
+
+    state->song_time = -delay_seconds;
+    state->note_scroll = FIXED_MUL(state->song_time, state->rhythm.step_crochet);
+    state->song_step = scroll_to_song_step(state->note_scroll);
+    return true;
+}
+
+boolean Gameplay_SeekIntro(
+    GameplayState *state,
+    fixed_t song_time,
+    fixed_t note_scroll)
+{
+    u64 frame;
+
+    if (state == NULL || !state->loaded || song_time < 0 || note_scroll < 0 ||
+        state->dead || state->finished)
+        return false;
+
+    frame = ((u64)(u32)song_time * AUDIO_SAMPLE_RATE) >> FIXED_SHIFT;
+    if (!SongStream_SeekFrame(&state->song, frame))
+        return false;
+
+    state->song_time = song_time;
+    state->note_scroll = note_scroll;
+    state->song_step = scroll_to_song_step(note_scroll);
+    state->cur_section = 0;
+    state->first_note = 0;
+    state->audio_started = true;
+    state->paused = false;
+    state->dead = false;
+    state->finished = false;
+    Gameplay_ResetEvents(state);
+    if (state->song_events.loaded)
+        SongEvents_Reset(&state->song_events);
+    Gameplay_UpdateSections(state);
+    return true;
+}
+
 void Gameplay_PressLane(GameplayState *state, u8 lane)
 {
     ChartView *chart;
@@ -364,7 +415,7 @@ void Gameplay_PressLane(GameplayState *state, u8 lane)
             if (fp - early > state->note_scroll || fp + late < state->note_scroll)
                 continue;
             note->type |= NOTE_FLAG_HIT;
-            state->rhythm.health -= 2000;
+            Rhythm_ApplyHealthChange(&state->rhythm, -2000);
             state->rhythm.combo = 0;
             state->events.mine_hit = true;
             SongStream_SetVoices(&state->song, false);
@@ -423,7 +474,7 @@ void Gameplay_HoldLane(GameplayState *state, u8 lane)
         state->events.player_hit_mask |= (u8)(1u << lane);
         SongStream_SetVoices(&state->song, true);
         if (!state->rhythm.kade)
-            state->rhythm.health += 230;
+            Rhythm_ApplyHealthChange(&state->rhythm, 230);
         break;
     }
 }
