@@ -13,6 +13,7 @@
 #include "core/disc.h"
 #include "core/gameplay.h"
 #include "core/song_descriptor.h"
+#include "core/song_events.h"
 #include "core/texture_asset.h"
 #include "core/stage.h"
 #include "core/character.h"
@@ -23,9 +24,6 @@
 #define NTSC_H    448.0f
 
 #define DEFAULT_DESCRIPTOR "\\GAME\\SONG\\TUTORIAL\\DEFAULT\\NORMAL.FSON;1"
-#define DEFAULT_CHART      "\\CHART\\TUTORIAL\\DEFAULT\\NORMAL.CHT;1"
-#define DEFAULT_INST       "\\AUDIO\\TUTORIAL\\DEFAULT\\INST.PCM;1"
-#define DEFAULT_VOICES     "\\AUDIO\\TUTORIAL\\DEFAULT\\VOICES.PCM;1"
 #define STAGE_Z_MIN        ((s32)-0x7fffffff)
 #define STAGE_Z_MAX        ((s32)0x7fffffff)
 
@@ -57,6 +55,7 @@ static Animatable g_boot_anim;
 static GameplayState g_gameplay;
 static SongDescriptor g_song_descriptor;
 static SongAssetPaths g_song_paths;
+static SongEventStream g_song_events;
 static Stage g_stage;
 static StageCamera g_stage_camera;
 static Character g_player;
@@ -64,10 +63,12 @@ static Character g_opponent;
 static Character g_girlfriend;
 static boolean g_gameplay_loaded;
 static boolean g_descriptor_loaded;
+static boolean g_song_events_loaded;
 static boolean g_stage_loaded;
 static boolean g_player_loaded;
 static boolean g_opponent_loaded;
 static boolean g_girlfriend_loaded;
+static int g_camera_focus;
 
 static void boot_set_frame(void *user, u8 frame)
 {
@@ -405,6 +406,94 @@ static boolean load_character_from_base(
     return true;
 }
 
+static const StageCharacterSlot *focused_slot(void)
+{
+    if (!g_stage_loaded)
+        return NULL;
+
+    switch (g_camera_focus) {
+        case 1:
+            return Stage_OpponentSlot(&g_stage);
+        case 2:
+            return Stage_GirlfriendSlot(&g_stage);
+        default:
+            return Stage_PlayerSlot(&g_stage);
+    }
+}
+
+static void snap_camera_to_focus(void)
+{
+    const StageCharacterSlot *slot = focused_slot();
+    float zoom;
+
+    if (slot == NULL)
+        return;
+    zoom = g_stage_camera.zoom;
+    if (zoom <= 0.0f)
+        zoom = 1.0f;
+
+    /* Stage positions are kept in the original 1280x720 world. With the
+     * canonical 0.5 presentation scale, these scroll values put the focused
+     * character + authored camera offset at the center of 640x360. */
+    g_stage_camera.scroll_x = slot->x + slot->camera_x - (LOGICAL_W / (0.5f * zoom));
+    g_stage_camera.scroll_y = slot->y + slot->camera_y - (LOGICAL_H / (0.5f * zoom));
+}
+
+static void tick_camera(void)
+{
+    const StageCharacterSlot *slot = focused_slot();
+    float zoom;
+    float target_x;
+    float target_y;
+    float dt;
+    float alpha;
+
+    if (slot == NULL)
+        return;
+
+    zoom = g_stage_camera.zoom;
+    if (zoom <= 0.0f)
+        zoom = 1.0f;
+    target_x = slot->x + slot->camera_x - (LOGICAL_W / (0.5f * zoom));
+    target_y = slot->y + slot->camera_y - (LOGICAL_H / (0.5f * zoom));
+
+    dt = (float)timer_dt / (float)FIXED_UNIT;
+    alpha = dt * 8.0f;
+    if (alpha < 0.0f)
+        alpha = 0.0f;
+    if (alpha > 1.0f)
+        alpha = 1.0f;
+
+    g_stage_camera.scroll_x += (target_x - g_stage_camera.scroll_x) * alpha;
+    g_stage_camera.scroll_y += (target_y - g_stage_camera.scroll_y) * alpha;
+}
+
+static void dispatch_song_event(
+    void *user,
+    const SongEventRecord *event,
+    const char *name,
+    const char *value_json)
+{
+    (void)user;
+
+    if (event == NULL || name == NULL || value_json == NULL)
+        return;
+
+    if (event->kind == SONG_EVENT_FOCUS_CAMERA) {
+        int focus = (int)(event->arg0 + 0.5f);
+        if (focus >= 0 && focus <= 2) {
+            g_camera_focus = focus;
+            printf("[PS2] FocusCamera -> %s\n",
+                focus == 0 ? "player" : (focus == 1 ? "opponent" : "girlfriend"));
+        }
+        return;
+    }
+
+    /* Unknown event payloads are deliberately retained on disc. Logging them
+     * here makes unimplemented handlers visible without losing source data. */
+    printf("[PS2] event %s value=%s\n", name, value_json);
+}
+
 static void load_presentation_assets(GSGLOBAL *gs)
 {
     if (!g_descriptor_loaded)
@@ -430,6 +519,9 @@ static void load_presentation_assets(GSGLOBAL *gs)
     g_player_loaded = load_character_from_base(gs, &g_player, g_song_paths.player_base);
     g_opponent_loaded = load_character_from_base(gs, &g_opponent, g_song_paths.opponent_base);
     g_girlfriend_loaded = load_character_from_base(gs, &g_girlfriend, g_song_paths.girlfriend_base);
+
+    if (g_stage_loaded)
+        snap_camera_to_focus();
 
     printf("[PS2] presentation: bf=%s dad=%s gf=%s\n",
         g_player_loaded ? "ok" : "missing",
@@ -491,6 +583,7 @@ static void tick_presentation(void)
         }
     }
 
+    tick_camera();
     if (g_stage_loaded)
         Stage_Tick(&g_stage);
     if (g_player_loaded)
@@ -528,6 +621,11 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
         g_song_descriptor.opponent,
         g_song_descriptor.girlfriend);
 
+    g_song_events_loaded = SongEvents_Load(&g_song_events, g_song_paths.events);
+    printf("[PS2] chart events=%s%s\n",
+        g_song_events_loaded ? "ok" : "missing",
+        g_song_events_loaded ? "" : " (gameplay continues; strict DVD build should catch this)");
+
     result = Gameplay_Load(
         &g_gameplay,
         g_song_paths.chart,
@@ -538,14 +636,20 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
         g_song_descriptor.scroll_speed);
     if (result != CHART_OK) {
         printf("[PS2] gameplay load failed: %s\n", Chart_ResultString(result));
+        if (g_song_events_loaded) {
+            SongEvents_Free(&g_song_events);
+            g_song_events_loaded = false;
+        }
         return false;
     }
 
+    g_camera_focus = 0;
     g_gameplay_loaded = true;
     load_presentation_assets(gs);
-    printf("[PS2] gameplay loaded: %u notes, %u sections\n",
+    printf("[PS2] gameplay loaded: %u notes, %u sections, %u events\n",
         (unsigned)g_gameplay.chart.view.note_count,
-        (unsigned)g_gameplay.chart.view.section_count);
+        (unsigned)g_gameplay.chart.view.section_count,
+        g_song_events_loaded ? (unsigned)g_song_events.count : 0u);
     return true;
 }
 
@@ -614,6 +718,13 @@ int main(int argc, char **argv)
 
         if (g_gameplay_loaded) {
             Gameplay_Tick(&g_gameplay, &pad_state);
+            if (g_song_events_loaded) {
+                SongEvents_Tick(
+                    &g_song_events,
+                    g_gameplay.song_time,
+                    dispatch_song_event,
+                    NULL);
+            }
             tick_presentation();
             render_gameplay(gs, aspect, &g_gameplay);
         } else {
