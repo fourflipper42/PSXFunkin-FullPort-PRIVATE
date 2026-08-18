@@ -1,5 +1,7 @@
 #include "darnell_intro_visual.h"
 
+#include "cutscene_controller.h"
+#include "presentation_registry.h"
 #include "sprite_atlas.h"
 #include <string.h>
 
@@ -11,6 +13,10 @@ typedef enum DarnellCanMotion {
     DARNELL_CAN_FORWARD
 } DarnellCanMotion;
 
+static boolean g_song_darnell;
+static boolean g_auto_running;
+static fixed_t g_auto_time;
+static fixed_t g_auto_previous;
 static boolean g_enabled;
 static boolean g_load_attempted;
 static boolean g_intro_loaded;
@@ -28,6 +34,12 @@ static fixed_t g_shot_timer;
 static boolean g_explosion_visible;
 static u16 g_explosion_frame;
 static fixed_t g_explosion_timer;
+
+static boolean auto_crossed(float seconds)
+{
+    fixed_t point = (fixed_t)(seconds * (float)FIXED_UNIT + 0.5f);
+    return g_auto_previous < point && g_auto_time >= point;
+}
 
 static const char *intro_prefix(void)
 {
@@ -58,6 +70,17 @@ static void load_assets(GSGLOBAL *gs)
         "\\GAME\\WEEKEND1\\SHOTEXP.FPTX;1",
         "\\GAME\\WEEKEND1\\SHOTEXP.FATL;1",
         true);
+}
+
+void DarnellIntroVisual_SetSong(const char *song_id)
+{
+    g_song_darnell = song_id != NULL && strcmp(song_id, "darnell") == 0;
+    if (!g_song_darnell) {
+        DarnellIntroVisual_End();
+        g_auto_running = false;
+        g_auto_time = 0;
+        g_auto_previous = 0;
+    }
 }
 
 void DarnellIntroVisual_Begin(void)
@@ -188,6 +211,40 @@ void DarnellIntroVisual_Tick(fixed_t elapsed)
     tick_intro(elapsed);
     tick_shot(elapsed);
     tick_explosion(elapsed);
+}
+
+void DarnellIntroVisual_AutoTick(fixed_t elapsed)
+{
+    Character *player;
+    const char *animation;
+
+    if (!g_song_darnell)
+        return;
+
+    if (!g_auto_running) {
+        player = PresentationRegistry_Player();
+        animation = Character_CurrentAnimationName(player);
+        if (!CutsceneController_Active() || animation == NULL ||
+            strcmp(animation, "intro1") != 0)
+            return;
+        DarnellIntroVisual_Begin();
+        g_auto_running = true;
+        g_auto_time = 0;
+        g_auto_previous = 0;
+    }
+
+    if (!CutsceneController_Active()) {
+        DarnellIntroVisual_End();
+        g_auto_running = false;
+        return;
+    }
+
+    g_auto_previous = g_auto_time;
+    g_auto_time += elapsed;
+    if (auto_crossed(6.4f)) DarnellIntroVisual_KickUp();
+    if (auto_crossed(6.9f)) DarnellIntroVisual_KneeForward();
+    if (auto_crossed(7.1f)) DarnellIntroVisual_Shoot();
+    DarnellIntroVisual_Tick(elapsed);
 }
 
 static boolean pile(
