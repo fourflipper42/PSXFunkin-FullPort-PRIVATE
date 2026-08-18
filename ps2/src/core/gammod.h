@@ -52,6 +52,7 @@ typedef struct GammodConfig {
     boolean ghost_tapping;
     boolean scroll_velocities;
     boolean custom_judgements;
+    boolean custom_scroll_speed_enabled;
     boolean reset_on_death;
     boolean skip_countdown;
     boolean random_avoid_jacks;
