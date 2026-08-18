@@ -66,12 +66,13 @@ jobs:
             ps2/disc/AUDIO \
             --manifest ps2/disc/AUDIO/AUDIOIDX.JSON
 
-      - name: Convert every chart and variation
+      - name: Convert every chart, variation and event stream
         run: |
           python3 ps2/scripts/convert_charts.py \
             "$ASSETS_ROOT" \
             ps2/disc/CHART \
-            --manifest ps2/disc/CHART/CHARTIDX.JSON
+            --manifest ps2/disc/CHART/CHARTIDX.JSON \
+            --strict
 
       - name: Convert every discovered character, stage and song descriptor
         run: |
@@ -113,6 +114,7 @@ jobs:
           du -sh ps2/disc
           find ps2/disc/AUDIO -type f | wc -l | xargs echo 'audio files:'
           find ps2/disc/CHART -name '*.CHT' -type f | wc -l | xargs echo 'charts:'
+          find ps2/disc/CHART -name 'EVENTS.FEVT' -type f | wc -l | xargs echo 'event streams:'
           find ps2/disc/GAME/CHAR -name 'CHAR.FCHR' -type f 2>/dev/null | wc -l | xargs echo 'characters:'
           find ps2/disc/GAME/STAGE -name 'STAGE.FSTG' -type f 2>/dev/null | wc -l | xargs echo 'stages:'
           find ps2/disc/GAME/SONG -name '*.FSON' -type f 2>/dev/null | wc -l | xargs echo 'song descriptors:'
