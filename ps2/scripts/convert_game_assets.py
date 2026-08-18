@@ -284,9 +284,11 @@ def main() -> int:
 
     character_converter = load_module("convert_character.py", "convert_character")
     stage_converter = load_module("convert_stage.py", "convert_stage")
+    weekend1_converter = load_module("convert_weekend1_assets.py", "convert_weekend1_assets")
 
     converted_characters: list[dict] = []
     converted_stages: list[dict] = []
+    weekend1_pack: dict | None = None
     failures: list[str] = list(parse_errors)
 
     for character_id in sorted(characters):
@@ -313,6 +315,16 @@ def main() -> int:
             failures.append(f"stage {stage_id}: {exc}")
             print(f"ERROR stage {stage_id}: {exc}", file=sys.stderr)
 
+    if (assets_root.joinpath("weekend1", "images").is_dir()):
+        try:
+            weekend1_pack = weekend1_converter.convert(
+                assets_root,
+                output_root / "WEEKEND1",
+            )
+        except Exception as exc:
+            failures.append(f"weekend1 dynamic assets: {exc}")
+            print(f"ERROR weekend1 dynamic assets: {exc}", file=sys.stderr)
+
     catalog_path = write_song_catalog(output_root, descriptors)
     manifest = {
         "songs": songs,
@@ -326,6 +338,7 @@ def main() -> int:
         "converted": {
             "characters": converted_characters,
             "stages": converted_stages,
+            "weekend1": weekend1_pack,
         },
         "failures": failures,
     }
