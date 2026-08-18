@@ -1,12 +1,11 @@
 #include "frontend.h"
 
-#include "health_drain.h"
 #include "ps2_glyph.h"
 #include <stdio.h>
 #include <string.h>
 
 #define FRONTEND_STORY_ROWS 10u
-#define FRONTEND_OPTION_COUNT 8u
+#define FRONTEND_OPTION_COUNT 7u
 
 static const char *page_name(FrontendPage page)
 {
@@ -36,9 +35,6 @@ static void print_text(
     const char *text)
 {
     if (alphabet != NULL && alphabet->loaded) {
-        /* Better Alphabet currently owns its own markup color; use it for the
-         * full Unicode/menu content path, while ROM FONTM remains the compact
-         * development fallback on systems without the mod font. */
         (void)color;
         BetterAlphabet_Draw(gs, alphabet, x, y, scale * 1.1f, z, text);
     } else if (frontend != NULL && frontend->font_ready && frontend->rom_font != NULL) {
@@ -255,35 +251,27 @@ static FrontendAction update_options(
                 save->settings_flags ^= SAVE_FLAG_CAMERA_MOVEMENT;
                 changed = true;
                 break;
-            case 1: {
-                int level = (int)save->health_drain_level + direction;
-                if (level < HEALTH_DRAIN_OFF) level = HEALTH_DRAIN_LEVEL_COUNT - 1;
-                if (level >= HEALTH_DRAIN_LEVEL_COUNT) level = HEALTH_DRAIN_OFF;
-                save->health_drain_level = (u8)level;
-                changed = true;
-                break;
-            }
-            case 2:
+            case 1:
                 save->settings_flags ^= SAVE_FLAG_ENDLESS_DEFAULT;
                 changed = true;
                 break;
-            case 3:
+            case 2:
                 save->settings_flags ^= SAVE_FLAG_COMBO_POPUPS;
                 changed = true;
                 break;
-            case 4:
+            case 3:
                 save->settings_flags ^= SAVE_FLAG_COMBO_SWOOSH;
                 changed = true;
                 break;
-            case 5:
+            case 4:
                 save->hud_icons_position = (u8)((save->hud_icons_position + direction + 3) % 3);
                 changed = true;
                 break;
-            case 6:
+            case 5:
                 save->settings_flags ^= SAVE_FLAG_HUD_SCORE_VISIBLE;
                 changed = true;
                 break;
-            case 7:
+            case 6:
                 save->hud_combo_style = save->hud_combo_style == 0 ? 1 : 0;
                 changed = true;
                 break;
@@ -447,14 +435,13 @@ static void draw_options(
     if (save == NULL)
         return;
     snprintf(lines[0], sizeof(lines[0]), "CAMERA MOVEMENTS: %s", on_off((save->settings_flags & SAVE_FLAG_CAMERA_MOVEMENT) != 0));
-    snprintf(lines[1], sizeof(lines[1]), "HEALTH DRAIN: %s", HealthDrain_LevelName((HealthDrainLevel)save->health_drain_level));
-    snprintf(lines[2], sizeof(lines[2]), "ENDLESS DEFAULT: %s", on_off((save->settings_flags & SAVE_FLAG_ENDLESS_DEFAULT) != 0));
-    snprintf(lines[3], sizeof(lines[3]), "COMBO POPUPS: %s", on_off((save->settings_flags & SAVE_FLAG_COMBO_POPUPS) != 0));
-    snprintf(lines[4], sizeof(lines[4]), "COMBO SWOOSH: %s", on_off((save->settings_flags & SAVE_FLAG_COMBO_SWOOSH) != 0));
-    snprintf(lines[5], sizeof(lines[5]), "ICON POSITION: %s",
+    snprintf(lines[1], sizeof(lines[1]), "ENDLESS DEFAULT: %s", on_off((save->settings_flags & SAVE_FLAG_ENDLESS_DEFAULT) != 0));
+    snprintf(lines[2], sizeof(lines[2]), "COMBO POPUPS: %s", on_off((save->settings_flags & SAVE_FLAG_COMBO_POPUPS) != 0));
+    snprintf(lines[3], sizeof(lines[3]), "COMBO SWOOSH: %s", on_off((save->settings_flags & SAVE_FLAG_COMBO_SWOOSH) != 0));
+    snprintf(lines[4], sizeof(lines[4]), "ICON POSITION: %s",
         save->hud_icons_position == 1 ? "CORNERS" : (save->hud_icons_position == 2 ? "CLASSIC" : "DEFAULT"));
-    snprintf(lines[6], sizeof(lines[6]), "SCORE TEXT: %s", on_off((save->settings_flags & SAVE_FLAG_HUD_SCORE_VISIBLE) != 0));
-    snprintf(lines[7], sizeof(lines[7]), "COMBO STYLE: %s", save->hud_combo_style == 1 ? "WORLD" : "DUSTIN");
+    snprintf(lines[5], sizeof(lines[5]), "SCORE TEXT: %s", on_off((save->settings_flags & SAVE_FLAG_HUD_SCORE_VISIBLE) != 0));
+    snprintf(lines[6], sizeof(lines[6]), "COMBO STYLE: %s", save->hud_combo_style == 1 ? "WORLD" : "DUSTIN");
 
     for (i = 0; i < FRONTEND_OPTION_COUNT; ++i) {
         float y = 125.0f + i * 27.0f;
@@ -506,7 +493,6 @@ void Frontend_Draw(
         }
     }
 
-    /* Common DualShock-native navigation legend. No keyboard/mobile glyphs. */
     Ps2Glyph_Draw(gs, PS2_GLYPH_L2, 34.0f, 404.0f, 18.0f, 8);
     Ps2Glyph_Draw(gs, PS2_GLYPH_R2, 78.0f, 404.0f, 18.0f, 8);
     Ps2Glyph_Draw(gs, PS2_GLYPH_CROSS, 528.0f, 406.0f, 18.0f, 8);
