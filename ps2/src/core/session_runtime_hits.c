@@ -1,6 +1,7 @@
 #define SESSION_RUNTIME_IMPLEMENTATION
 #include "session_runtime.h"
 
+#include "presentation_registry.h"
 #include "sserafim_runtime.h"
 
 void SessionRuntime_PlayHitAnimationsCore(
