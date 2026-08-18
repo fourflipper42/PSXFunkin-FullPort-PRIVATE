@@ -121,3 +121,30 @@ boolean SongCatalog_Get(const SongCatalog *catalog, u32 index, SongCatalogEntry 
         entry->variation != NULL && entry->difficulty != NULL &&
         entry->descriptor_path != NULL;
 }
+
+boolean SongCatalog_Find(
+    const SongCatalog *catalog,
+    const char *song_id,
+    const char *variation,
+    const char *difficulty,
+    SongCatalogEntry *entry)
+{
+    u32 i;
+    SongCatalogEntry candidate;
+
+    if (catalog == NULL || !catalog->loaded || song_id == NULL ||
+        variation == NULL || difficulty == NULL || entry == NULL)
+        return false;
+
+    for (i = 0; i < catalog->count; ++i) {
+        if (!SongCatalog_Get(catalog, i, &candidate))
+            continue;
+        if (strcmp(candidate.song_id, song_id) == 0 &&
+            strcmp(candidate.variation, variation) == 0 &&
+            strcmp(candidate.difficulty, difficulty) == 0) {
+            *entry = candidate;
+            return true;
+        }
+    }
+    return false;
+}
