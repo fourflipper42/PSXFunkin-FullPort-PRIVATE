@@ -1,6 +1,7 @@
 #ifndef FNF_PS2_CHARACTER_H
 #define FNF_PS2_CHARACTER_H
 
+#include "fixed.h"
 #include "sprite_atlas.h"
 
 typedef struct CharacterAnimData {
