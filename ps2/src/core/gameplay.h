@@ -11,6 +11,13 @@
 #define INPUT_DOWN  (PAD_DOWN  | PAD_CROSS)
 #define INPUT_UP    (PAD_UP    | PAD_TRIANGLE)
 #define INPUT_RIGHT (PAD_RIGHT | PAD_CIRCLE)
+#define GAMEPLAY_FRAME_SONG_EVENT_MAX 16
+
+typedef struct GameplaySongEventFrame {
+    u16 kind;
+    const char *name;
+    const char *value;
+} GameplaySongEventFrame;
 
 typedef struct GameplayFrameEvents {
     u8 player_hit_mask;
@@ -19,13 +26,16 @@ typedef struct GameplayFrameEvents {
     boolean mine_hit;
     boolean just_step;
     boolean song_event_fired;
+    boolean song_event_overflow;
     boolean camera_focus_changed;
     boolean player_died;
     boolean song_finished;
     u8 camera_focus;
+    u8 song_event_count;
     u16 last_song_event_kind;
     const char *last_song_event_name;
     const char *last_song_event_value;
+    GameplaySongEventFrame song_events[GAMEPLAY_FRAME_SONG_EVENT_MAX];
     HitRating last_rating;
 } GameplayFrameEvents;
 
