@@ -13,6 +13,7 @@ import importlib.util
 import io
 import json
 import shutil
+import sys
 import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -35,7 +36,7 @@ def load_module(filename: str, module_name: str):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"unable to load {path}")
     mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
+    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 
