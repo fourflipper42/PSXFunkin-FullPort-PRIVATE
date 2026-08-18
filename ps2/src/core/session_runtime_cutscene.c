@@ -2,6 +2,7 @@
 #include "session_runtime.h"
 
 #include "cutscene_controller.h"
+#include "weekend1_runtime.h"
 #include <string.h>
 
 void SessionRuntime_InitCutsceneAware(
@@ -15,6 +16,7 @@ void SessionRuntime_InitCutsceneAware(
 
 void SessionRuntime_ShutdownCutsceneAware(SessionRuntime *session)
 {
+    Weekend1Runtime_EndSong();
     CutsceneController_Shutdown();
     SessionRuntime_Shutdown(session);
 }
@@ -62,9 +64,20 @@ boolean SessionRuntime_BeginSongCutsceneAware(
     if (!result)
         return false;
 
+    Weekend1Runtime_BeginSong(
+        descriptor != NULL ? descriptor->song_id : NULL,
+        game,
+        session != NULL ? &session->note_kinds : NULL);
+
     if (!endless_continuation && descriptor != NULL && descriptor->song_id != NULL)
         CutsceneController_BeginSong(gs, descriptor->song_id, story_mode);
     return true;
+}
+
+void SessionRuntime_EndSongCutsceneAware(SessionRuntime *session)
+{
+    Weekend1Runtime_EndSong();
+    SessionRuntime_EndSong(session);
 }
 
 void SessionRuntime_PreparePadCutsceneAware(
