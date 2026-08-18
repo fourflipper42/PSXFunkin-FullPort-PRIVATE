@@ -99,7 +99,7 @@ static boolean same_lane_side(const Note *a, const Note *b)
 static u16 bpm_for_pos(const GameplayState *game, u16 pos)
 {
     const ChartView *chart;
-    u16 bpm = 100 * 24;
+    u16 bpm = 100;
     size_t i;
 
     if (game == NULL)
@@ -109,11 +109,11 @@ static u16 bpm_for_pos(const GameplayState *game, u16 pos)
         const Section *section = &chart->sections[i];
         u16 value = section->flag & SECTION_FLAG_BPM_MASK;
         if (value != 0)
-            bpm = value;
+            bpm = (u16)(value / 24u);
         if (section->end == 0xFFFFu || pos < section->end)
             break;
     }
-    return bpm;
+    return bpm == 0 ? 1 : bpm;
 }
 
 static fixed_t chart_time_for_pos(const GameplayState *game, u16 pos)
@@ -334,7 +334,7 @@ static boolean transform_long_notes(
             continue;
 
         bpm = bpm_for_pos(game, head->note.pos);
-        margin_units = (u16)(((u32)bpm * 8u + 50u) / 100u);
+        margin_units = (u16)(((u32)bpm * GAMMOD_NOTE_MARGIN_MS * 48u + 30000u) / 60000u);
         if (margin_units < 1) margin_units = 1;
         if ((u32)head->note.pos + 12u + margin_units >= end_pos)
             continue;
@@ -577,8 +577,6 @@ static void gammod_configure_timing(GammodRuntime *runtime, GameplayState *game)
         }
     }
 
-    /* Gammod's playback modifier divides strum speed when matchScrollSpeed is
-     * disabled, keeping the visual scroll rate stable while audio runs faster. */
     if (!runtime->config.playback_match_scroll_speed && rate != FIXED_DEC(1, 1)) {
         player_speed = FIXED_DIV(player_speed, rate);
         opponent_speed = FIXED_DIV(opponent_speed, rate);
@@ -854,8 +852,12 @@ void Gammod_OnGameplayFrame(GammodRuntime *runtime, GameplayState *game, fixed_t
 
     if (runtime->config.perfect_only != GAMMOD_PERFECT_DISABLED) {
         boolean bad_judgement = false;
-        if (game->events.player_missed || game->events.mine_hit)
+        if (game->events.mine_hit)
             bad_judgement = true;
+        if (game->events.player_missed) {
+            if (!game->events.empty_press_miss || runtime->config.perfect_fail_on_ghost)
+                bad_judgement = true;
+        }
         if (game->events.player_hit_mask != 0) {
             if (runtime->config.perfect_only == GAMMOD_PERFECT_GOLDEN)
                 bad_judgement = game->events.last_rating != HIT_SICK;
