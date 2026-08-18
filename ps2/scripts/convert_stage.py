@@ -15,12 +15,12 @@ import sys
 from pathlib import Path
 
 MAGIC = b"FSTG"
-VERSION = 1
+VERSION = 2
 NO_STRING = 0xFFFFFFFF
 
 HEADER = struct.Struct("<4sHHIIIIfIII")
 CHAR_SLOT = struct.Struct("<ffiffffffff")
-PROP = struct.Struct("<iIfffffffffIHHII")
+PROP = struct.Struct("<iIfffffffffIIHHII")
 ANIM = struct.Struct("<IIffHHIHH")
 
 PROP_FLIP_X = 1 << 0
@@ -250,6 +250,7 @@ def convert(assets_root: Path, stage_id: str, output_dir: Path) -> dict:
                 alpha,
                 angle,
                 dance_every,
+                name_off,
                 starting_off,
                 anim_count,
                 0,
