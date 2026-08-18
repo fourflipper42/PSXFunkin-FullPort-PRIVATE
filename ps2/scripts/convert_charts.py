@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert every current-format FNF song chart into the PS2 .CHT layout."""
+"""Convert every current-format FNF song chart into PS2 gameplay assets."""
 
 from __future__ import annotations
 
@@ -11,9 +11,8 @@ import sys
 from pathlib import Path
 
 
-def load_chartc(repo_root: Path):
-    path = repo_root / "scripts" / "psxfunkin_chartc_v2.py"
-    spec = importlib.util.spec_from_file_location("psxfunkin_chartc_v2", path)
+def load_module(path: Path, module_name: str):
+    spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"unable to load {path}")
     mod = importlib.util.module_from_spec(spec)
@@ -61,14 +60,18 @@ def main() -> int:
     parser.add_argument("output_root", type=Path)
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--manifest", type=Path, default=None)
+    parser.add_argument("--strict", action="store_true", help="Fail if any chart/event stream cannot be converted")
     args = parser.parse_args()
 
-    chartc = load_chartc(args.repo_root.resolve())
+    repo_root = args.repo_root.resolve()
+    chartc = load_module(repo_root / "scripts" / "psxfunkin_chartc_v2.py", "psxfunkin_chartc_v2")
+    eventc = load_module(Path(__file__).with_name("convert_events.py"), "convert_events")
     songs_root = find_data_songs(args.input_root.resolve())
     output_root = args.output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
     records: list[dict] = []
+    event_records: list[dict] = []
     failures: list[str] = []
 
     for song_dir in sorted(p for p in songs_root.iterdir() if p.is_dir()):
@@ -89,6 +92,25 @@ def main() -> int:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             except Exception as exc:
                 failures.append(f"{song}/{variation}: JSON error: {exc}")
+                continue
+
+            try:
+                event_payload, event_count = eventc.encode_events(chart)
+                event_out = output_root / song / variation / "EVENTS.FEVT"
+                event_out.parent.mkdir(parents=True, exist_ok=True)
+                event_out.write_bytes(event_payload)
+                event_records.append(
+                    {
+                        "song": song,
+                        "variation": variation,
+                        "file": event_out.relative_to(output_root).as_posix(),
+                        "count": event_count,
+                        "bytes": len(event_payload),
+                        "sha256": sha256(event_payload),
+                    }
+                )
+            except Exception as exc:
+                failures.append(f"{song}/{variation}: event conversion error: {exc}")
                 continue
 
             note_sets = chart.get("notes")
@@ -120,10 +142,12 @@ def main() -> int:
                 )
 
     manifest = {
-        "format": "PSXFunkin CHT / PS2 portable parser",
+        "format": "PSXFunkin CHT + FNF PS2 FEVT",
         "songs_root": songs_root.as_posix(),
         "count": len(records),
+        "eventStreamCount": len(event_records),
         "charts": records,
+        "eventStreams": event_records,
         "warnings": failures,
     }
     manifest_path = args.manifest or (output_root / "chart_manifest.json")
@@ -131,6 +155,7 @@ def main() -> int:
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     print(f"generated {len(records)} PS2 charts")
+    print(f"generated {len(event_records)} PS2 event streams")
     if failures:
         print(f"warnings: {len(failures)}")
         for warning in failures:
@@ -138,6 +163,8 @@ def main() -> int:
     print(f"manifest: {manifest_path}")
     if not records:
         raise SystemExit("no charts were converted")
+    if args.strict and failures:
+        return 1
     return 0
 
 
