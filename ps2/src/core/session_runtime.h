@@ -41,6 +41,7 @@ typedef struct SessionRuntime {
     CameraMovement camera_movement;
     NoteKindRuntime note_kinds;
     HudRuntime hud;
+    GameplayState *active_game;
 
     boolean memcard_ready;
     boolean pins_loaded;
