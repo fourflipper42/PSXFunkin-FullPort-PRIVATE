@@ -1,5 +1,6 @@
 #include "presentation_events.h"
 
+#include "sserafim_runtime.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -167,6 +168,9 @@ boolean PresentationEvents_Handle(
             targets->rhythm,
             event->name,
             event->value))
+        return true;
+
+    if (SserafimRuntime_HandleEvent(event->name, event->value))
         return true;
 
     if (strcmp(event->name, "PlayAnimation") == 0)
