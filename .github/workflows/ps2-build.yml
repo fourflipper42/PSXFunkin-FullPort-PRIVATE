@@ -38,6 +38,7 @@ jobs:
           sha256sum ps2/build/funkin_ps2.elf | tee ps2/SHA256SUMS.txt
 
       - name: Upload PS2 bootstrap
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: fnf-ps2-bootstrap
