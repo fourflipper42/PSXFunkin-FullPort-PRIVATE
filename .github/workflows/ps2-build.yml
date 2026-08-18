@@ -1,0 +1,75 @@
+name: FNF PS2 Native Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ps2-full-port
+    paths:
+      - 'ps2/**'
+      - '.github/workflows/ps2-build.yml'
+  pull_request:
+    branches:
+      - full-port-completion
+    paths:
+      - 'ps2/**'
+      - '.github/workflows/ps2-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-ps2:
+    runs-on: ubuntu-22.04
+    env:
+      PS2DEV: /home/runner/ps2dev
+      PS2SDK: /home/runner/ps2dev/ps2sdk
+      GSKIT: /home/runner/ps2dev/gsKit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host utilities
+        run: sudo apt-get update && sudo apt-get install -y make file curl
+
+      - name: Install current official PS2DEV toolchain
+        run: |
+          mkdir -p "$PS2DEV"
+          curl -fL --retry 3 --retry-delay 3 \
+            https://github.com/ps2dev/ps2dev/releases/download/latest/ps2dev-ubuntu-latest.tar.gz \
+            -o /tmp/ps2dev-latest.tar.gz
+          tar -xf /tmp/ps2dev-latest.tar.gz --strip-components 1 -C "$PS2DEV"
+          echo "$PS2DEV/bin" >> "$GITHUB_PATH"
+          echo "$PS2DEV/ee/bin" >> "$GITHUB_PATH"
+          echo "$PS2DEV/iop/bin" >> "$GITHUB_PATH"
+          echo "$PS2DEV/dvp/bin" >> "$GITHUB_PATH"
+          echo "$PS2SDK/bin" >> "$GITHUB_PATH"
+
+      - name: Build PS2 ELF
+        working-directory: ps2
+        run: |
+          command -v mips64r5900el-ps2-elf-gcc
+          set +e
+          make clean all > build-ci.log 2>&1
+          STATUS=$?
+          cat build-ci.log
+          exit "$STATUS"
+
+      - name: Verify ELF
+        if: success()
+        run: |
+          test -s ps2/build/funkin_ps2.elf
+          file ps2/build/funkin_ps2.elf
+          sha256sum ps2/build/funkin_ps2.elf | tee ps2/SHA256SUMS.txt
+
+      - name: Upload PS2 bootstrap and build log
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: fnf-ps2-bootstrap
+          compression-level: 0
+          if-no-files-found: warn
+          path: |
+            ps2/build/funkin_ps2.elf
+            ps2/SHA256SUMS.txt
+            ps2/build-ci.log
