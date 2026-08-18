@@ -4,6 +4,7 @@
 #include <gsMisc.h>
 #include <gsTexture.h>
 #include <malloc.h>
+#include <stdio.h>
 #include <string.h>
 
 typedef struct FptxHeader {
@@ -21,7 +22,10 @@ typedef struct FptxHeader {
 #define FPTX_VERSION 1
 #define FPTX_FORMAT_T8 8
 #define FPTX_CLUT_BYTES (256u * 4u)
+#define GS_VRAM_BYTES (4u * 1024u * 1024u)
 
+static GSGLOBAL *streaming_gs;
+static u32 streaming_capacity;
 static float draw_x_scale = 1.0f;
 static float draw_y_scale = 1.0f;
 static float draw_x_offset = 0.0f;
@@ -32,12 +36,39 @@ static boolean read_exact(AssetFile *file, void *dst, size_t size)
     return AssetFile_Read(file, dst, size) == size;
 }
 
+void TextureAsset_InitStreaming(GSGLOBAL *gs)
+{
+    if (gs == NULL)
+        return;
+
+    streaming_gs = gs;
+    streaming_capacity = gs->CurrentPointer < GS_VRAM_BYTES
+        ? GS_VRAM_BYTES - gs->CurrentPointer
+        : 0;
+
+    /* Direct transfers avoid consuming the one-shot render queue with large
+     * atlas uploads. The manager still caches and evicts textures by use. */
+    gsKit_TexManager_init(gs);
+    gsKit_TexManager_setmode(gs, ETM_DIRECT);
+
+    printf("[PS2] streamed texture VRAM: %u KiB available\n",
+        (unsigned)(streaming_capacity / 1024u));
+}
+
+void TextureAsset_EndFrame(GSGLOBAL *gs)
+{
+    if (gs != NULL && gs == streaming_gs)
+        gsKit_TexManager_nextFrame(gs);
+}
+
 boolean TextureAsset_Load(GSGLOBAL *gs, TextureAsset *asset, const char *path, boolean linear_filter)
 {
     AssetFile file;
     FptxHeader header;
     u32 texture_vram_size;
     u32 clut_vram_size;
+    u32 required_vram;
+    boolean streamed;
 
     if (gs == NULL || asset == NULL || path == NULL)
         return false;
@@ -64,9 +95,25 @@ boolean TextureAsset_Load(GSGLOBAL *gs, TextureAsset *asset, const char *path, b
     asset->texture.ClutPSM = GS_PSM_CT32;
     asset->texture.ClutStorageMode = GS_CLUT_STORAGE_CSM1;
     asset->texture.Filter = linear_filter ? GS_FILTER_LINEAR : GS_FILTER_NEAREST;
-    asset->texture.Delayed = 0;
     asset->texture.Vram = 0;
     asset->texture.VramClut = 0;
+
+    texture_vram_size = gsKit_texture_size(
+        asset->texture.Width,
+        asset->texture.Height,
+        asset->texture.PSM);
+    clut_vram_size = gsKit_texture_size(16, 16, GS_PSM_CT32);
+    required_vram = texture_vram_size + clut_vram_size;
+    streamed = gs == streaming_gs && streaming_capacity != 0;
+
+    if (streamed && required_vram > streaming_capacity) {
+        printf("[PS2] texture too large for streamed GS cache: %ux%u needs %u KiB, cache %u KiB\n",
+            (unsigned)header.width,
+            (unsigned)header.height,
+            (unsigned)(required_vram / 1024u),
+            (unsigned)(streaming_capacity / 1024u));
+        goto fail;
+    }
 
     asset->texture.Mem = (u32 *)memalign(128, header.pixel_bytes);
     asset->texture.Clut = (u32 *)memalign(128, header.clut_bytes);
@@ -79,12 +126,16 @@ boolean TextureAsset_Load(GSGLOBAL *gs, TextureAsset *asset, const char *path, b
     AssetFile_Close(&file);
 
     gsKit_setup_tbw(&asset->texture);
-    texture_vram_size = gsKit_texture_size(
-        asset->texture.Width,
-        asset->texture.Height,
-        asset->texture.PSM);
-    clut_vram_size = gsKit_texture_size(16, 16, GS_PSM_CT32);
+    if (streamed) {
+        /* Keep indexed pixels + CLUT in EE memory. TexManager_bind() uploads
+         * and caches the sheet on first use, then evicts old sheets as needed. */
+        asset->texture.Delayed = GS_SETTING_ON;
+        asset->loaded = true;
+        return true;
+    }
 
+    /* Safe fallback for tools/tests that did not initialize the stream cache. */
+    asset->texture.Delayed = GS_SETTING_OFF;
     asset->texture.Vram = gsKit_vram_alloc(gs, texture_vram_size, GSKIT_ALLOC_USERBUFFER);
     if (asset->texture.Vram == GSKIT_ALLOC_ERROR)
         goto fail_memory;
@@ -93,7 +144,6 @@ boolean TextureAsset_Load(GSGLOBAL *gs, TextureAsset *asset, const char *path, b
         goto fail_memory;
 
     gsKit_texture_upload(gs, &asset->texture);
-
     free(asset->texture.Mem);
     free(asset->texture.Clut);
     asset->texture.Mem = NULL;
@@ -114,14 +164,29 @@ fail_memory:
 
 void TextureAsset_Forget(TextureAsset *asset)
 {
-    if (asset != NULL)
-        memset(asset, 0, sizeof(*asset));
+    if (asset == NULL)
+        return;
+
+    if (streaming_gs != NULL && asset->loaded && asset->texture.Delayed)
+        gsKit_TexManager_free(streaming_gs, &asset->texture);
+    if (asset->texture.Mem != NULL)
+        free(asset->texture.Mem);
+    if (asset->texture.Clut != NULL)
+        free(asset->texture.Clut);
+    memset(asset, 0, sizeof(*asset));
 }
 
 void TextureAsset_ClearVRAM(GSGLOBAL *gs)
 {
-    if (gs != NULL)
+    if (gs == NULL)
+        return;
+
+    if (gs == streaming_gs) {
+        /* Drop the manager's cache map without disturbing gsKit's frame buffers. */
+        gsKit_TexManager_init(gs);
+    } else {
         gsKit_vram_clear(gs);
+    }
 }
 
 void TextureAsset_SetDrawTransform(
@@ -150,12 +215,18 @@ void TextureAsset_Draw(
     int z,
     u64 color)
 {
+    GSTEXTURE *texture;
+
     if (gs == NULL || asset == NULL || !asset->loaded)
         return;
 
+    texture = (GSTEXTURE *)&asset->texture;
+    if (texture->Delayed)
+        gsKit_TexManager_bind(gs, texture);
+
     gsKit_prim_sprite_texture(
         gs,
-        &asset->texture,
+        texture,
         draw_x_offset + x1 * draw_x_scale,
         draw_y_offset + y1 * draw_y_scale,
         u1,
