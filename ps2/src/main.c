@@ -19,6 +19,7 @@
 #include "core/note_style.h"
 #include "core/note_lane_renderer.h"
 #include "core/camera_effects.h"
+#include "core/presentation_events.h"
 #include "core/stage.h"
 #include "core/character.h"
 
@@ -342,6 +343,7 @@ static void render_fallback_lanes(
 
     for (i = game->first_note; i < chart->note_count; ++i) {
         Note *note = &chart->notes[i];
+        boolean opponent;
         fixed_t delta;
         fixed_t pixel_delta;
         float y;
@@ -352,15 +354,14 @@ static void render_fallback_lanes(
 
         if (note->type & NOTE_FLAG_HIT)
             continue;
+        opponent = (note->type & NOTE_FLAG_OPPONENT) != 0;
         delta = Gameplay_NoteDelta(game, note);
-        pixel_delta = FIXED_MUL(game->rhythm.note_speed, delta);
+        pixel_delta = FIXED_MUL(Gameplay_NoteSpeedForSide(game, opponent), delta);
         y = receptor_y + ((float)pixel_delta / (float)FIXED_UNIT);
-        if (y < -48.0f)
+        if (y < -48.0f || y > 390.0f)
             continue;
-        if (y > 390.0f)
-            break;
 
-        x = lane_x((note->type & NOTE_FLAG_OPPONENT) != 0, note->type & 3);
+        x = lane_x(opponent, note->type & 3);
         color = (note->type & NOTE_FLAG_MINE) ? mine : lane_color(note->type & 3);
         if (note->type & NOTE_FLAG_SUSTAIN) {
             w = 12.0f;
@@ -658,7 +659,8 @@ static void dance_character_on_beat(Character *character, s32 beat)
 
 static void consume_gameplay_events(void)
 {
-    boolean camera_event_handled = false;
+    PresentationEventTargets targets;
+    u8 i;
 
     if (g_gameplay.events.camera_focus_changed) {
         g_camera_focus = g_gameplay.events.camera_focus;
@@ -667,22 +669,29 @@ static void consume_gameplay_events(void)
             (g_camera_focus == 1 ? "opponent" : "girlfriend"));
     }
 
-    if (g_gameplay.events.song_event_fired &&
-        g_gameplay.events.last_song_event_name != NULL &&
-        g_gameplay.events.last_song_event_value != NULL) {
-        camera_event_handled = CameraEffects_OnSongEvent(
-            &g_camera_effects,
-            &g_gameplay.rhythm,
-            g_gameplay.events.last_song_event_name,
-            g_gameplay.events.last_song_event_value);
+    targets.camera = &g_camera_effects;
+    targets.rhythm = &g_gameplay.rhythm;
+    targets.player = &g_player;
+    targets.opponent = &g_opponent;
+    targets.girlfriend = &g_girlfriend;
+    targets.stage = &g_stage;
 
-        if (!camera_event_handled &&
-            g_gameplay.events.last_song_event_kind == SONG_EVENT_GENERIC) {
-            printf("[PS2] event %s value=%s\n",
-                g_gameplay.events.last_song_event_name,
-                g_gameplay.events.last_song_event_value);
+    for (i = 0; i < g_gameplay.events.song_event_count; ++i) {
+        const GameplaySongEventFrame *event = &g_gameplay.events.song_events[i];
+        boolean handled = PresentationEvents_Handle(&targets, event);
+
+        /* ScrollSpeed is consumed by the note renderer because its state lives
+         * alongside the two strumline speeds. FocusCamera is normalized by the
+         * gameplay event stream above. */
+        if (!handled && event->kind == SONG_EVENT_GENERIC &&
+            strcmp(event->name, "ScrollSpeed") != 0) {
+            printf("[PS2] event %s value=%s\n", event->name, event->value);
         }
     }
+
+    if (g_gameplay.events.song_event_overflow)
+        printf("[PS2] WARNING: more than %d song events fired in one frame\n",
+            GAMEPLAY_FRAME_SONG_EVENT_MAX);
 }
 
 static void tick_presentation(void)
@@ -822,8 +831,6 @@ int main(int argc, char **argv)
     Pad_Init();
     gs = init_video();
 
-    /* Upload ROM font before defining the streamed-texture VRAM region so the
-     * browser never competes with song/stage texture pages for the same GS RAM. */
     font_ok = FreeplayBrowser_InitFont(gs, &g_browser);
     printf("[PS2] ROM font=%s\n", font_ok ? "ok" : "unavailable");
 
