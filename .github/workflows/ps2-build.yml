@@ -31,20 +31,33 @@ jobs:
             -v "$PWD:/work" \
             -w /work/ps2 \
             ps2dev/ps2dev:latest \
-            /bin/sh -c 'apk add --no-cache make >/dev/null && command -v mips64r5900el-ps2-elf-gcc && make clean all'
+            /bin/sh -c 'apk add --no-cache make >/dev/null && command -v mips64r5900el-ps2-elf-gcc && make clean all > build-ci.log 2>&1'
+
+      - name: Print compiler log
+        if: always()
+        run: |
+          if [ -f ps2/build-ci.log ]; then
+            cat ps2/build-ci.log
+          else
+            echo 'build-ci.log was not produced'
+          fi
 
       - name: Verify ELF
+        if: success()
         run: |
           test -s ps2/build/funkin_ps2.elf
           file ps2/build/funkin_ps2.elf
           sha256sum ps2/build/funkin_ps2.elf | tee ps2/SHA256SUMS.txt
 
-      - name: Upload PS2 bootstrap
+      - name: Upload PS2 bootstrap and build log
+        if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: fnf-ps2-bootstrap
           compression-level: 0
+          if-no-files-found: warn
           path: |
             ps2/build/funkin_ps2.elf
             ps2/SHA256SUMS.txt
+            ps2/build-ci.log
