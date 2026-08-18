@@ -97,6 +97,7 @@ void Gammod_StoreSave(const GammodConfig *config, FunkinSaveData *save);
 void Gammod_Init(GammodRuntime *runtime, const GammodConfig *config);
 void Gammod_FreeChart(GammodRuntime *runtime);
 boolean Gammod_TransformChart(GammodRuntime *runtime, GameplayState *game);
+boolean Gammod_RestartAttempt(GammodRuntime *runtime, GameplayState *game);
 void Gammod_ApplyStartingHealth(GammodRuntime *runtime, GameplayState *game);
 void Gammod_PreparePad(
     GammodRuntime *runtime,
