@@ -99,9 +99,7 @@ def convert(assets_root: Path, character_id: str, output_dir: Path) -> dict:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     atlas_stem = output_dir / "ATLAS"
-    texture_converter = atlas_converter.load_texture_converter()
-    texture_converter.convert(png_path, atlas_stem.with_suffix(".FPTX"))
-    frame_count = atlas_converter.convert_frames(xml_path, atlas_stem.with_suffix(".FATL"))
+    frame_count, page_count = atlas_converter.convert(png_path, xml_path, atlas_stem)
 
     strings = bytearray()
     string_cache: dict[str, int] = {}
@@ -193,6 +191,7 @@ def convert(assets_root: Path, character_id: str, output_dir: Path) -> dict:
         "sourcePng": png_path.as_posix(),
         "sourceXml": xml_path.as_posix(),
         "atlasFrames": frame_count,
+        "atlasPages": page_count,
         "animations": len(anim_records) // ANIM.size,
         "output": output_dir.as_posix(),
     }
