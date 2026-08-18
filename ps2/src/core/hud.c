@@ -59,6 +59,17 @@ void Hud_Init(HudRuntime *hud)
         memset(hud, 0, sizeof(*hud));
 }
 
+void Hud_SetGameplayMode(
+    HudRuntime *hud,
+    boolean hidden,
+    boolean suppress_scoring_ui)
+{
+    if (hud == NULL)
+        return;
+    hud->hidden = hidden;
+    hud->suppress_scoring_ui = suppress_scoring_ui;
+}
+
 boolean Hud_LoadSong(
     GSGLOBAL *gs,
     HudRuntime *hud,
@@ -198,7 +209,6 @@ static void draw_fc(
             (float)asset->texture.Width, (float)asset->texture.Height,
             13, color);
     } else if (font != NULL) {
-        /* Assetless development fallback. */
         gsKit_fontm_print_scaled(gs, font, hx(split_x - 8.0f), hy(HUD_BAR_Y - 4.0f),
             13, 0.28f, color, "FC");
     }
@@ -231,23 +241,23 @@ static void draw_score(
     width = approximate_text_width(text, scale);
 
     switch (save->hud_score_position) {
-        case 1: /* classic */
+        case 1:
             x = 626.0f - width;
             y = 14.0f;
             break;
-        case 2: /* topLeft */
+        case 2:
             x = 14.0f;
             y = 14.0f;
             break;
-        case 3: /* bottomLeft */
+        case 3:
             x = 14.0f;
             y = 336.0f;
             break;
-        case 4: /* bottomRight */
+        case 4:
             x = 626.0f - width;
             y = 336.0f;
             break;
-        default: /* hud */
+        default:
             x = HUD_BAR_X + HUD_BAR_W - 95.0f;
             y = HUD_BAR_Y + 15.0f;
             break;
@@ -293,7 +303,7 @@ void Hud_Draw(
     u64 player;
     HealthIconPositionMode position;
 
-    if (gs == NULL || hud == NULL || game == NULL || save == NULL)
+    if (gs == NULL || hud == NULL || game == NULL || save == NULL || hud->hidden)
         return;
 
     health_ratio = (float)game->rhythm.health / 20000.0f;
@@ -329,7 +339,9 @@ void Hud_Draw(
             game->rhythm.health, false, position,
             (float)icon_opacity / 100.0f, 13);
 
-    draw_fc(gs, hud, game, save, font);
-    draw_score(gs, game, save, font);
-    draw_combo_effects(gs, hud, save, font);
+    if (!hud->suppress_scoring_ui) {
+        draw_fc(gs, hud, game, save, font);
+        draw_score(gs, game, save, font);
+        draw_combo_effects(gs, hud, save, font);
+    }
 }
