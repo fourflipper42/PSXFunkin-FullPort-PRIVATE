@@ -109,6 +109,10 @@ boolean SessionRuntime_Save(SessionRuntime *session)
     if (session == NULL)
         return false;
     SaveData_SetProgression(&session->save, &session->progression);
+    /* Frontend edits Gammod through the compact save blob so it can keep the
+     * legacy main-loop API. Pull those values into the authoritative runtime
+     * config before writing the card and before the next song starts. */
+    Gammod_LoadSave(&session->gammod_config, &session->save);
     Gammod_StoreSave(&session->gammod_config, &session->save);
     if (!session->memcard_ready)
         return false;
@@ -226,8 +230,6 @@ void SessionRuntime_EndSong(SessionRuntime *session)
     if (session == NULL)
         return;
 
-    /* This must be called before Gameplay_Free(): Gammod temporarily replaces
-     * ChartView.notes with an EE-RAM transform buffer owned by this runtime. */
     Gammod_FreeChart(&session->gammod);
     NoteKindRuntime_Free(&session->note_kinds);
     Hud_ForgetSong(&session->hud);
