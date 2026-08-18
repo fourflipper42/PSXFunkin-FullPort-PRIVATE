@@ -40,12 +40,12 @@ jobs:
           echo "songs:  $SONGS_ROOT"
           echo "assets: $ASSETS_ROOT"
 
-      - name: Convert every song to PS2 streaming PCM
+      - name: Convert every song variation to PS2 streaming PCM
         run: |
           rm -rf ps2/disc
           mkdir -p ps2/disc/AUDIO ps2/disc/CHART ps2/disc/GAME
           python3 ps2/scripts/convert_song_audio.py \
-            "$SONGS_ROOT" \
+            "$ASSETS_ROOT" \
             ps2/disc/AUDIO \
             --manifest ps2/disc/AUDIO/AUDIOIDX.JSON
 
