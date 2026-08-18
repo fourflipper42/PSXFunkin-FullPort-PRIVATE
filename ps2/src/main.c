@@ -9,23 +9,14 @@
 #include <gsKit.h>
 #include <dmaKit.h>
 
+#include "core/timer.h"
+#include "core/animation.h"
+
 #define LOGICAL_W 640.0f
 #define LOGICAL_H 360.0f
 #define NTSC_W    640.0f
 #define NTSC_H    448.0f
 
-/*
- * FNF PS2 uses one canonical 640x360 logical layout.
- *
- * WIDE_ANAMORPHIC:
- *   The 640x360 scene fills the 640x448 NTSC raster. A TV set to 16:9
- *   stretches the 4:3 raster horizontally, producing the intended 16:9 image.
- *
- * LETTERBOX_4_3:
- *   The same scene occupies 640x336 inside the 640x448 raster, leaving
- *   56-line black bars above and below. This preserves the same composition
- *   on a 4:3 television without maintaining a second UI layout.
- */
 typedef enum AspectMode {
     ASPECT_WIDE_ANAMORPHIC = 0,
     ASPECT_LETTERBOX_4_3 = 1
@@ -43,6 +34,21 @@ static u32 g_buttons = 0;
 static u32 g_buttons_prev = 0;
 static int g_pad_ready = 0;
 
+static u8 g_boot_anim_frame = 0;
+static const u8 g_boot_anim_script[] = {
+    0, 1, 2, 3, 2, 1, ASCR_REPEAT
+};
+static const Animation g_boot_anims[] = {
+    {2, g_boot_anim_script}
+};
+static Animatable g_boot_anim;
+
+static void boot_set_frame(void *user, u8 frame)
+{
+    u8 *out = (u8 *)user;
+    *out = frame;
+}
+
 static VideoTransform video_transform(AspectMode mode)
 {
     VideoTransform t;
@@ -50,7 +56,7 @@ static VideoTransform video_transform(AspectMode mode)
     t.x_offset = 0.0f;
 
     if (mode == ASPECT_LETTERBOX_4_3) {
-        const float content_h = NTSC_H * 0.75f; /* 336 lines */
+        const float content_h = NTSC_H * 0.75f;
         t.y_scale = content_h / LOGICAL_H;
         t.y_offset = (NTSC_H - content_h) * 0.5f;
     } else {
@@ -184,20 +190,17 @@ static void render_boot_test(GSGLOBAL *gs, AspectMode aspect)
     const u64 lane_a = GS_SETREG_RGBAQ(0x44, 0x44, 0x72, 0x80, 0x00);
     const u64 lane_b = GS_SETREG_RGBAQ(0x62, 0x62, 0x96, 0x80, 0x00);
     VideoTransform t = video_transform(aspect);
+    float pulse_x;
     int i;
 
     gsKit_clear(gs, black);
-
-    /* Canonical 16:9 content area. Black outside it becomes the 4:3 bars. */
     draw_logical_rect(gs, &t, 0.0f, 0.0f, 640.0f, 360.0f, 1, bg);
 
-    /* Visible safe-frame markers for the first hardware/emulator test. */
     draw_logical_rect(gs, &t, 16.0f, 16.0f, 624.0f, 18.0f, 2, white);
     draw_logical_rect(gs, &t, 16.0f, 342.0f, 624.0f, 344.0f, 2, white);
     draw_logical_rect(gs, &t, 16.0f, 16.0f, 18.0f, 344.0f, 2, white);
     draw_logical_rect(gs, &t, 622.0f, 16.0f, 624.0f, 344.0f, 2, white);
 
-    /* Four FNF note-lane placeholders. These get replaced by the real HUD next. */
     for (i = 0; i < 4; ++i) {
         float x1 = 224.0f + (i * 52.0f);
         float x2 = x1 + 44.0f;
@@ -205,7 +208,10 @@ static void render_boot_test(GSGLOBAL *gs, AspectMode aspect)
         draw_logical_rect(gs, &t, x1, 54.0f, x2, 58.0f, 3, white);
     }
 
-    /* Aspect indicator: wide bar = 16:9, short bar = 4:3 letterbox. */
+    /* This moving block is driven by PSXFunkin's transplanted Animatable code. */
+    pulse_x = 238.0f + ((float)g_boot_anim_frame * 52.0f);
+    draw_logical_rect(gs, &t, pulse_x, 286.0f, pulse_x + 16.0f, 302.0f, 4, white);
+
     if (aspect == ASPECT_WIDE_ANAMORPHIC)
         draw_logical_rect(gs, &t, 32.0f, 320.0f, 176.0f, 328.0f, 3, white);
     else
@@ -231,8 +237,14 @@ int main(int argc, char **argv)
     g_pad_ready = init_pad();
     gs = init_video();
 
+    Timer_Init();
+    Animatable_Init(&g_boot_anim, g_boot_anims);
+    Animatable_SetAnim(&g_boot_anim, 0);
+
     for (;;) {
         update_pad();
+        Timer_Tick();
+        Animatable_Animate(&g_boot_anim, &g_boot_anim_frame, boot_set_frame);
 
         if (button_pressed(PAD_TRIANGLE)) {
             aspect = (aspect == ASPECT_WIDE_ANAMORPHIC)
