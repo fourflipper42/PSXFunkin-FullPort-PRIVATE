@@ -35,7 +35,7 @@ jobs:
         run: |
           test -s ps2/build/funkin_ps2.elf
           file ps2/build/funkin_ps2.elf
-          sha256sum ps2/build/funkin_ps2.elf | tee ps2/build/SHA256SUMS.txt
+          sha256sum ps2/build/funkin_ps2.elf | tee ps2/SHA256SUMS.txt
 
       - name: Upload PS2 bootstrap
         uses: actions/upload-artifact@v4
@@ -44,4 +44,4 @@ jobs:
           compression-level: 0
           path: |
             ps2/build/funkin_ps2.elf
-            ps2/build/SHA256SUMS.txt
+            ps2/SHA256SUMS.txt
