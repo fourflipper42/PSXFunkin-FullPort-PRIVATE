@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert a source PNG into FNF PS2's compact T8+RGBA CLUT texture format.
+"""Convert source artwork into FNF PS2's compact T8+RGBA CLUT format.
 
 The source stays pristine. Conversion happens only for the PS2 build. 256-color
 RGBA palettes are a strong fit for FNF's flat illustrated art and use roughly
@@ -63,15 +63,15 @@ def quantize_rgba(image: Image.Image) -> tuple[bytes, bytes]:
     return indices, clut
 
 
-def convert(src: Path, dst: Path) -> None:
-    with Image.open(src) as image:
-        width, height = image.size
-        if width <= 0 or height <= 0:
-            raise ValueError(f"invalid image dimensions: {width}x{height}")
-        if width > 4096 or height > 4096:
-            raise ValueError(f"texture is unreasonably large for PS2: {width}x{height}")
-        pixels, clut = quantize_rgba(image)
+def convert_image(image: Image.Image, dst: Path, *, source_label: str = "<image>") -> tuple[int, int]:
+    rgba = image.convert("RGBA")
+    width, height = rgba.size
+    if width <= 0 or height <= 0:
+        raise ValueError(f"invalid image dimensions: {width}x{height}")
+    if width > 4096 or height > 4096:
+        raise ValueError(f"texture is unreasonably large for PS2 conversion: {width}x{height}")
 
+    pixels, clut = quantize_rgba(rgba)
     expected = width * height
     if len(pixels) != expected:
         raise RuntimeError(f"pixel size mismatch: got {len(pixels)}, expected {expected}")
@@ -92,9 +92,15 @@ def convert(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_bytes(header + pixels + clut)
     print(
-        f"{src} -> {dst}: {width}x{height}, "
+        f"{source_label} -> {dst}: {width}x{height}, "
         f"{len(pixels) + len(clut):,} payload bytes"
     )
+    return width, height
+
+
+def convert(src: Path, dst: Path) -> tuple[int, int]:
+    with Image.open(src) as image:
+        return convert_image(image, dst, source_label=str(src))
 
 
 def main() -> int:
