@@ -51,6 +51,8 @@ typedef struct Frontend {
     u8 gammod_selected;
     u8 hud_selected;
     u8 option_selected;
+    GammodConfig gammod_cache;
+    boolean gammod_cache_loaded;
     boolean font_ready;
     GSFONTM *rom_font;
 } Frontend;
@@ -64,7 +66,6 @@ FrontendAction Frontend_Update(
     const ProgressionState *progression,
     const PointlessPinsCatalog *pins,
     FunkinSaveData *save,
-    GammodConfig *gammod,
     const Pad *pad);
 void Frontend_Draw(
     GSGLOBAL *gs,
@@ -75,7 +76,6 @@ void Frontend_Draw(
     const ProgressionState *progression,
     const PointlessPinsCatalog *pins,
     const FunkinSaveData *save,
-    const GammodConfig *gammod,
     BetterAlphabet *alphabet);
 boolean Frontend_PicoSelected(const Frontend *frontend);
 
