@@ -1,9 +1,9 @@
 name: FNF PS2 Full DVD Build
 
 on:
-  push:
+  pull_request:
     branches:
-      - ps2-full-port
+      - full-port-completion
     paths:
       - 'ps2/**'
       - '.github/workflows/ps2-full-build.yml'
@@ -228,6 +228,7 @@ jobs:
           ls -lh ps2/FunkinPS2.iso.part*
 
       - name: Publish private PS2 test prerelease
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -252,3 +253,15 @@ jobs:
             ps2/disc/GAME/ICON/ICONIDX.JSON \
             ps2/disc/GAME/CUTSCENE/CUTIDX.JSON \
             ps2/disc/GAME/NOTESTYLE/NOTESTYLE.JSON
+
+      - name: Upload PR test artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fnf-ps2-pr-test-${{ github.sha }}
+          retention-days: 3
+          path: |
+            ps2/build/funkin_ps2.elf
+            ps2/build-full.log
+            ps2/FunkinPS2.iso.sha256
+            ps2/FunkinPS2.iso.part*
