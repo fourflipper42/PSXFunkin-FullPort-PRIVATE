@@ -5,7 +5,7 @@
 #include "note_style.h"
 
 void NoteLaneRenderer_Reset(void);
-void NoteLaneRenderer_Tick(const GameplayState *game, const Pad *pad);
+void NoteLaneRenderer_Tick(GameplayState *game, const Pad *pad);
 void NoteLaneRenderer_Draw(
     GSGLOBAL *gs,
     const NoteStyle *style,
