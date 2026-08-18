@@ -7,7 +7,13 @@ import argparse
 import importlib.util
 import json
 import sys
+import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from PIL import Image
+
+SHOT_EXPLOSION_BAKE_SCALE = 0.80
 
 
 def load_converter(filename: str, module_name: str):
@@ -25,6 +31,55 @@ def require(path: Path) -> Path:
     if not path.exists():
         raise FileNotFoundError(path)
     return path
+
+
+def scaled_int(value: str | None, scale: float, minimum: int | None = None) -> str | None:
+    if value is None or value == "":
+        return value
+    result = int(round(int(value) * scale))
+    if minimum is not None and result < minimum:
+        result = minimum
+    return str(result)
+
+
+def build_scaled_sparrow(
+    png: Path,
+    xml: Path,
+    scale: float,
+    temp_dir: Path,
+) -> tuple[Path, Path]:
+    """Bake an oversized Sparrow atlas smaller while preserving trim geometry.
+
+    Runtime draws this one effect at 1/scale, so its authored world size remains
+    approximately unchanged while every packed texture frame fits a PS2 page.
+    """
+    if not 0.0 < scale <= 1.0:
+        raise ValueError(f"invalid Sparrow bake scale: {scale}")
+
+    scaled_png = temp_dir / png.name
+    scaled_xml = temp_dir / xml.name
+
+    with Image.open(png) as source:
+        rgba = source.convert("RGBA")
+        width = max(1, int(round(rgba.width * scale)))
+        height = max(1, int(round(rgba.height * scale)))
+        resampling = getattr(Image, "Resampling", Image).LANCZOS
+        rgba.resize((width, height), resampling).save(scaled_png)
+
+    tree = ET.parse(xml)
+    root = tree.getroot()
+    root.set("imagePath", scaled_png.name)
+    for frame in root.findall(".//SubTexture"):
+        for key in ("x", "y", "frameX", "frameY"):
+            value = scaled_int(frame.get(key), scale)
+            if value is not None:
+                frame.set(key, value)
+        for key in ("width", "height", "frameWidth", "frameHeight"):
+            value = scaled_int(frame.get(key), scale, 1)
+            if value is not None:
+                frame.set(key, value)
+    tree.write(scaled_xml, encoding="utf-8", xml_declaration=True)
+    return scaled_png, scaled_xml
 
 
 def convert(assets_root: Path, output_dir: Path) -> dict:
@@ -51,11 +106,26 @@ def convert(assets_root: Path, output_dir: Path) -> dict:
     for stem, source_name in sparrow_assets.items():
         png = require(images / f"{source_name}.png")
         xml = require(images / f"{source_name}.xml")
-        frames, pages = sparrow.convert(png, xml, output_dir / stem)
+        bake_scale = 1.0
+
+        if stem == "SHOTEXP":
+            bake_scale = SHOT_EXPLOSION_BAKE_SCALE
+            with tempfile.TemporaryDirectory(prefix="fnf-ps2-weekend1-") as temp:
+                scaled_png, scaled_xml = build_scaled_sparrow(
+                    png, xml, bake_scale, Path(temp)
+                )
+                frames, pages = sparrow.convert(
+                    scaled_png, scaled_xml, output_dir / stem
+                )
+        else:
+            frames, pages = sparrow.convert(png, xml, output_dir / stem)
+
         converted[stem] = {
             "source": source_name,
             "frames": frames,
             "pages": pages,
+            "bakeScale": bake_scale,
+            "runtimeScaleCompensation": 1.0 / bake_scale,
         }
 
     result = {
