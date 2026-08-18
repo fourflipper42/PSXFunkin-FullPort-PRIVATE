@@ -306,7 +306,7 @@ void DarnellIntroVisual_DrawRange(
     load_assets(gs);
 
     if (g_intro_motion != DARNELL_CAN_HIDDEN && g_intro_loaded &&
-        pz - 1 >= z_min && pz - 1 <= z_max) {
+        pz - 1 >= z_min && pz - 1 < z_max) {
         frame = SpriteAtlas_FindPrefixNth(&g_intro_atlas, intro_prefix(), g_intro_frame);
         if (frame >= 0) {
             project(prop, camera, px + 30.0f, py - 320.0f, &x, &y, &scale);
@@ -314,7 +314,7 @@ void DarnellIntroVisual_DrawRange(
         }
     }
 
-    if (g_shot_visible && g_can_loaded && 300 >= z_min && 300 <= z_max) {
+    if (g_shot_visible && g_can_loaded && 300 >= z_min && 300 < z_max) {
         frame = SpriteAtlas_FindPrefixNth(&g_can_atlas, "Can Shot", g_shot_frame);
         if (frame >= 0) {
             project(prop, camera, px - 10.0f, py - 550.0f, &x, &y, &scale);
@@ -322,7 +322,7 @@ void DarnellIntroVisual_DrawRange(
         }
     }
 
-    if (g_explosion_visible && g_explosion_loaded && 301 >= z_min && 301 <= z_max) {
+    if (g_explosion_visible && g_explosion_loaded && 301 >= z_min && 301 < z_max) {
         frame = SpriteAtlas_FindPrefixNth(&g_explosion_atlas, "Explosion 1 movie0", g_explosion_frame);
         if (frame >= 0) {
             project(prop, camera, px + 140.0f, py - 800.0f, &x, &y, &scale);
