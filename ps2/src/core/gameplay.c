@@ -271,7 +271,8 @@ ChartResult Gameplay_Load(
         return CHART_ERR_IO;
     }
 
-    Rhythm_Init(&state->rhythm, kade, ghost, speed);
+    state->base_scroll_speed = speed;
+    Rhythm_Init(&state->rhythm, kade, ghost, state->base_scroll_speed);
     first_bpm = state->chart.view.sections[0].flag & SECTION_FLAG_BPM_MASK;
     if (first_bpm == 0) {
         Gameplay_Free(state);
@@ -337,6 +338,56 @@ boolean Gameplay_IsDead(const GameplayState *state)
 boolean Gameplay_IsFinished(const GameplayState *state)
 {
     return state != NULL && state->finished;
+}
+
+boolean Gameplay_RestartAttempt(GameplayState *state)
+{
+    ChartView *chart;
+    boolean kade;
+    boolean ghost;
+    u16 first_bpm;
+    size_t i;
+
+    if (state == NULL || !state->loaded || state->chart.view.section_count == 0)
+        return false;
+
+    chart = &state->chart.view;
+    for (i = 0; i < chart->note_count; ++i)
+        chart->notes[i].type &= (u8)~NOTE_FLAG_HIT;
+
+    if (!SongStream_SeekFrame(&state->song, 0))
+        return false;
+    SongStream_SetVoices(&state->song, true);
+
+    kade = state->rhythm.kade;
+    ghost = state->rhythm.ghost;
+    Rhythm_Init(&state->rhythm, kade, ghost,
+        state->base_scroll_speed > 0 ? state->base_scroll_speed : FIXED_DEC(1, 1));
+    first_bpm = chart->sections[0].flag & SECTION_FLAG_BPM_MASK;
+    if (first_bpm == 0)
+        return false;
+    Rhythm_ChangeBPM(&state->rhythm, first_bpm, 0);
+
+    state->cur_section = 0;
+    state->first_note = 0;
+    state->player_scroll_speed = state->rhythm.speed;
+    state->opponent_scroll_speed = state->rhythm.speed;
+    memset(&state->scroll_tween, 0, sizeof(state->scroll_tween));
+    state->event_time_scale = FIXED_DEC(1, 1);
+    state->block_scroll_events = false;
+    state->misses = 0;
+
+    state->note_scroll = -(192 << FIXED_SHIFT);
+    state->song_time = FIXED_DIV(state->note_scroll, state->rhythm.step_crochet);
+    state->song_step = scroll_to_song_step(state->note_scroll);
+    state->audio_started = false;
+    state->paused = false;
+    state->dead = false;
+    state->finished = false;
+    Gameplay_ResetEvents(state);
+    if (state->song_events.loaded)
+        SongEvents_Reset(&state->song_events);
+    return true;
 }
 
 boolean Gameplay_SetCountdownDelay(GameplayState *state, fixed_t delay_seconds)
