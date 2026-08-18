@@ -31,7 +31,7 @@ typedef struct FunkinSaveData {
 
     u64 completed_story_levels;
     u32 settings_flags;
-    u32 funkbucks;
+    s32 funkbucks;
     u32 funkbucks_lifetime;
 
     u8 health_drain_level;
