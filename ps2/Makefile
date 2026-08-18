@@ -20,6 +20,7 @@ EE_OBJS = \
 	build/core_gameplay.o \
 	build/core_gameplay_scroll.o \
 	build/core_camera_effects.o \
+	build/core_presentation_events.o \
 	build/core_freeplay_browser.o \
 	build/core_texture_asset.o \
 	build/core_sprite_atlas.o \
@@ -102,6 +103,9 @@ build/core_gameplay_scroll.o: src/core/gameplay_scroll.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_camera_effects.o: src/core/camera_effects.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_presentation_events.o: src/core/presentation_events.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_freeplay_browser.o: src/core/freeplay_browser.c | build
