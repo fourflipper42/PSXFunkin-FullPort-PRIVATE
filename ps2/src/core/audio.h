@@ -1,7 +1,7 @@
 #ifndef FNF_PS2_AUDIO_H
 #define FNF_PS2_AUDIO_H
 
-#include "psx.h"
+#include "fixed.h"
 #include <stddef.h>
 
 #define AUDIO_SAMPLE_RATE 48000
