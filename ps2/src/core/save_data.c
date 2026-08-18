@@ -57,11 +57,26 @@ void SaveData_Defaults(FunkinSaveData *data)
         SAVE_FLAG_COMBO_SOUND |
         SAVE_FLAG_HUD_FC_INDICATOR |
         SAVE_FLAG_HUD_ICON_BOUNCE |
-        SAVE_FLAG_HUD_SCORE_BOUNCE;
+        SAVE_FLAG_HUD_SCORE_BOUNCE |
+        SAVE_FLAG_HUD_SCORE_VISIBLE |
+        SAVE_FLAG_HUD_DUSTIN_EFFECTS;
     data->health_drain_level = 6; /* AUTO PRO, matching the supplied mod. */
     data->camera_movement_intensity = 80;
     data->combo_swoosh_threshold = 1;
     data->hud_layout = 0;
+
+    /* My Fully Customizable HUD 1.5.4 defaults. */
+    data->hud_health_bar_opacity = 100;
+    data->hud_icons_opacity = 100;
+    data->hud_icons_position = 0;    /* default */
+    data->hud_fc_opacity = 100;
+    data->hud_fc_size_tenths = 10;  /* 1.0x */
+    data->hud_fc_style = 0;          /* FC */
+    data->hud_icon_bounce_style = 0; /* reworked */
+    data->hud_score_position = 0;    /* hud */
+    data->hud_score_size = 20;
+    data->hud_combo_style = 0;       /* Dustin */
+
     data->checksum = save_checksum(data);
 }
 
