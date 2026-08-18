@@ -12,7 +12,6 @@ MAGIC = b"FSTY"
 VERSION = 1
 HEADER = struct.Struct("<4sHHIIII")
 LEVEL = struct.Struct("<IIIIHHII")
-NO_STRING = 0xFFFFFFFF
 
 BASE_ORDER = [
     "tutorial",
@@ -54,14 +53,14 @@ def parse_color(value: object) -> int:
     if len(text) == 6:
         text += "FF"
     if len(text) != 8:
-        return 0xFFF9CF51
+        return 0xFF51CFF9
     try:
         r = int(text[0:2], 16)
         g = int(text[2:4], 16)
         b = int(text[4:6], 16)
         a = int(text[6:8], 16)
     except ValueError:
-        return 0xFFF9CF51
+        return 0xFF51CFF9
     return r | (g << 8) | (b << 16) | (a << 24)
 
 
