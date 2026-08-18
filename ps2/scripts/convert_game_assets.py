@@ -25,6 +25,11 @@ FCAT_HEADER = struct.Struct("<4sHHIII")
 FCAT_ENTRY = struct.Struct("<IIIII")
 
 NO_STRING = 0xFFFFFFFF
+SSERAFIM_STAGE_CAST = (
+    "sserafim-yunjin",
+    "sserafim-chaewon",
+    "sserafim-eunchae",
+)
 
 
 def load_module(filename: str, module_name: str):
@@ -226,6 +231,8 @@ def main() -> int:
         note_style = str(play.get("noteStyle") or "")
         if stage:
             stages.add(stage)
+        if stage == "sserafim":
+            characters.update(SSERAFIM_STAGE_CAST)
         if note_style:
             note_styles.add(note_style)
 
