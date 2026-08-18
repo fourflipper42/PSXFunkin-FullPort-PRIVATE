@@ -28,14 +28,10 @@ boolean SongStream_Open(SongStream *stream, const char *inst_path, const char *v
     if (!AssetFile_Open(&stream->inst, inst_path))
         return false;
 
-    if (voices_path != NULL) {
-        if (!AssetFile_Open(&stream->voices, voices_path)) {
-            AssetFile_Close(&stream->inst);
-            memset(stream, 0, sizeof(*stream));
-            return false;
-        }
+    /* Vocals are optional. Instrumental-only songs and metadata variations
+     * with no resolved voice stems must still boot and play normally. */
+    if (voices_path != NULL && AssetFile_Open(&stream->voices, voices_path))
         stream->has_voices = true;
-    }
 
     Audio_Stop();
     stream->voices_enabled = true;
