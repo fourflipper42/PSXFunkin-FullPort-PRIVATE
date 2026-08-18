@@ -35,6 +35,7 @@ EE_OBJS = \
 	build/core_camera_movement.o \
 	build/core_presentation_events.o \
 	build/core_pointless_pins.o \
+	build/core_session_runtime.o \
 	build/core_freeplay_browser.o \
 	build/core_frontend.o \
 	build/core_texture_asset.o \
@@ -165,6 +166,9 @@ build/core_presentation_events.o: src/core/presentation_events.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_pointless_pins.o: src/core/pointless_pins.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_session_runtime.o: src/core/session_runtime.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_freeplay_browser.o: src/core/freeplay_browser.c | build
