@@ -1,6 +1,7 @@
 #ifndef FNF_PS2_SSERAFIM_RUNTIME_H
 #define FNF_PS2_SSERAFIM_RUNTIME_H
 
+#include "character.h"
 #include "gameplay.h"
 #include "stage.h"
 
