@@ -443,6 +443,7 @@ void Gameplay_PressLane(GameplayState *state, u8 lane)
         if (!state->rhythm.ghost) {
             ++state->misses;
             state->events.player_missed = true;
+            state->events.empty_press_miss = true;
             SongStream_SetVoices(&state->song, false);
         }
     }
