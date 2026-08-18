@@ -82,10 +82,12 @@ static void success_pair(Character *player, Character *opponent, const char *kin
     if (g_player_cant_uppercut) {
         play(player, "block");
         g_player_cant_uppercut = false;
+        player = NULL;
     }
     if (g_opponent_cant_uppercut) {
         punch(opponent, true, &g_opponent_alt);
         g_opponent_cant_uppercut = false;
+        opponent = NULL;
     }
 
     if (begins(kind, "weekend-1-punchlow")) {
