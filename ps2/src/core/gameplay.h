@@ -4,6 +4,7 @@
 #include "chart_asset.h"
 #include "pad.h"
 #include "rhythm.h"
+#include "song_events.h"
 #include "song_stream.h"
 
 #define INPUT_LEFT  (PAD_LEFT  | PAD_SQUARE)
@@ -17,11 +18,18 @@ typedef struct GameplayFrameEvents {
     boolean player_missed;
     boolean mine_hit;
     boolean just_step;
+    boolean song_event_fired;
+    boolean camera_focus_changed;
+    u8 camera_focus;
+    u16 last_song_event_kind;
+    const char *last_song_event_name;
+    const char *last_song_event_value;
     HitRating last_rating;
 } GameplayFrameEvents;
 
 typedef struct GameplayState {
     ChartAsset chart;
+    SongEventStream song_events;
     SongStream song;
     RhythmState rhythm;
 
