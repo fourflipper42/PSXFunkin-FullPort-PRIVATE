@@ -60,18 +60,20 @@ def main() -> int:
     parser.add_argument("output_root", type=Path)
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--manifest", type=Path, default=None)
-    parser.add_argument("--strict", action="store_true", help="Fail if any chart/event stream cannot be converted")
+    parser.add_argument("--strict", action="store_true", help="Fail if any chart/event/note-kind stream cannot be converted")
     args = parser.parse_args()
 
     repo_root = args.repo_root.resolve()
     chartc = load_module(repo_root / "scripts" / "psxfunkin_chartc_v2.py", "psxfunkin_chartc_v2")
     eventc = load_module(Path(__file__).with_name("convert_events.py"), "convert_events")
+    kindc = load_module(Path(__file__).with_name("convert_note_kinds.py"), "convert_note_kinds")
     songs_root = find_data_songs(args.input_root.resolve())
     output_root = args.output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
     records: list[dict] = []
     event_records: list[dict] = []
+    kind_records: list[dict] = []
     failures: list[str] = []
 
     for song_dir in sorted(p for p in songs_root.iterdir() if p.is_dir()):
@@ -122,14 +124,23 @@ def main() -> int:
                 if not isinstance(note_sets[difficulty], list):
                     continue
                 try:
-                    payload = chartc.convert(chart, metadata, difficulty)
+                    kind_ids, kind_payload = kindc.build(note_sets[difficulty])
+                    payload = chartc.convert(
+                        chart,
+                        metadata,
+                        difficulty,
+                        note_kind_ids=kind_ids,
+                    )
                 except Exception as exc:
                     failures.append(f"{song}/{variation}/{difficulty}: {exc}")
                     continue
 
-                out = output_root / song / variation / f"{difficulty}.cht"
-                out.parent.mkdir(parents=True, exist_ok=True)
+                out_dir = output_root / song / variation
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out = out_dir / f"{difficulty}.cht"
+                kind_out = out_dir / f"{difficulty}.fknd"
                 out.write_bytes(payload)
+                kind_out.write_bytes(kind_payload)
                 records.append(
                     {
                         "song": song,
@@ -140,14 +151,27 @@ def main() -> int:
                         "sha256": sha256(payload),
                     }
                 )
+                kind_records.append(
+                    {
+                        "song": song,
+                        "variation": variation,
+                        "difficulty": difficulty,
+                        "file": kind_out.relative_to(output_root).as_posix(),
+                        "count": len(kind_ids),
+                        "bytes": len(kind_payload),
+                        "sha256": sha256(kind_payload),
+                    }
+                )
 
     manifest = {
-        "format": "PSXFunkin CHT + FNF PS2 FEVT",
+        "format": "PSXFunkin CHT + FNF PS2 FEVT/FKND",
         "songs_root": songs_root.as_posix(),
         "count": len(records),
         "eventStreamCount": len(event_records),
+        "noteKindStreamCount": len(kind_records),
         "charts": records,
         "eventStreams": event_records,
+        "noteKindStreams": kind_records,
         "warnings": failures,
     }
     manifest_path = args.manifest or (output_root / "chart_manifest.json")
@@ -156,6 +180,7 @@ def main() -> int:
 
     print(f"generated {len(records)} PS2 charts")
     print(f"generated {len(event_records)} PS2 event streams")
+    print(f"generated {len(kind_records)} PS2 note-kind streams")
     if failures:
         print(f"warnings: {len(failures)}")
         for warning in failures:
