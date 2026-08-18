@@ -35,8 +35,8 @@ void PresentationRegistry_UnregisterStage(Stage *stage)
 
 void PresentationRegistry_RegisterCharacter(Character *character)
 {
-    if (character == NULL)
-        return;
+    /* Role assignment follows main.c's fixed load order. Advance even when a
+     * character asset fails so Dad/GF cannot slide into the wrong role. */
     switch (g_character_slot) {
         case 0: g_player = character; break;
         case 1: g_opponent = character; break;
