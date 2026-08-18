@@ -3,6 +3,8 @@
 
 #include "stage.h"
 
+void DarnellIntroVisual_SetSong(const char *song_id);
+void DarnellIntroVisual_AutoTick(fixed_t elapsed);
 void DarnellIntroVisual_Begin(void);
 void DarnellIntroVisual_End(void);
 void DarnellIntroVisual_KickUp(void);
