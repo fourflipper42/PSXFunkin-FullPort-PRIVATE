@@ -351,7 +351,7 @@ void Weekend1Visual_DrawRange(
     if (!pile_origin(stage, &pile, &base_x, &base_y, &base_z))
         return;
 
-    if (base_z >= z_min && base_z <= z_max && g_can_loaded) {
+    if (base_z >= z_min && base_z < z_max && g_can_loaded) {
         for (i = 0; i < WEEKEND1_CAN_MAX; ++i) {
             Weekend1CanVisual *can = &g_cans[i];
             const char *prefix;
@@ -383,7 +383,7 @@ void Weekend1Visual_DrawRange(
         s32 effect_z = base_z + 2;
 
         if (effect->kind == WEEKEND1_EFFECT_NONE ||
-            effect_z < z_min || effect_z > z_max)
+            effect_z < z_min || effect_z >= z_max)
             continue;
         atlas = effect_atlas(effect->kind);
         prefix = effect_prefix(effect->kind);
