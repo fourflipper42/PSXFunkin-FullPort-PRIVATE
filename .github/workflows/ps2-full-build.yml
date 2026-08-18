@@ -93,6 +93,14 @@ jobs:
               raise SystemExit('strict conversion unexpectedly produced failures')
           PY
 
+      - name: Convert every used softcoded note style
+        run: |
+          python3 ps2/scripts/convert_note_styles.py \
+            "$ASSETS_ROOT" \
+            ps2/disc/GAME/NOTESTYLE \
+            --manifest ps2/disc/GAME/NOTESTYLE/NOTESTYLE.JSON \
+            --strict
+
       - name: Build native PS2 ELF
         working-directory: ps2
         run: |
@@ -117,6 +125,7 @@ jobs:
           find ps2/disc/CHART -name 'EVENTS.FEVT' -type f | wc -l | xargs echo 'event streams:'
           find ps2/disc/GAME/CHAR -name 'CHAR.FCHR' -type f 2>/dev/null | wc -l | xargs echo 'characters:'
           find ps2/disc/GAME/STAGE -name 'STAGE.FSTG' -type f 2>/dev/null | wc -l | xargs echo 'stages:'
+          find ps2/disc/GAME/NOTESTYLE -name 'STYLE.FNST' -type f 2>/dev/null | wc -l | xargs echo 'note styles:'
           find ps2/disc/GAME/SONG -name '*.FSON' -type f 2>/dev/null | wc -l | xargs echo 'song descriptors:'
 
       - name: Master homebrew PS2 DVD ISO
@@ -148,7 +157,7 @@ jobs:
         run: |
           TAG="ps2-native-${GITHUB_SHA::12}"
           TITLE="FNF PS2 native test ${GITHUB_SHA::12}"
-          NOTES=$'Native PS2 development checkpoint.\n\nIncludes the PS2 ELF, DVD ISO split into release-safe parts, SHA-256, generated audio/chart indexes, and the discovered game asset manifest. Reassemble ISO parts in lexical order before testing.'
+          NOTES=$'Native PS2 development checkpoint.\n\nIncludes the PS2 ELF, DVD ISO split into release-safe parts, SHA-256, generated audio/chart indexes, and discovered game/note-style manifests. Reassemble ISO parts in lexical order before testing.'
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
@@ -161,4 +170,5 @@ jobs:
             ps2/FunkinPS2.iso.part* \
             ps2/disc/AUDIO/AUDIOIDX.JSON \
             ps2/disc/CHART/CHARTIDX.JSON \
-            ps2/disc/GAME/GAMEIDX.JSON
+            ps2/disc/GAME/GAMEIDX.JSON \
+            ps2/disc/GAME/NOTESTYLE/NOTESTYLE.JSON
