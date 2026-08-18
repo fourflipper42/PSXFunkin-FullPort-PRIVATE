@@ -55,6 +55,7 @@ void NoteLaneRenderer_Tick(GameplayState *game, const Pad *pad)
     int lane;
     u8 player_hits;
     u8 opponent_hits;
+    u8 event_index;
 
     (void)pad;
     ++animation_tick;
@@ -69,13 +70,12 @@ void NoteLaneRenderer_Tick(GameplayState *game, const Pad *pad)
     if (game == NULL)
         return;
 
-    if (game->events.song_event_fired &&
-        game->events.last_song_event_name != NULL &&
-        game->events.last_song_event_value != NULL) {
-        GameplayScroll_HandleEvent(
-            game,
-            game->events.last_song_event_name,
-            game->events.last_song_event_value);
+    for (event_index = 0;
+        event_index < game->events.song_event_count;
+        ++event_index) {
+        const GameplaySongEventFrame *event =
+            &game->events.song_events[event_index];
+        GameplayScroll_HandleEvent(game, event->name, event->value);
     }
     GameplayScroll_Tick(game, timer_dt);
 
@@ -131,8 +131,6 @@ void NoteLaneRenderer_Draw(
 
     chart = &game->chart.view;
 
-    /* Trails first so heads and receptors stay cleanly on top. Each generated
-     * sustain piece represents one quarter-step interval in the CHT stream. */
     for (i = game->first_note; i < chart->note_count; ++i) {
         const Note *note = &chart->notes[i];
         boolean opponent;
@@ -167,9 +165,6 @@ void NoteLaneRenderer_Draw(
         }
     }
 
-    /* Tap heads use the actual note-style Sparrow animation frame. Mines keep
-     * the same silhouette temporarily but get a dark tint until special-note
-     * assets are softcoded alongside the normal style. */
     for (i = game->first_note; i < chart->note_count; ++i) {
         const Note *note = &chart->notes[i];
         boolean opponent;
