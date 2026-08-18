@@ -3,6 +3,7 @@
 
 #include "blazin_runtime.h"
 #include "cutscene_controller.h"
+#include "darnell_intro_visual.h"
 #include "weekend1_runtime.h"
 
 void SessionRuntime_AfterGameplayFrameScaled(
@@ -10,6 +11,10 @@ void SessionRuntime_AfterGameplayFrameScaled(
     GameplayState *game,
     fixed_t elapsed)
 {
+    /* This self-arms only for the Darnell song while the native Story cutscene
+     * is active, and also tears itself down on the first frame after a skip. */
+    DarnellIntroVisual_AutoTick(elapsed);
+
     if (CutsceneController_Active()) {
         /* Native cutscene characters/stage props still need real-time animation
          * even though chart/audio gameplay is gated. Video frames remain driven
@@ -26,8 +31,6 @@ void SessionRuntime_AfterGameplayFrameScaled(
                 session->camera_movement.target_x = x;
                 session->camera_movement.target_y = y;
             } else {
-                /* Let the normal movement smoother return from the final
-                 * cutscene camera position instead of snapping on countdown. */
                 session->camera_movement.target_x = 0.0f;
                 session->camera_movement.target_y = 0.0f;
             }
@@ -40,16 +43,11 @@ void SessionRuntime_AfterGameplayFrameScaled(
     else
         timer_presentation_dt = elapsed;
 
-    /* 2hot can cancel/repair note outcomes, so it must run before generic
-     * combo/HUD/note-kind consumers inspect the frame. */
     if (session != NULL && session->song_active)
         Weekend1Runtime_Tick(game, &session->note_kinds, elapsed);
 
     SessionRuntime_AfterGameplayFrame(session, game, elapsed);
 
-    /* Blazin choreography consumes the finalized hit/miss frame after generic
-     * note-kind resolution. Weekend-1 kinds suppress ordinary sing animations,
-     * so these paired fight animations remain authoritative. */
     if (session != NULL && session->song_active)
         BlazinRuntime_Tick(game, &session->note_kinds);
 }
