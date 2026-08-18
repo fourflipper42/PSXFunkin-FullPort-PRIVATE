@@ -15,6 +15,7 @@ EE_OBJS = \
 	build/core_asset_file.o \
 	build/core_song_stream.o \
 	build/core_gameplay.o \
+	build/core_texture_asset.o \
 	build/audsrv_irx.o
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
@@ -75,6 +76,9 @@ build/core_song_stream.o: src/core/song_stream.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_gameplay.o: src/core/gameplay.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_texture_asset.o: src/core/texture_asset.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/audsrv_irx.c: | build
