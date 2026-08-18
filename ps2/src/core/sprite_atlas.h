@@ -23,6 +23,7 @@ typedef struct SpriteAtlas {
     size_t frame_blob_size;
     AtlasFrame *frames;
     char *strings;
+    u32 string_bytes;
     u16 frame_count;
     u16 texture_count;
     boolean loaded;
