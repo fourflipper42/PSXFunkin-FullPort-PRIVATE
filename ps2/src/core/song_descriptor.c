@@ -159,6 +159,10 @@ boolean SongDescriptor_BuildDiscPaths(const SongDescriptor *song, SongAssetPaths
         "\\CHART\\%s\\%s\\%s.CHT;1",
         song->song_id, song->variation, song->difficulty))
         return false;
+    if (!format_path(paths->events, sizeof(paths->events),
+        "\\CHART\\%s\\%s\\EVENTS.FEVT;1",
+        song->song_id, song->variation, ""))
+        return false;
     if (!format_path(paths->inst, sizeof(paths->inst),
         "\\AUDIO\\%s\\%s\\INST.PCM;1",
         song->song_id, song->variation, ""))
