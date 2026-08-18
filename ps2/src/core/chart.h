@@ -25,11 +25,11 @@ typedef struct Note {
 } Note;
 
 typedef struct ChartView {
-    const u8 *data;
+    u8 *data;
     size_t size;
-    const Section *sections;
+    Section *sections;
     size_t section_count;
-    const Note *notes;
+    Note *notes;
     size_t note_count;
 } ChartView;
 
@@ -44,7 +44,7 @@ typedef enum ChartResult {
     CHART_ERR_NOTE_SENTINEL
 } ChartResult;
 
-ChartResult Chart_Parse(ChartView *out, const void *data, size_t size);
+ChartResult Chart_Parse(ChartView *out, void *data, size_t size);
 const char *Chart_ResultString(ChartResult result);
 
 #endif
