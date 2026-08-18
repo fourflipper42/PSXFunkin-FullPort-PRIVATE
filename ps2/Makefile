@@ -8,11 +8,13 @@ EE_OBJS = \
 	build/core_object.o \
 	build/core_chart.o \
 	build/core_rhythm.o \
-	build/core_pad.o
+	build/core_pad.o \
+	build/core_audio.o \
+	build/audsrv_irx.o
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
 EE_LDFLAGS += -L$(GSKIT)/lib
-EE_LIBS = -lgskit -ldmakit -lpad -ldebug -lc
+EE_LIBS = -lgskit -ldmakit -lpad -laudsrv -lpatches -ldebug -lc
 
 EE_CFLAGS += -O2 -G0 -Wall -Wextra -Wno-unused-parameter -DFNF_PS2
 
@@ -50,6 +52,15 @@ build/core_rhythm.o: src/core/rhythm.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_pad.o: src/core/pad.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_audio.o: src/core/audio.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/audsrv_irx.c: | build
+	$(PS2SDK)/bin/bin2c $(PS2SDK)/iop/irx/audsrv.irx $@ audsrv_irx
+
+build/audsrv_irx.o: build/audsrv_irx.c
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 clean:
