@@ -53,6 +53,8 @@ typedef struct GammodConfig {
     boolean scroll_velocities;
     boolean custom_judgements;
     boolean custom_scroll_speed_enabled;
+    boolean custom_scroll_opponent_separate;
+    boolean custom_scroll_as_multiplier;
     boolean reset_on_death;
     boolean skip_countdown;
     boolean random_avoid_jacks;
@@ -63,10 +65,12 @@ typedef struct GammodConfig {
     boolean playback_match_scroll_speed;
 
     float custom_scroll_speed;
+    float custom_opponent_scroll_speed;
     float health_drain;
     float health_gain;
     float health_loss;
     float playback_rate;
+    float skip_countdown_delay;
     u16 starting_health_percent;
     u16 sick_window_ms;
     u16 good_window_ms;
@@ -80,8 +84,11 @@ typedef struct GammodRuntime {
     GammodConfig config;
     Note *transformed_notes;
     size_t transformed_count;
+    fixed_t intro_skip_time;
+    fixed_t intro_skip_scroll;
     boolean transformed;
     boolean perfect_failed;
+    boolean intro_skip_pending;
 } GammodRuntime;
 
 void Gammod_Defaults(GammodConfig *config);
@@ -100,5 +107,7 @@ void Gammod_OnGameplayFrame(GammodRuntime *runtime, GameplayState *game, fixed_t
 boolean Gammod_ShouldSkipCountdown(const GammodRuntime *runtime);
 boolean Gammod_ResetOnDeath(const GammodRuntime *runtime);
 boolean Gammod_PerfectFailed(const GammodRuntime *runtime);
+fixed_t Gammod_PlaybackRate(const GammodRuntime *runtime);
+fixed_t Gammod_PresentationDelta(const GammodRuntime *runtime, fixed_t elapsed);
 
 #endif
