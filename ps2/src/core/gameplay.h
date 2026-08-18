@@ -23,6 +23,7 @@ typedef struct GameplayFrameEvents {
     u8 player_hit_mask;
     u8 opponent_hit_mask;
     boolean player_missed;
+    boolean empty_press_miss;
     boolean mine_hit;
     boolean just_step;
     boolean song_event_fired;
