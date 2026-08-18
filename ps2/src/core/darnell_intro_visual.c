@@ -6,6 +6,7 @@
 #include <string.h>
 
 #define DARNELL_FRAME_TIME FIXED_DEC(1, 24)
+#define DARNELL_SHOT_EXPLOSION_SCALE 1.25f
 
 typedef enum DarnellCanMotion {
     DARNELL_CAN_HIDDEN = 0,
@@ -325,6 +326,7 @@ void DarnellIntroVisual_DrawRange(
         frame = SpriteAtlas_FindPrefixNth(&g_explosion_atlas, "Explosion 1 movie0", g_explosion_frame);
         if (frame >= 0) {
             project(prop, camera, px + 140.0f, py - 800.0f, &x, &y, &scale);
+            scale *= DARNELL_SHOT_EXPLOSION_SCALE;
             SpriteAtlas_DrawFrame(gs, &g_explosion_atlas, (u16)frame, x, y, scale, scale, 2, white);
         }
     }
