@@ -21,17 +21,18 @@ permissions:
 jobs:
   build-ps2:
     runs-on: ubuntu-latest
+    container: ps2dev/ps2dev:latest
     steps:
+      - name: Install runner utilities
+        run: apk add --no-cache git make file coreutils
+
       - uses: actions/checkout@v4
 
-      - name: Build PS2 ELF with current ps2dev environment
+      - name: Build PS2 ELF
+        working-directory: ps2
         run: |
-          docker pull ps2dev/ps2dev:latest
-          docker run --rm \
-            -v "$PWD:/work" \
-            -w /work/ps2 \
-            ps2dev/ps2dev:latest \
-            /bin/sh -c 'apk add --no-cache make >/dev/null && command -v mips64r5900el-ps2-elf-gcc && make clean all > build-ci.log 2>&1'
+          command -v mips64r5900el-ps2-elf-gcc
+          make clean all > build-ci.log 2>&1
 
       - name: Print compiler log
         if: always()
