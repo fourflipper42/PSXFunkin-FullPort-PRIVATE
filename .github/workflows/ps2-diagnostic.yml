@@ -1,11 +1,6 @@
 name: PS2 Object Diagnostics
 
 on:
-  pull_request:
-    branches: [ ps2-full-port ]
-    paths:
-      - 'ps2/**'
-      - '.github/workflows/ps2-diagnostic.yml'
   workflow_dispatch:
 
 permissions:
