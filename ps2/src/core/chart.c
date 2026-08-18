@@ -6,9 +6,9 @@ static u16 read_u16_le(const u8 *p)
     return (u16)((u16)p[0] | ((u16)p[1] << 8));
 }
 
-ChartResult Chart_Parse(ChartView *out, const void *data, size_t size)
+ChartResult Chart_Parse(ChartView *out, void *data, size_t size)
 {
-    const u8 *bytes;
+    u8 *bytes;
     size_t note_offset;
     size_t max_notes;
     size_t i;
@@ -20,7 +20,7 @@ ChartResult Chart_Parse(ChartView *out, const void *data, size_t size)
     if (size < 2u + sizeof(Section) + sizeof(Note))
         return CHART_ERR_TOO_SMALL;
 
-    bytes = (const u8 *)data;
+    bytes = (u8 *)data;
     note_offset = (size_t)read_u16_le(bytes);
 
     if (note_offset < 2u || note_offset > size - sizeof(Note))
@@ -31,9 +31,9 @@ ChartResult Chart_Parse(ChartView *out, const void *data, size_t size)
 
     out->data = bytes;
     out->size = size;
-    out->sections = (const Section *)(bytes + 2u);
+    out->sections = (Section *)(bytes + 2u);
     out->section_count = (note_offset - 2u) / sizeof(Section);
-    out->notes = (const Note *)(bytes + note_offset);
+    out->notes = (Note *)(bytes + note_offset);
 
     max_notes = (size - note_offset) / sizeof(Note);
     for (i = 0; i < max_notes; ++i) {
