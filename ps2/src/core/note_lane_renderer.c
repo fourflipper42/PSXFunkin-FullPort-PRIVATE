@@ -1,5 +1,7 @@
 #include "note_lane_renderer.h"
 
+#include "gameplay_scroll.h"
+#include "timer.h"
 #include <string.h>
 
 #define RECEPTOR_Y 70.0f
@@ -47,7 +49,7 @@ void NoteLaneRenderer_Reset(void)
     animation_tick = 0;
 }
 
-void NoteLaneRenderer_Tick(const GameplayState *game, const Pad *pad)
+void NoteLaneRenderer_Tick(GameplayState *game, const Pad *pad)
 {
     int side;
     int lane;
@@ -66,6 +68,17 @@ void NoteLaneRenderer_Tick(const GameplayState *game, const Pad *pad)
 
     if (game == NULL)
         return;
+
+    if (game->events.song_event_fired &&
+        game->events.last_song_event_name != NULL &&
+        game->events.last_song_event_value != NULL) {
+        GameplayScroll_HandleEvent(
+            game,
+            game->events.last_song_event_name,
+            game->events.last_song_event_value);
+    }
+    GameplayScroll_Tick(game, timer_dt);
+
     player_hits = game->events.player_hit_mask;
     opponent_hits = game->events.opponent_hit_mask;
     for (lane = 0; lane < 4; ++lane) {
@@ -76,17 +89,24 @@ void NoteLaneRenderer_Tick(const GameplayState *game, const Pad *pad)
     }
 }
 
-static float note_y(const GameplayState *game, const Note *note)
+static float note_y(
+    const GameplayState *game,
+    const Note *note,
+    boolean opponent)
 {
     fixed_t delta = Gameplay_NoteDelta(game, note);
-    fixed_t pixel_delta = FIXED_MUL(game->rhythm.note_speed, delta);
+    fixed_t speed = Gameplay_NoteSpeedForSide(game, opponent);
+    fixed_t pixel_delta = FIXED_MUL(speed, delta);
     return RECEPTOR_Y + (float)pixel_delta / (float)FIXED_UNIT;
 }
 
-static float sustain_step_height(const GameplayState *game)
+static float sustain_step_height(
+    const GameplayState *game,
+    boolean opponent)
 {
     fixed_t quarter_step = (fixed_t)12 << FIXED_SHIFT;
-    fixed_t pixels = FIXED_MUL(game->rhythm.note_speed, quarter_step);
+    fixed_t speed = Gameplay_NoteSpeedForSide(game, opponent);
+    fixed_t pixels = FIXED_MUL(speed, quarter_step);
     float value = (float)pixels / (float)FIXED_UNIT;
     if (value < 4.0f)
         value = 4.0f;
@@ -102,7 +122,6 @@ void NoteLaneRenderer_Draw(
     const u64 white = GS_SETREG_RGBAQ(0x80, 0x80, 0x80, 0x80, 0x00);
     const u64 mine_tint = GS_SETREG_RGBAQ(0x28, 0x28, 0x28, 0x80, 0x00);
     const ChartView *chart;
-    float step_height;
     size_t i;
     int lane;
 
@@ -111,25 +130,25 @@ void NoteLaneRenderer_Draw(
         return;
 
     chart = &game->chart.view;
-    step_height = sustain_step_height(game);
 
     /* Trails first so heads and receptors stay cleanly on top. Each generated
      * sustain piece represents one quarter-step interval in the CHT stream. */
     for (i = game->first_note; i < chart->note_count; ++i) {
         const Note *note = &chart->notes[i];
         boolean opponent;
+        float step_height;
         float y;
         float x;
 
         if ((note->type & NOTE_FLAG_HIT) || !(note->type & NOTE_FLAG_SUSTAIN))
             continue;
-        y = note_y(game, note);
-        if (y < -64.0f)
-            continue;
-        if (y > 424.0f)
-            break;
 
         opponent = (note->type & NOTE_FLAG_OPPONENT) != 0;
+        y = note_y(game, note, opponent);
+        if (y < -64.0f || y > 424.0f)
+            continue;
+
+        step_height = sustain_step_height(game, opponent);
         lane = note->type & 3;
         x = lane_center(opponent, (u8)lane);
 
@@ -160,13 +179,12 @@ void NoteLaneRenderer_Draw(
 
         if ((note->type & NOTE_FLAG_HIT) || (note->type & NOTE_FLAG_SUSTAIN))
             continue;
-        y = note_y(game, note);
-        if (y < -64.0f)
-            continue;
-        if (y > 424.0f)
-            break;
 
         opponent = (note->type & NOTE_FLAG_OPPONENT) != 0;
+        y = note_y(game, note, opponent);
+        if (y < -64.0f || y > 424.0f)
+            continue;
+
         lane = note->type & 3;
         x = lane_center(opponent, (u8)lane);
         color = (note->type & NOTE_FLAG_MINE) ? mine_tint : white;
