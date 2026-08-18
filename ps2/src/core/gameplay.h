@@ -29,6 +29,19 @@ typedef struct GameplayFrameEvents {
     HitRating last_rating;
 } GameplayFrameEvents;
 
+typedef struct GameplayScrollTween {
+    fixed_t start_player;
+    fixed_t start_opponent;
+    fixed_t target_player;
+    fixed_t target_opponent;
+    fixed_t elapsed;
+    fixed_t duration;
+    u8 side_mask;
+    u8 ease_type;
+    u8 ease_dir;
+    boolean active;
+} GameplayScrollTween;
+
 typedef struct GameplayState {
     ChartAsset chart;
     SongEventStream song_events;
@@ -39,6 +52,9 @@ typedef struct GameplayState {
     size_t first_note;
     fixed_t note_scroll;
     fixed_t song_time;
+    fixed_t player_scroll_speed;
+    fixed_t opponent_scroll_speed;
+    GameplayScrollTween scroll_tween;
     s32 song_step;
     u32 misses;
 
@@ -68,5 +84,6 @@ void Gameplay_Tick(GameplayState *state, const Pad *pad);
 void Gameplay_PressLane(GameplayState *state, u8 lane);
 void Gameplay_HoldLane(GameplayState *state, u8 lane);
 fixed_t Gameplay_NoteDelta(const GameplayState *state, const Note *note);
+fixed_t Gameplay_NoteSpeedForSide(const GameplayState *state, boolean opponent);
 
 #endif
