@@ -52,6 +52,8 @@ const char *Chart_ResultString(ChartResult result)
     switch (result) {
         case CHART_OK: return "ok";
         case CHART_ERR_NULL: return "null argument";
+        case CHART_ERR_IO: return "chart I/O error";
+        case CHART_ERR_ALLOC: return "chart allocation failed";
         case CHART_ERR_TOO_SMALL: return "chart too small";
         case CHART_ERR_SECTION_OFFSET: return "invalid note offset";
         case CHART_ERR_SECTION_LAYOUT: return "invalid section layout";
