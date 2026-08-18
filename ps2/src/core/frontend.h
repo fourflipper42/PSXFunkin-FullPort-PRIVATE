@@ -21,6 +21,30 @@ typedef enum FrontendPage {
     FRONTEND_PAGE_COUNT
 } FrontendPage;
 
+typedef enum FrontendScreen {
+    FRONTEND_SCREEN_TITLE = 0,
+    FRONTEND_SCREEN_MAIN,
+    FRONTEND_SCREEN_PAGE,
+    FRONTEND_SCREEN_CHARACTER,
+    FRONTEND_SCREEN_EXTRAS
+} FrontendScreen;
+
+typedef enum FrontendMainItem {
+    FRONTEND_MAIN_STORY = 0,
+    FRONTEND_MAIN_FREEPLAY,
+    FRONTEND_MAIN_CHARACTER,
+    FRONTEND_MAIN_OPTIONS,
+    FRONTEND_MAIN_EXTRAS,
+    FRONTEND_MAIN_COUNT
+} FrontendMainItem;
+
+typedef enum FrontendExtraItem {
+    FRONTEND_EXTRA_GAMMOD = 0,
+    FRONTEND_EXTRA_HUD,
+    FRONTEND_EXTRA_PINS,
+    FRONTEND_EXTRA_COUNT
+} FrontendExtraItem;
+
 typedef enum FrontendPlayer {
     FRONTEND_PLAYER_BF = 0,
     FRONTEND_PLAYER_PICO
@@ -44,7 +68,11 @@ typedef struct FrontendAction {
 
 typedef struct Frontend {
     FrontendPage page;
+    FrontendScreen screen;
     FrontendPlayer player;
+    u8 main_selected;
+    u8 character_selected;
+    u8 extras_selected;
     u16 story_selected;
     StoryDifficulty story_difficulty;
     u16 pin_box_selected;
