@@ -19,6 +19,7 @@ EE_OBJS = \
 	build/core_song_stream.o \
 	build/core_gameplay.o \
 	build/core_camera_effects.o \
+	build/core_freeplay_browser.o \
 	build/core_texture_asset.o \
 	build/core_sprite_atlas.o \
 	build/core_note_style.o \
@@ -97,6 +98,9 @@ build/core_gameplay.o: src/core/gameplay.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_camera_effects.o: src/core/camera_effects.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_freeplay_browser.o: src/core/freeplay_browser.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_texture_asset.o: src/core/texture_asset.c | build
