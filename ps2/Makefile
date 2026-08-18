@@ -2,7 +2,10 @@ EE_BIN = build/funkin_ps2.elf
 EE_OBJS = \
 	build/main.o \
 	build/core_timer.o \
-	build/core_animation.o
+	build/core_animation.o \
+	build/core_random.o \
+	build/core_mem.o \
+	build/core_object.o
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
 EE_LDFLAGS += -L$(GSKIT)/lib
@@ -26,6 +29,15 @@ build/core_timer.o: src/core/timer.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_animation.o: src/core/animation.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_random.o: src/core/random.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_mem.o: src/core/mem.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_object.o: src/core/object.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 clean:
