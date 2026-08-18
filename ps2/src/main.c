@@ -57,10 +57,14 @@ static VideoTransform video_transform(AspectMode mode)
     t.x_offset = 0.0f;
 
     if (mode == ASPECT_LETTERBOX_4_3) {
-        const float content_h = NTSC_H * 0.75f;
-        t.y_scale = content_h / LOGICAL_H;
+        /* Preserve the canonical 16:9 640x360 canvas pixel-for-pixel inside
+         * the 640x448 NTSC framebuffer. This produces 44-line bars above
+         * and below instead of subtly squashing the image. */
+        const float content_h = LOGICAL_H * t.x_scale;
+        t.y_scale = t.x_scale;
         t.y_offset = (NTSC_H - content_h) * 0.5f;
     } else {
+        /* 16:9 TVs stretch the NTSC framebuffer vertically/anamorphically. */
         t.y_scale = NTSC_H / LOGICAL_H;
         t.y_offset = 0.0f;
     }
