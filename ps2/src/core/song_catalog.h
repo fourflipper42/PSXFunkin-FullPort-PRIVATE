@@ -33,5 +33,11 @@ typedef struct SongCatalog {
 boolean SongCatalog_Load(SongCatalog *catalog, const char *path);
 void SongCatalog_Free(SongCatalog *catalog);
 boolean SongCatalog_Get(const SongCatalog *catalog, u32 index, SongCatalogEntry *entry);
+boolean SongCatalog_Find(
+    const SongCatalog *catalog,
+    const char *song_id,
+    const char *variation,
+    const char *difficulty,
+    SongCatalogEntry *entry);
 
 #endif
