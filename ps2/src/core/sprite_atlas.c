@@ -152,6 +152,80 @@ s32 SpriteAtlas_FindPrefixNth(const SpriteAtlas *atlas, const char *prefix, u16 
     return -1;
 }
 
+void SpriteAtlas_DrawFrameEx(
+    GSGLOBAL *gs,
+    const SpriteAtlas *atlas,
+    u16 frame_index,
+    float x,
+    float y,
+    float scale_x,
+    float scale_y,
+    boolean flip_x,
+    boolean flip_y,
+    int z,
+    u64 color)
+{
+    const AtlasFrame *frame;
+    float trim_x;
+    float trim_y;
+    float dx;
+    float dy;
+    float dw;
+    float dh;
+    float u1;
+    float u2;
+    float v1;
+    float v2;
+
+    if (gs == NULL || atlas == NULL || !atlas->loaded || frame_index >= atlas->frame_count)
+        return;
+
+    frame = &atlas->frames[frame_index];
+    if (frame->flags & 1u)
+        return; /* Rotated Sparrow frames are not used by base FNF sheets. */
+
+    trim_x = -(float)frame->frame_x;
+    trim_y = -(float)frame->frame_y;
+    if (flip_x)
+        trim_x = (float)frame->frame_width - trim_x - (float)frame->width;
+    if (flip_y)
+        trim_y = (float)frame->frame_height - trim_y - (float)frame->height;
+
+    dx = x + trim_x * scale_x;
+    dy = y + trim_y * scale_y;
+    dw = (float)frame->width * scale_x;
+    dh = (float)frame->height * scale_y;
+
+    u1 = (float)frame->x;
+    u2 = (float)(frame->x + frame->width);
+    v1 = (float)frame->y;
+    v2 = (float)(frame->y + frame->height);
+    if (flip_x) {
+        float tmp = u1;
+        u1 = u2;
+        u2 = tmp;
+    }
+    if (flip_y) {
+        float tmp = v1;
+        v1 = v2;
+        v2 = tmp;
+    }
+
+    TextureAsset_Draw(
+        gs,
+        &atlas->texture,
+        dx,
+        dy,
+        dx + dw,
+        dy + dh,
+        u1,
+        v1,
+        u2,
+        v2,
+        z,
+        color);
+}
+
 void SpriteAtlas_DrawFrame(
     GSGLOBAL *gs,
     const SpriteAtlas *atlas,
@@ -163,35 +237,16 @@ void SpriteAtlas_DrawFrame(
     int z,
     u64 color)
 {
-    const AtlasFrame *frame;
-    float dx;
-    float dy;
-    float dw;
-    float dh;
-
-    if (gs == NULL || atlas == NULL || !atlas->loaded || frame_index >= atlas->frame_count)
-        return;
-
-    frame = &atlas->frames[frame_index];
-    if (frame->flags & 1u)
-        return; /* Rotated Sparrow frames are not used by base FNF sheets. */
-
-    dx = x - ((float)frame->frame_x * scale_x);
-    dy = y - ((float)frame->frame_y * scale_y);
-    dw = (float)frame->width * scale_x;
-    dh = (float)frame->height * scale_y;
-
-    TextureAsset_Draw(
+    SpriteAtlas_DrawFrameEx(
         gs,
-        &atlas->texture,
-        dx,
-        dy,
-        dx + dw,
-        dy + dh,
-        (float)frame->x,
-        (float)frame->y,
-        (float)(frame->x + frame->width),
-        (float)(frame->y + frame->height),
+        atlas,
+        frame_index,
+        x,
+        y,
+        scale_x,
+        scale_y,
+        false,
+        false,
         z,
         color);
 }
