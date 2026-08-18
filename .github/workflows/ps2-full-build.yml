@@ -2,6 +2,11 @@ name: FNF PS2 Full DVD Build
 
 on:
   workflow_dispatch:
+    inputs:
+      modpack_bundle_url:
+        description: 'Optional URL to a ZIP containing the user mod ZIP archives'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -35,7 +40,7 @@ jobs:
           echo "$PS2DEV/dvp/bin" >> "$GITHUB_PATH"
           echo "$PS2SDK/bin" >> "$GITHUB_PATH"
 
-      - name: Fetch exact official FNF v0.8.4 release
+      - name: Fetch exact official FNF v0.8.4 desktop release
         run: |
           mkdir -p build/official
           curl -fL --retry 3 --retry-delay 3 \
@@ -44,7 +49,7 @@ jobs:
           echo '50eb30c89de03a6ef34431bb75930219b897aebb59e456a169247d8b0a414321  build/funkin-linux-64bit.zip' | sha256sum -c -
           unzip -q build/funkin-linux-64bit.zip -d build/official
 
-      - name: Locate official asset roots
+      - name: Locate official asset root
         run: |
           SONGS_ROOT="$(find build/official -type d -path '*/assets/songs' -print -quit)"
           if [ -z "$SONGS_ROOT" ]; then
@@ -52,24 +57,52 @@ jobs:
             exit 1
           fi
           ASSETS_ROOT="$(dirname "$SONGS_ROOT")"
-          echo "SONGS_ROOT=$SONGS_ROOT" >> "$GITHUB_ENV"
           echo "ASSETS_ROOT=$ASSETS_ROOT" >> "$GITHUB_ENV"
-          echo "songs:  $SONGS_ROOT"
-          echo "assets: $ASSETS_ROOT"
+          echo "official assets: $ASSETS_ROOT"
+
+      - name: Prepare DVD staging and optional user modpack overlay
+        env:
+          MODPACK_BUNDLE_URL: ${{ inputs.modpack_bundle_url }}
+        run: |
+          rm -rf ps2/disc build/merged-assets build/modpack-bundle
+          mkdir -p ps2/disc/AUDIO ps2/disc/CHART ps2/disc/GAME
+          echo '{"mods":[],"fnfc":[],"nativeScripts":[],"extras":{}}' > ps2/disc/GAME/MODPACK.JSON
+          BUILD_ASSETS_ROOT="$ASSETS_ROOT"
+
+          if [ -n "$MODPACK_BUNDLE_URL" ]; then
+            mkdir -p build/modpack-bundle
+            curl -fL --retry 3 --retry-delay 3 "$MODPACK_BUNDLE_URL" -o build/modpack-bundle.zip
+            unzip -q build/modpack-bundle.zip -d build/modpack-bundle
+            mapfile -t MOD_ARCHIVES < <(find build/modpack-bundle -type f -iname '*.zip' -print | sort)
+            if [ "${#MOD_ARCHIVES[@]}" -eq 0 ]; then
+              echo 'Modpack bundle contained no mod ZIP archives' >&2
+              exit 1
+            fi
+            echo "mod archives: ${#MOD_ARCHIVES[@]}"
+            printf '  %s\n' "${MOD_ARCHIVES[@]}"
+            python3 ps2/scripts/import_user_modpack.py \
+              "$ASSETS_ROOT" \
+              build/merged-assets \
+              ps2/disc/GAME \
+              "${MOD_ARCHIVES[@]}" \
+              --manifest ps2/disc/GAME/MODPACK.JSON
+            BUILD_ASSETS_ROOT="$GITHUB_WORKSPACE/build/merged-assets"
+          fi
+
+          echo "BUILD_ASSETS_ROOT=$BUILD_ASSETS_ROOT" >> "$GITHUB_ENV"
+          echo "build assets: $BUILD_ASSETS_ROOT"
 
       - name: Convert every song variation to PS2 streaming PCM
         run: |
-          rm -rf ps2/disc
-          mkdir -p ps2/disc/AUDIO ps2/disc/CHART ps2/disc/GAME
           python3 ps2/scripts/convert_song_audio.py \
-            "$ASSETS_ROOT" \
+            "$BUILD_ASSETS_ROOT" \
             ps2/disc/AUDIO \
             --manifest ps2/disc/AUDIO/AUDIOIDX.JSON
 
-      - name: Convert every chart, variation and event stream
+      - name: Convert every chart, variation, note-kind and event stream
         run: |
           python3 ps2/scripts/convert_charts.py \
-            "$ASSETS_ROOT" \
+            "$BUILD_ASSETS_ROOT" \
             ps2/disc/CHART \
             --manifest ps2/disc/CHART/CHARTIDX.JSON \
             --strict
@@ -77,7 +110,7 @@ jobs:
       - name: Convert every discovered character, stage and song descriptor
         run: |
           python3 ps2/scripts/convert_game_assets.py \
-            "$ASSETS_ROOT" \
+            "$BUILD_ASSETS_ROOT" \
             ps2/disc/GAME \
             --strict
           python3 - <<'PY'
@@ -93,10 +126,32 @@ jobs:
               raise SystemExit('strict conversion unexpectedly produced failures')
           PY
 
+      - name: Convert Story Mode level catalog
+        run: |
+          python3 ps2/scripts/convert_story.py \
+            "$BUILD_ASSETS_ROOT" \
+            ps2/disc/GAME/STORY.FSTY \
+            --manifest ps2/disc/GAME/STORY.JSON
+
+      - name: Convert character health icons and metadata
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+          data = json.loads(Path('ps2/disc/GAME/GAMEIDX.JSON').read_text())
+          chars = data['discovered']['characters']
+          subprocess.check_call([
+              'python3', 'ps2/scripts/convert_health_icons.py',
+              os.environ['BUILD_ASSETS_ROOT'], 'ps2/disc/GAME', *chars, '--strict'
+          ])
+          PY
+
       - name: Convert every used softcoded note style
         run: |
           python3 ps2/scripts/convert_note_styles.py \
-            "$ASSETS_ROOT" \
+            "$BUILD_ASSETS_ROOT" \
             ps2/disc/GAME/NOTESTYLE \
             --manifest ps2/disc/GAME/NOTESTYLE/NOTESTYLE.JSON \
             --strict
@@ -122,11 +177,15 @@ jobs:
           du -sh ps2/disc
           find ps2/disc/AUDIO -type f | wc -l | xargs echo 'audio files:'
           find ps2/disc/CHART -name '*.CHT' -type f | wc -l | xargs echo 'charts:'
+          find ps2/disc/CHART -name '*.FKND' -type f | wc -l | xargs echo 'note-kind streams:'
           find ps2/disc/CHART -name 'EVENTS.FEVT' -type f | wc -l | xargs echo 'event streams:'
           find ps2/disc/GAME/CHAR -name 'CHAR.FCHR' -type f 2>/dev/null | wc -l | xargs echo 'characters:'
           find ps2/disc/GAME/STAGE -name 'STAGE.FSTG' -type f 2>/dev/null | wc -l | xargs echo 'stages:'
+          find ps2/disc/GAME/ICON -name '*.FPTX' -o -name '*.FATL' 2>/dev/null | wc -l | xargs echo 'health icon assets:'
           find ps2/disc/GAME/NOTESTYLE -name 'STYLE.FNST' -type f 2>/dev/null | wc -l | xargs echo 'note styles:'
           find ps2/disc/GAME/SONG -name '*.FSON' -type f 2>/dev/null | wc -l | xargs echo 'song descriptors:'
+          test -s ps2/disc/GAME/GAME.FCAT
+          test -s ps2/disc/GAME/STORY.FSTY
 
       - name: Master homebrew PS2 DVD ISO
         run: |
@@ -157,7 +216,7 @@ jobs:
         run: |
           TAG="ps2-native-${GITHUB_SHA::12}"
           TITLE="FNF PS2 native test ${GITHUB_SHA::12}"
-          NOTES=$'Native PS2 development checkpoint.\n\nIncludes the PS2 ELF, DVD ISO split into release-safe parts, SHA-256, generated audio/chart indexes, and discovered game/note-style manifests. Reassemble ISO parts in lexical order before testing.'
+          NOTES=$'Native PS2 development checkpoint.\n\nIncludes the native ELF, full DVD ISO split into release-safe parts, Story/Freeplay catalogs, health icons, note kinds/events, and optional user modpack assets. Reassemble ISO parts in lexical order before testing.'
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
@@ -171,4 +230,7 @@ jobs:
             ps2/disc/AUDIO/AUDIOIDX.JSON \
             ps2/disc/CHART/CHARTIDX.JSON \
             ps2/disc/GAME/GAMEIDX.JSON \
+            ps2/disc/GAME/STORY.JSON \
+            ps2/disc/GAME/MODPACK.JSON \
+            ps2/disc/GAME/ICON/ICONIDX.JSON \
             ps2/disc/GAME/NOTESTYLE/NOTESTYLE.JSON
