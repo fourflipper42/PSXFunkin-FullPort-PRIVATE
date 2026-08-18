@@ -1,6 +1,7 @@
 #include "gameplay.h"
 
 #include "timer.h"
+#include <stdio.h>
 #include <string.h>
 
 static const u16 lane_buttons[4] = {
@@ -18,6 +19,70 @@ static s32 scroll_to_song_step(fixed_t scroll)
     if (scroll < 0)
         units -= 11;
     return units / 12;
+}
+
+static boolean Gameplay_EventPath(
+    char *out,
+    size_t out_size,
+    const char *chart_path)
+{
+    const char *slash;
+    const char *backslash;
+    const char *separator;
+    const char *filename;
+    const char *version;
+    size_t prefix_len;
+    int written;
+
+    if (out == NULL || out_size == 0 || chart_path == NULL)
+        return false;
+
+    slash = strrchr(chart_path, '/');
+    backslash = strrchr(chart_path, '\\');
+    if (slash == NULL)
+        separator = backslash;
+    else if (backslash == NULL)
+        separator = slash;
+    else
+        separator = slash > backslash ? slash : backslash;
+
+    filename = separator != NULL ? separator + 1 : chart_path;
+    prefix_len = separator != NULL ? (size_t)(separator - chart_path + 1) : 0;
+    version = strstr(filename, ";1");
+
+    written = snprintf(
+        out,
+        out_size,
+        "%.*sEVENTS.FEVT%s",
+        (int)prefix_len,
+        chart_path,
+        version != NULL ? ";1" : "");
+    return written >= 0 && (size_t)written < out_size;
+}
+
+static void Gameplay_DispatchSongEvent(
+    void *user,
+    const SongEventRecord *event,
+    const char *name,
+    const char *value_json)
+{
+    GameplayState *state = (GameplayState *)user;
+
+    if (state == NULL || event == NULL)
+        return;
+
+    state->events.song_event_fired = true;
+    state->events.last_song_event_kind = event->kind;
+    state->events.last_song_event_name = name;
+    state->events.last_song_event_value = value_json;
+
+    if (event->kind == SONG_EVENT_FOCUS_CAMERA) {
+        s32 focus = (s32)(event->arg0 + 0.5f);
+        if (focus >= 0 && focus <= 2) {
+            state->events.camera_focus_changed = true;
+            state->events.camera_focus = (u8)focus;
+        }
+    }
 }
 
 static void Gameplay_ResetEvents(GameplayState *state)
@@ -146,6 +211,7 @@ ChartResult Gameplay_Load(
 {
     ChartResult result;
     u16 first_bpm;
+    char event_path[256];
 
     if (state == NULL || chart_path == NULL || inst_path == NULL)
         return CHART_ERR_NULL;
@@ -158,6 +224,14 @@ ChartResult Gameplay_Load(
     if (state->chart.view.section_count == 0) {
         Gameplay_Free(state);
         return CHART_ERR_TOO_SMALL;
+    }
+
+    if (Gameplay_EventPath(event_path, sizeof(event_path), chart_path)) {
+        if (SongEvents_Load(&state->song_events, event_path)) {
+            SongEvents_Reset(&state->song_events);
+            printf("[PS2] chart events loaded: %u\n",
+                (unsigned)state->song_events.count);
+        }
     }
 
     if (!SongStream_Open(&state->song, inst_path, voices_path)) {
@@ -186,6 +260,7 @@ void Gameplay_Free(GameplayState *state)
     if (state == NULL)
         return;
     SongStream_Close(&state->song);
+    SongEvents_Free(&state->song_events);
     ChartAsset_Free(&state->chart);
     memset(state, 0, sizeof(*state));
 }
@@ -310,6 +385,14 @@ void Gameplay_Tick(GameplayState *state, const Pad *pad)
         SongStream_Tick(&state->song);
         state->song_time = SongStream_PlayedSeconds(&state->song);
         Gameplay_RecalcScroll(state);
+    }
+
+    if (state->song_events.loaded) {
+        SongEvents_Tick(
+            &state->song_events,
+            state->song_time,
+            Gameplay_DispatchSongEvent,
+            state);
     }
 
     Gameplay_UpdateSections(state);
