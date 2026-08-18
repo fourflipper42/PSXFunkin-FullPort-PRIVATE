@@ -11,7 +11,9 @@ typedef struct SongStream {
     boolean voices_enabled;
     boolean active;
     boolean finished;
+    boolean paused;
     u64 base_frame;
+    u64 paused_frame;
 } SongStream;
 
 boolean SongStream_Open(SongStream *stream, const char *inst_path, const char *voices_path);
@@ -19,8 +21,11 @@ void SongStream_Close(SongStream *stream);
 void SongStream_Tick(SongStream *stream);
 void SongStream_SetVoices(SongStream *stream, boolean enabled);
 boolean SongStream_SeekFrame(SongStream *stream, u64 frame);
+boolean SongStream_Pause(SongStream *stream);
+boolean SongStream_Resume(SongStream *stream);
 u64 SongStream_PlayedFrames(const SongStream *stream);
 fixed_t SongStream_PlayedSeconds(const SongStream *stream);
 boolean SongStream_Finished(const SongStream *stream);
+boolean SongStream_Paused(const SongStream *stream);
 
 #endif
