@@ -5,6 +5,7 @@
 #include "note_style.h"
 
 void NoteLaneRenderer_Reset(void);
+void NoteLaneRenderer_SetLayout(boolean hide_opponent, boolean center_player);
 void NoteLaneRenderer_Tick(GameplayState *game, const Pad *pad);
 void NoteLaneRenderer_Draw(
     GSGLOBAL *gs,
