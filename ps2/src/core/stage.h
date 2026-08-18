@@ -71,6 +71,7 @@ typedef struct Stage {
     u16 *frame_indices;
     char *strings;
     StagePropRuntime *runtime;
+    u16 *draw_order;
     u16 prop_count;
     u32 animation_count;
     u32 indices_count;
