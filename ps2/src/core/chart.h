@@ -36,6 +36,8 @@ typedef struct ChartView {
 typedef enum ChartResult {
     CHART_OK = 0,
     CHART_ERR_NULL,
+    CHART_ERR_IO,
+    CHART_ERR_ALLOC,
     CHART_ERR_TOO_SMALL,
     CHART_ERR_SECTION_OFFSET,
     CHART_ERR_SECTION_LAYOUT,
