@@ -11,11 +11,12 @@ EE_OBJS = \
 	build/core_pad.o \
 	build/core_audio.o \
 	build/core_song_stream.o \
+	build/core_disc.o \
 	build/audsrv_irx.o
 
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
 EE_LDFLAGS += -L$(GSKIT)/lib
-EE_LIBS = -lgskit -ldmakit -lpad -laudsrv -lpatches -ldebug -lc
+EE_LIBS = -lgskit -ldmakit -lpad -laudsrv -lpatches -lcdvd -ldebug -lc
 
 EE_CFLAGS += -O2 -G0 -Wall -Wextra -Wno-unused-parameter -DFNF_PS2
 
@@ -59,6 +60,9 @@ build/core_audio.o: src/core/audio.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_song_stream.o: src/core/song_stream.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_disc.o: src/core/disc.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/audsrv_irx.c: | build
