@@ -31,7 +31,13 @@ boolean FreeplayBrowser_InitFont(GSGLOBAL *gs, FreeplayBrowser *browser)
     if (browser->font == NULL)
         return false;
 
-    gsKit_fontm_upload(gs, browser->font);
+    if (gsKit_fontm_upload(gs, browser->font) < 0) {
+        gsKit_free_fontm(gs, browser->font);
+        browser->font = NULL;
+        browser->font_ready = false;
+        return false;
+    }
+
     browser->font->Spacing = 0.90f;
     browser->font->Align = GSKIT_FALIGN_LEFT;
     browser->font_ready = true;
