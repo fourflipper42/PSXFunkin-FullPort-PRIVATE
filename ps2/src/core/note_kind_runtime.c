@@ -82,10 +82,6 @@ static boolean resolve_lane_hit(
     chart = &game->chart.view;
     current = game->note_scroll >> FIXED_SHIFT;
 
-    /* Search newly-hit notes around the exact conductor position. Taps are
-     * normally within the judgement window, while opponent auto-hits land at
-     * or immediately before the current scroll. Sustain pieces are generated
-     * every 12 units and therefore still resolve unambiguously per lane. */
     for (i = 0; i < chart->note_count; ++i) {
         const Note *note = &chart->notes[i];
         s32 distance;
@@ -188,8 +184,12 @@ boolean NoteKindRuntime_PlayLaneAnimation(
     sustain = (hit->note_type & NOTE_FLAG_SUSTAIN) != 0;
 
     if (runtime != NULL && runtime->loaded && hit->kind_index != 0) {
+        NoteKindEntry entry;
         if (NoteKinds_NameEquals(&runtime->table, hit->kind_index, "noanim"))
-            return true; /* Handled by intentionally doing nothing. */
+            return true;
+        if (NoteKinds_Get(&runtime->table, hit->kind_index, &entry) &&
+            entry.name != NULL && strncmp(entry.name, "weekend-1-", 10) == 0)
+            return true; /* Native Weekend1Runtime owns the fight/can choreography. */
         if (NoteKinds_NameEquals(&runtime->table, hit->kind_index, "uniSuffix")) {
             suffix[0] = '\0';
             if (NoteKinds_ParamString(
