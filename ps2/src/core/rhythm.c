@@ -77,6 +77,9 @@ RhythmHitResult Rhythm_ApplyHit(RhythmState *state, fixed_t offset)
     result.cut_vocal = false;
     result.combo_broken = false;
 
+    ++state->judged_notes;
+    ++state->rating_counts[(int)result.rating];
+
     if (state->kade) {
         if (result.rating == HIT_SHIT) {
             result.cut_vocal = true;
