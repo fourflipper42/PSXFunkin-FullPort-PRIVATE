@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   issues: write
   pull-requests: write
 
@@ -37,20 +37,28 @@ jobs:
             /bin/sh -c 'apk add --no-cache make >/dev/null && command -v mips64r5900el-ps2-elf-gcc && make clean all' \
             2>&1 | tee ps2-build.log
 
-      - name: Report compiler failure on validation PR
+      - name: Persist compiler failure on validation branch
         if: steps.compile.outcome == 'failure' && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.head_ref }}
         run: |
-          {
-            echo '### PS2 compiler output'
-            echo
-            echo '```text'
-            tail -n 100 ps2-build.log
-            echo '```'
-          } > compiler-comment.md
-          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file compiler-comment.md
+          mkdir -p .ci
+          tail -n 140 ps2-build.log > .ci/ps2-build-error.txt
+          CONTENT="$(base64 -w0 .ci/ps2-build-error.txt)"
+          SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/.ci/ps2-build-error.txt?ref=$HEAD_BRANCH" --jq .sha 2>/dev/null || true)"
+          if [ -n "$SHA" ]; then
+            gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/.ci/ps2-build-error.txt" \
+              -f message='Update PS2 compiler diagnostic' \
+              -f content="$CONTENT" \
+              -f branch="$HEAD_BRANCH" \
+              -f sha="$SHA" >/dev/null
+          else
+            gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/.ci/ps2-build-error.txt" \
+              -f message='Record PS2 compiler diagnostic' \
+              -f content="$CONTENT" \
+              -f branch="$HEAD_BRANCH" >/dev/null
+          fi
           exit 1
 
       - name: Fail non-PR compile cleanly
