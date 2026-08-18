@@ -24,6 +24,7 @@ typedef struct Weekend1CanVisual {
     Weekend1CanState state;
     u16 frame;
     fixed_t timer;
+    boolean doomed;
     boolean shot_effect_spawned;
 } Weekend1CanVisual;
 
@@ -83,6 +84,7 @@ static void reset_can_animation(Weekend1CanVisual *can, Weekend1CanState state)
     can->state = state;
     can->frame = 0;
     can->timer = 0;
+    can->doomed = false;
     can->shot_effect_spawned = false;
 }
 
@@ -172,7 +174,7 @@ void Weekend1Visual_ShootCan(void)
     if (!g_enabled)
         return;
     for (i = 0; i < WEEKEND1_CAN_MAX; ++i) {
-        if (g_cans[i].state == WEEKEND1_CAN_ARC) {
+        if (g_cans[i].state == WEEKEND1_CAN_ARC && !g_cans[i].doomed) {
             reset_can_animation(&g_cans[i], WEEKEND1_CAN_SHOT);
             return;
         }
@@ -185,10 +187,10 @@ void Weekend1Visual_ImpactCan(void)
     if (!g_enabled)
         return;
     for (i = 0; i < WEEKEND1_CAN_MAX; ++i) {
-        if (g_cans[i].state == WEEKEND1_CAN_ARC) {
-            /* The source keeps playing Can Start until its natural end, then
-             * transitions into Hit Pico. Mark the outcome without snapping. */
-            g_cans[i].state = WEEKEND1_CAN_IMPACT;
+        if (g_cans[i].state == WEEKEND1_CAN_ARC && !g_cans[i].doomed) {
+            /* Keep the source Can Start animation running. It changes to Hit
+             * Pico only when that arc finishes, but it is no longer shootable. */
+            g_cans[i].doomed = true;
             return;
         }
     }
@@ -223,8 +225,7 @@ static void tick_can(Weekend1CanVisual *can, fixed_t elapsed)
         if (can->frame < count)
             continue;
 
-        if (can->state == WEEKEND1_CAN_ARC ||
-            can->state == WEEKEND1_CAN_IMPACT) {
+        if (can->state == WEEKEND1_CAN_ARC) {
             reset_can_animation(can, WEEKEND1_CAN_IMPACT);
             prefix = can_prefix(can);
             count = SpriteAtlas_CountPrefix(&g_can_atlas, prefix);
