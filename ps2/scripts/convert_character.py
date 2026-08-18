@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Convert official FNF Sparrow character JSON + atlas into PS2 runtime data."""
+"""Convert FNF character JSON + supported atlas types into PS2 runtime data.
+
+Sparrow sheets are repacked directly. AnimateAtlas/MultiAnimateAtlas characters
+are baked from their hierarchical Adobe Animate timelines into stable, trimmed
+frames first, then use the same paged runtime atlas format.
+"""
 
 from __future__ import annotations
 
@@ -22,9 +27,9 @@ ANIM_FLIP_Y = 1 << 2
 NO_STRING = 0xFFFFFFFF
 
 
-def load_atlas_converter():
-    path = Path(__file__).with_name("convert_sparrow_atlas.py")
-    spec = importlib.util.spec_from_file_location("convert_sparrow_atlas", path)
+def load_converter(filename: str, module_name: str):
+    path = Path(__file__).with_name(filename)
+    spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"unable to load {path}")
     mod = importlib.util.module_from_spec(spec)
@@ -48,6 +53,38 @@ def find_case_path(root: Path, relative_without_ext: str, suffix: str) -> Path:
         if candidate_rel == wanted:
             return candidate
     raise FileNotFoundError(f"asset not found: {relative_without_ext}{suffix} under {root}")
+
+
+def find_case_directory(root: Path, relative: str) -> Path:
+    rel = Path(*relative.replace("\\", "/").split("/"))
+    direct = root / rel
+    if direct.is_dir():
+        return direct
+    wanted = rel.as_posix().lower()
+    for candidate in root.rglob("*"):
+        if not candidate.is_dir():
+            continue
+        try:
+            candidate_rel = candidate.relative_to(root).as_posix().lower()
+        except ValueError:
+            continue
+        if candidate_rel == wanted:
+            return candidate
+    raise FileNotFoundError(f"asset directory not found: {relative} under {root}")
+
+
+def asset_root_and_relative(assets_root: Path, asset_path: str) -> tuple[Path, str]:
+    if ":" not in asset_path:
+        return assets_root / "images", asset_path
+    prefix, relative = asset_path.split(":", 1)
+    prefix = prefix.lower()
+    if prefix == "shared":
+        return assets_root / "shared" / "images", relative
+    if prefix in ("preload", "default"):
+        return assets_root / "images", relative
+    # Mod-specific libraries may be flattened by import_user_modpack.py. Fall
+    # back to the normal image root before rejecting the path outright.
+    return assets_root / "images", relative
 
 
 def find_character_json(assets_root: Path, character_id: str) -> Path:
@@ -81,46 +118,64 @@ def add_string(strings: bytearray, cache: dict[str, int], value: str | None) -> 
 
 
 def convert(assets_root: Path, character_id: str, output_dir: Path) -> dict:
-    atlas_converter = load_atlas_converter()
+    sparrow_converter = load_converter("convert_sparrow_atlas.py", "convert_sparrow_atlas_character")
+    animate_converter = load_converter("convert_animate_atlas.py", "convert_animate_atlas_character")
     json_path = find_character_json(assets_root, character_id)
     data = json.loads(json_path.read_text(encoding="utf-8"))
 
     render_type = str(data.get("renderType") or "sparrow").lower()
-    if render_type != "sparrow":
-        raise ValueError(f"{character_id}: renderType {render_type!r} is not Sparrow")
-
     asset_path = data.get("assetPath")
     if not isinstance(asset_path, str) or not asset_path:
         raise ValueError(f"{character_id}: missing assetPath")
 
-    images_root = assets_root / "images"
-    png_path = find_case_path(images_root, asset_path, ".png")
-    xml_path = find_case_path(images_root, asset_path, ".xml")
+    animations = data.get("animations") or []
+    prefixes = [str(anim.get("prefix") or "") for anim in animations if anim.get("prefix")]
+    root, relative = asset_root_and_relative(assets_root, asset_path)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     atlas_stem = output_dir / "ATLAS"
-    frame_count, page_count = atlas_converter.convert(png_path, xml_path, atlas_stem)
+    source_info: dict[str, object] = {}
+    default_fps = 24
+
+    if render_type == "sparrow":
+        png_path = find_case_path(root, relative, ".png")
+        xml_path = find_case_path(root, relative, ".xml")
+        frame_count, page_count = sparrow_converter.convert(png_path, xml_path, atlas_stem)
+        source_info = {
+            "sourcePng": png_path.as_posix(),
+            "sourceXml": xml_path.as_posix(),
+        }
+    elif render_type in ("animateatlas", "multianimateatlas"):
+        folder = find_case_directory(root, relative)
+        frame_count, page_count, animate_info = animate_converter.convert(folder, prefixes, atlas_stem)
+        default_fps = max(1, min(240, int(round(float(animate_info.get("frameRate", 24))))))
+        source_info = {
+            "sourceAnimateFolder": folder.as_posix(),
+            "animateBake": animate_info,
+        }
+    else:
+        raise ValueError(f"{character_id}: unsupported renderType {render_type!r}")
 
     strings = bytearray()
     string_cache: dict[str, int] = {}
     indices: list[int] = []
     anim_records = bytearray()
 
-    animations = data.get("animations") or []
     for anim in animations:
         name = str(anim.get("name") or "")
         prefix = str(anim.get("prefix") or "")
         if not name or not prefix:
             continue
-        if anim.get("assetPath") not in (None, "", asset_path):
+        per_asset = anim.get("assetPath")
+        if per_asset not in (None, "", asset_path):
             raise ValueError(
-                f"{character_id}/{name}: per-animation assetPath requires MultiSparrow support"
+                f"{character_id}/{name}: per-animation assetPath is not yet supported"
             )
 
         name_off = add_string(strings, string_cache, name)
         prefix_off = add_string(strings, string_cache, prefix)
         off_x, off_y = pair(anim.get("offsets"))
-        fps = max(1, min(240, int(anim.get("frameRate") or 24)))
+        fps = max(1, min(240, int(anim.get("frameRate") or default_fps)))
         flags = 0
         if bool(anim.get("looped", False)):
             flags |= ANIM_LOOPED
@@ -188,8 +243,7 @@ def convert(assets_root: Path, character_id: str, output_dir: Path) -> dict:
         "renderType": render_type,
         "assetPath": asset_path,
         "sourceJson": json_path.as_posix(),
-        "sourcePng": png_path.as_posix(),
-        "sourceXml": xml_path.as_posix(),
+        **source_info,
         "atlasFrames": frame_count,
         "atlasPages": page_count,
         "animations": len(anim_records) // ANIM.size,
