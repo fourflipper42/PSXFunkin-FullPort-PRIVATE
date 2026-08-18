@@ -1,13 +1,26 @@
 #!/usr/bin/env python3
-"""Discover runtime assets from official song metadata and convert them for PS2."""
+"""Discover official FNF runtime assets and convert them for the PS2 port.
+
+Besides characters/stages, this writes one compact FSON descriptor per
+song/variation/difficulty. The runtime can therefore load a song without any
+hard-coded Week/Tutorial knowledge: the descriptor names its characters,
+stage, note style, instrumental selection, and scroll speed while chart/audio
+paths follow the same song/variation/difficulty directory convention.
+"""
 
 from __future__ import annotations
 
 import argparse
 import importlib.util
 import json
+import struct
 import sys
 from pathlib import Path
+
+FSON_MAGIC = b"FSON"
+FSON_VERSION = 1
+FSON_HEADER = struct.Struct("<4sHHI10If")
+NO_STRING = 0xFFFFFFFF
 
 
 def load_module(filename: str, module_name: str):
@@ -39,6 +52,94 @@ def metadata_files(songs_root: Path) -> list[Path]:
     return sorted(files)
 
 
+def variation_from_metadata(song_id: str, metadata_path: Path) -> str | None:
+    prefix = f"{song_id}-metadata"
+    stem = metadata_path.stem
+    if not stem.lower().startswith(prefix.lower()):
+        return None
+    suffix = stem[len(prefix):]
+    if not suffix:
+        return "default"
+    if suffix.startswith("-"):
+        suffix = suffix[1:]
+    return suffix or "default"
+
+
+def chart_for_variation(song_dir: Path, song_id: str, variation: str) -> Path | None:
+    suffix = "" if variation == "default" else f"-{variation}"
+    wanted = f"{song_id}-chart{suffix}.json".lower()
+    for path in song_dir.glob("*.json"):
+        if path.name.lower() == wanted:
+            return path
+    return None
+
+
+def add_string(strings: bytearray, cache: dict[str, int], value: str | None) -> int:
+    if value is None or value == "":
+        return NO_STRING
+    if value in cache:
+        return cache[value]
+    offset = len(strings)
+    strings.extend(value.encode("utf-8") + b"\0")
+    cache[value] = offset
+    return offset
+
+
+def scroll_speed_for(chart: dict, difficulty: str) -> float:
+    speeds = chart.get("scrollSpeed")
+    if isinstance(speeds, dict):
+        value = speeds.get(difficulty)
+        if isinstance(value, (int, float)):
+            return float(value)
+        for fallback in ("normal", "default"):
+            value = speeds.get(fallback)
+            if isinstance(value, (int, float)):
+                return float(value)
+    if isinstance(speeds, (int, float)):
+        return float(speeds)
+    return 1.0
+
+
+def write_song_descriptor(
+    output_root: Path,
+    song_id: str,
+    display_name: str,
+    variation: str,
+    difficulty: str,
+    stage: str,
+    note_style: str,
+    chars: dict,
+    speed: float,
+) -> Path:
+    strings = bytearray()
+    cache: dict[str, int] = {}
+    values = [
+        song_id,
+        display_name,
+        variation,
+        difficulty,
+        stage,
+        note_style,
+        str(chars.get("player") or ""),
+        str(chars.get("girlfriend") or ""),
+        str(chars.get("opponent") or ""),
+        str(chars.get("instrumental") or ""),
+    ]
+    offsets = [add_string(strings, cache, value) for value in values]
+    header = FSON_HEADER.pack(
+        FSON_MAGIC,
+        FSON_VERSION,
+        0,
+        len(strings),
+        *offsets,
+        float(speed),
+    )
+    out = output_root / "SONG" / song_id / variation / f"{difficulty}.FSON"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(header + strings)
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("assets_root", type=Path)
@@ -55,9 +156,14 @@ def main() -> int:
     stages: set[str] = set()
     note_styles: set[str] = set()
     songs: list[dict] = []
+    descriptors: list[dict] = []
     parse_errors: list[str] = []
 
     for metadata_path in metadata_files(songs_root):
+        song_id = metadata_path.parent.name
+        variation = variation_from_metadata(song_id, metadata_path)
+        if variation is None:
+            continue
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         except Exception as exc:
@@ -70,8 +176,10 @@ def main() -> int:
             "player": str(chars.get("player") or ""),
             "girlfriend": str(chars.get("girlfriend") or ""),
             "opponent": str(chars.get("opponent") or ""),
+            "instrumental": str(chars.get("instrumental") or ""),
         }
-        for value in song_chars.values():
+        for key in ("player", "girlfriend", "opponent"):
+            value = song_chars[key]
             if value:
                 characters.add(value)
 
@@ -82,14 +190,54 @@ def main() -> int:
         if note_style:
             note_styles.add(note_style)
 
+        chart_path = chart_for_variation(metadata_path.parent, song_id, variation)
+        chart: dict = {}
+        if chart_path is None:
+            parse_errors.append(f"{song_id}/{variation}: matching chart JSON not found")
+        else:
+            try:
+                chart = json.loads(chart_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                parse_errors.append(f"{chart_path}: {exc}")
+
+        notes = chart.get("notes") if isinstance(chart, dict) else None
+        difficulties = sorted(notes.keys()) if isinstance(notes, dict) else []
+        display_name = str(metadata.get("songName") or song_id)
+        for difficulty in difficulties:
+            if not isinstance(notes.get(difficulty), list):
+                continue
+            speed = scroll_speed_for(chart, difficulty)
+            descriptor_path = write_song_descriptor(
+                output_root,
+                song_id,
+                display_name,
+                variation,
+                difficulty,
+                stage,
+                note_style,
+                song_chars,
+                speed,
+            )
+            descriptors.append(
+                {
+                    "song": song_id,
+                    "variation": variation,
+                    "difficulty": difficulty,
+                    "file": descriptor_path.relative_to(output_root).as_posix(),
+                    "scrollSpeed": speed,
+                }
+            )
+
         songs.append(
             {
                 "metadata": metadata_path.relative_to(songs_root).as_posix(),
-                "songName": metadata.get("songName", metadata_path.parent.name),
+                "songId": song_id,
+                "songName": display_name,
+                "variation": variation,
                 "characters": song_chars,
                 "stage": stage,
                 "noteStyle": note_style,
-                "difficulties": play.get("difficulties") or [],
+                "difficulties": difficulties,
                 "songVariations": play.get("songVariations") or [],
             }
         )
@@ -127,6 +275,7 @@ def main() -> int:
 
     manifest = {
         "songs": songs,
+        "songDescriptors": descriptors,
         "discovered": {
             "characters": sorted(characters),
             "stages": sorted(stages),
@@ -145,6 +294,7 @@ def main() -> int:
         f"discovered {len(characters)} characters, {len(stages)} stages, "
         f"{len(note_styles)} note styles from {len(songs)} metadata files"
     )
+    print(f"runtime song descriptors: {len(descriptors)}")
     print(f"conversion failures: {len(failures)}")
     print(f"manifest: {manifest_path}")
 
