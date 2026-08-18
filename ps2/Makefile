@@ -40,6 +40,7 @@ EE_OBJS = \
 	build/core_presentation_events.o \
 	build/core_presentation_registry.o \
 	build/core_weekend1_runtime.o \
+	build/core_weekend1_visual.o \
 	build/core_blazin_runtime.o \
 	build/core_pointless_pins.o \
 	build/core_session_runtime.o \
@@ -64,11 +65,9 @@ EE_OBJS = \
 EE_INCS += -I$(GSKIT)/include -Isrc -Isrc/core
 EE_LDFLAGS += -L$(GSKIT)/lib
 EE_LIBS = -lgskit -ldmakit -lpad -lmc -laudsrv -lpatches -lcdvd -ldebug -lm -lc
-
 EE_CFLAGS += -O2 -G0 -Wall -Wextra -Wno-unused-parameter -DFNF_PS2
 
 .PHONY: all clean run
-
 all: $(EE_BIN)
 
 build:
@@ -79,178 +78,43 @@ $(EE_BIN): | build
 build/main.o: src/main.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
-build/core_timer.o: src/core/timer.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_animation.o: src/core/animation.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_random.o: src/core/random.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_mem.o: src/core/mem.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_object.o: src/core/object.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_chart.o: src/core/chart.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_chart_asset.o: src/core/chart_asset.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_rhythm.o: src/core/rhythm.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_pad.o: src/core/pad.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_audio.o: src/core/audio.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_disc.o: src/core/disc.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_asset_file.o: src/core/asset_file.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_song_catalog.o: src/core/song_catalog.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_story_catalog.o: src/core/story_catalog.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_story_session.o: src/core/story_session.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_progression.o: src/core/progression.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_save_data.o: src/core/save_data.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_ps2_glyph.o: src/core/ps2_glyph.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_better_alphabet.o: src/core/better_alphabet.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_song_descriptor.o: src/core/song_descriptor.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_song_events.o: src/core/song_events.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_note_kinds.o: src/core/note_kinds.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_note_kind_runtime.o: src/core/note_kind_runtime.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_song_stream.o: src/core/song_stream.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_cutscene_stream.o: src/core/cutscene_stream.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_cutscene_map.o: src/core/cutscene_map.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_cutscene_controller.o: src/core/cutscene_controller.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
+# Wrapper-backed objects keep the large stable implementations untouched while
+# exposing PS2-specific cutscene/presentation hooks through public symbols.
 build/core_gameplay.o: src/core/gameplay.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DGameplay_Tick=Gameplay_TickCore -DGameplay_SetPaused=Gameplay_SetPausedCore -DGameplay_IsFinished=Gameplay_IsFinishedCore -c $< -o $@
-
-build/core_gameplay_cutscene_gate.o: src/core/gameplay_cutscene_gate.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_gameplay_scroll.o: src/core/gameplay_scroll.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_gammod.o: src/core/gammod.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_gammod_restart.o: src/core/gammod_restart.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_endless_mode.o: src/core/endless_mode.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_combo_system.o: src/core/combo_system.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_camera_effects.o: src/core/camera_effects.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_camera_movement.o: src/core/camera_movement.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_presentation_events.o: src/core/presentation_events.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_presentation_registry.o: src/core/presentation_registry.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_weekend1_runtime.o: src/core/weekend1_runtime.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_blazin_runtime.o: src/core/blazin_runtime.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_pointless_pins.o: src/core/pointless_pins.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) \
+		-DGameplay_Tick=Gameplay_TickCore \
+		-DGameplay_SetPaused=Gameplay_SetPausedCore \
+		-DGameplay_IsFinished=Gameplay_IsFinishedCore \
+		-c $< -o $@
 
 build/core_session_runtime.o: src/core/session_runtime.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DSESSION_RUNTIME_IMPLEMENTATION -c $< -o $@
 
-build/core_session_runtime_frame.o: src/core/session_runtime_frame.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_session_runtime_cutscene.o: src/core/session_runtime_cutscene.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_freeplay_browser.o: src/core/freeplay_browser.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_frontend.o: src/core/frontend.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_texture_asset.o: src/core/texture_asset.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_sprite_atlas.o: src/core/sprite_atlas.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_note_style.o: src/core/note_style.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
 build/core_note_lane_renderer.o: src/core/note_lane_renderer.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DNoteLaneRenderer_Tick=NoteLaneRenderer_TickCore -DNoteLaneRenderer_Draw=NoteLaneRenderer_DrawCore -c $< -o $@
-
-build/core_note_lane_cutscene.o: src/core/note_lane_cutscene.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
-build/core_health_icon.o: src/core/health_icon.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) \
+		-DNoteLaneRenderer_Tick=NoteLaneRenderer_TickCore \
+		-DNoteLaneRenderer_Draw=NoteLaneRenderer_DrawCore \
+		-c $< -o $@
 
 build/core_hud.o: src/core/hud.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DHud_Draw=Hud_DrawCore -c $< -o $@
 
-build/core_hud_cutscene.o: src/core/hud_cutscene.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
-
 build/core_character.o: src/core/character.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -DCharacter_Load=Character_LoadCore -DCharacter_Forget=Character_ForgetCore -c $< -o $@
-
-build/core_character_registry.o: src/core/character_registry.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) \
+		-DCharacter_Load=Character_LoadCore \
+		-DCharacter_Forget=Character_ForgetCore \
+		-c $< -o $@
 
 build/core_stage.o: src/core/stage.c | build
-	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -Dtimer_dt=timer_presentation_dt -DStage_Load=Stage_LoadCore -DStage_Forget=Stage_ForgetCore -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) \
+		-Dtimer_dt=timer_presentation_dt \
+		-DStage_Load=Stage_LoadCore \
+		-DStage_Forget=Stage_ForgetCore \
+		-DStage_DrawRange=Stage_DrawRangeCore \
+		-c $< -o $@
 
-build/core_stage_registry.o: src/core/stage_registry.c | build
+# All ordinary core translation units share the same compile recipe.
+build/core_%.o: src/core/%.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/audsrv_irx.c: | build
