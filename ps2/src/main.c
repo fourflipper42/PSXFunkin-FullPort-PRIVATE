@@ -13,8 +13,12 @@
 #include "core/disc.h"
 #include "core/gameplay.h"
 #include "core/song_catalog.h"
+#include "core/story_catalog.h"
 #include "core/song_descriptor.h"
 #include "core/freeplay_browser.h"
+#include "core/frontend.h"
+#include "core/better_alphabet.h"
+#include "core/session_runtime.h"
 #include "core/texture_asset.h"
 #include "core/note_style.h"
 #include "core/note_lane_renderer.h"
@@ -29,6 +33,8 @@
 #define NTSC_H    448.0f
 
 #define SONG_CATALOG_PATH "\\GAME\\GAME.FCAT;1"
+#define STORY_CATALOG_PATH "\\GAME\\STORY.FSTY;1"
+#define BETTER_ALPHABET_BASE "\\GAME\\FONT\\BALPH"
 #define DEFAULT_DESCRIPTOR "\\GAME\\SONG\\TUTORIAL\\DEFAULT\\NORMAL.FSON;1"
 #define STAGE_Z_MIN        ((s32)-0x7fffffff)
 #define STAGE_Z_MAX        ((s32)0x7fffffff)
@@ -60,7 +66,11 @@ static const Animation g_boot_anims[] = {
 static Animatable g_boot_anim;
 static GameplayState g_gameplay;
 static SongCatalog g_song_catalog;
+static StoryCatalog g_story_catalog;
 static FreeplayBrowser g_browser;
+static Frontend g_frontend;
+static BetterAlphabet g_better_alphabet;
+static SessionRuntime g_session;
 static SongDescriptor g_song_descriptor;
 static SongAssetPaths g_song_paths;
 static NoteStyle g_note_style;
@@ -70,14 +80,19 @@ static StageCamera g_stage_camera;
 static Character g_player;
 static Character g_opponent;
 static Character g_girlfriend;
+static SessionCompletion g_completion;
 static boolean g_gameplay_loaded;
 static boolean g_catalog_loaded;
+static boolean g_story_loaded;
+static boolean g_better_alphabet_loaded;
 static boolean g_descriptor_loaded;
 static boolean g_note_style_loaded;
 static boolean g_stage_loaded;
 static boolean g_player_loaded;
 static boolean g_opponent_loaded;
 static boolean g_girlfriend_loaded;
+static boolean g_completion_handled;
+static boolean g_current_story_mode;
 static int g_camera_focus;
 static char g_current_descriptor[320];
 
@@ -109,6 +124,7 @@ static void apply_video_transform(AspectMode mode)
 {
     VideoTransform t = video_transform(mode);
     TextureAsset_SetDrawTransform(t.x_scale, t.y_scale, t.x_offset, t.y_offset);
+    Hud_SetDrawTransform(t.x_scale, t.y_scale, t.x_offset, t.y_offset);
 }
 
 static float video_x(const VideoTransform *t, float x)
@@ -204,12 +220,26 @@ static void render_boot_test(GSGLOBAL *gs, AspectMode aspect)
     TextureAsset_EndFrame(gs);
 }
 
-static void render_browser(GSGLOBAL *gs)
+static void render_frontend(GSGLOBAL *gs, AspectMode aspect)
 {
-    FreeplayBrowser_Draw(gs, &g_browser, &g_song_catalog);
+    /* Frontend coordinates are authored directly in the 640x448 NTSC frame.
+     * Better Alphabet uses TextureAsset internally, so temporarily disable the
+     * gameplay logical-canvas transform while menu glyph pages are drawn. */
+    TextureAsset_SetDrawTransform(1.0f, 1.0f, 0.0f, 0.0f);
+    Frontend_Draw(
+        gs,
+        &g_frontend,
+        &g_browser,
+        &g_song_catalog,
+        &g_story_catalog,
+        &g_session.progression,
+        &g_session.pins,
+        &g_session.save,
+        g_better_alphabet_loaded ? &g_better_alphabet : NULL);
     gsKit_queue_exec(gs);
     gsKit_sync_flip(gs);
     TextureAsset_EndFrame(gs);
+    apply_video_transform(aspect);
 }
 
 static u64 lane_color(u8 lane)
@@ -430,13 +460,22 @@ static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game
     else
         render_fallback_lanes(gs, &t, game);
 
-    health_ratio = (float)game->rhythm.health / 20000.0f;
-    if (health_ratio < 0.0f)
-        health_ratio = 0.0f;
-    if (health_ratio > 1.0f)
-        health_ratio = 1.0f;
-    draw_logical_rect(gs, &t, 170.0f, 330.0f, 470.0f, 340.0f, 8, health_bg);
-    draw_logical_rect(gs, &t, 170.0f, 330.0f, 170.0f + 300.0f * health_ratio, 340.0f, 9, health_fg);
+    if (g_session.song_active) {
+        Hud_Draw(
+            gs,
+            &g_session.hud,
+            game,
+            &g_session.save,
+            g_browser.font_ready ? g_browser.font : NULL);
+    } else {
+        health_ratio = (float)game->rhythm.health / 20000.0f;
+        if (health_ratio < 0.0f)
+            health_ratio = 0.0f;
+        if (health_ratio > 1.0f)
+            health_ratio = 1.0f;
+        draw_logical_rect(gs, &t, 170.0f, 330.0f, 470.0f, 340.0f, 8, health_bg);
+        draw_logical_rect(gs, &t, 170.0f, 330.0f, 170.0f + 300.0f * health_ratio, 340.0f, 9, health_fg);
+    }
 
     render_flow_overlay(gs, &t, game);
 
@@ -506,6 +545,8 @@ static void tick_camera(void)
     float zoom;
     float target_x;
     float target_y;
+    float move_x = 0.0f;
+    float move_y = 0.0f;
     float dt;
     float alpha;
 
@@ -521,11 +562,16 @@ static void tick_camera(void)
     if (slot == NULL)
         return;
 
+    if (g_session.song_active) {
+        move_x = SessionRuntime_CameraX(&g_session);
+        move_y = SessionRuntime_CameraY(&g_session);
+    }
+
     zoom = g_stage_camera.zoom;
     if (zoom <= 0.0f)
         zoom = 1.0f;
-    target_x = slot->x + slot->camera_x - (LOGICAL_W / (0.5f * zoom));
-    target_y = slot->y + slot->camera_y - (LOGICAL_H / (0.5f * zoom));
+    target_x = slot->x + slot->camera_x + move_x - (LOGICAL_W / (0.5f * zoom));
+    target_y = slot->y + slot->camera_y + move_y - (LOGICAL_H / (0.5f * zoom));
 
     dt = (float)timer_dt / (float)FIXED_UNIT;
     alpha = dt * 8.0f;
@@ -561,6 +607,8 @@ static void unload_presentation_assets(void)
 
 static void unload_current_song(GSGLOBAL *gs)
 {
+    if (g_session.song_active)
+        SessionRuntime_EndSong(&g_session);
     unload_presentation_assets();
 
     if (g_gameplay_loaded || g_gameplay.loaded)
@@ -569,8 +617,10 @@ static void unload_current_song(GSGLOBAL *gs)
         SongDescriptor_Free(&g_song_descriptor);
 
     memset(&g_song_paths, 0, sizeof(g_song_paths));
+    memset(&g_completion, 0, sizeof(g_completion));
     g_gameplay_loaded = false;
     g_descriptor_loaded = false;
+    g_completion_handled = false;
     g_camera_focus = 0;
     CameraEffects_Init(&g_camera_effects, 1.0f);
     TextureAsset_ClearVRAM(gs);
@@ -680,9 +730,6 @@ static void consume_gameplay_events(void)
         const GameplaySongEventFrame *event = &g_gameplay.events.song_events[i];
         boolean handled = PresentationEvents_Handle(&targets, event);
 
-        /* ScrollSpeed is consumed by the note renderer because its state lives
-         * alongside the two strumline speeds. FocusCamera is normalized by the
-         * gameplay event stream above. */
         if (!handled && event->kind == SONG_EVENT_GENERIC &&
             strcmp(event->name, "ScrollSpeed") != 0) {
             printf("[PS2] event %s value=%s\n", event->name, event->value);
@@ -698,8 +745,12 @@ static void tick_presentation(void)
 {
     if (g_gameplay_loaded) {
         consume_gameplay_events();
-        play_lane_animation(&g_player, g_gameplay.events.player_hit_mask);
-        play_lane_animation(&g_opponent, g_gameplay.events.opponent_hit_mask);
+        if (g_session.song_active) {
+            SessionRuntime_PlayHitAnimations(&g_session, &g_player, &g_opponent);
+        } else {
+            play_lane_animation(&g_player, g_gameplay.events.player_hit_mask);
+            play_lane_animation(&g_opponent, g_gameplay.events.opponent_hit_mask);
+        }
 
         if (g_gameplay.events.just_step && g_gameplay.song_step >= 0 &&
             (g_gameplay.song_step & 3) == 0) {
@@ -723,7 +774,11 @@ static void tick_presentation(void)
         Character_Tick(&g_girlfriend);
 }
 
-static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
+static boolean load_descriptor_song(
+    GSGLOBAL *gs,
+    const char *descriptor_path,
+    boolean story_mode,
+    boolean endless_continuation)
 {
     ChartResult result;
 
@@ -773,8 +828,27 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
         return false;
     }
 
+    if (!SessionRuntime_BeginSong(
+            &g_session,
+            gs,
+            &g_gameplay,
+            &g_song_descriptor,
+            &g_song_paths,
+            story_mode,
+            endless_continuation)) {
+        printf("[PS2] session setup failed\n");
+        Gameplay_Free(&g_gameplay);
+        SongDescriptor_Free(&g_song_descriptor);
+        memset(&g_song_paths, 0, sizeof(g_song_paths));
+        g_descriptor_loaded = false;
+        return false;
+    }
+
     g_camera_focus = 0;
     g_gameplay_loaded = true;
+    g_current_story_mode = story_mode;
+    g_completion_handled = false;
+    memset(&g_completion, 0, sizeof(g_completion));
     load_presentation_assets(gs);
     printf("[PS2] gameplay loaded: %u notes, %u sections, %u events\n",
         (unsigned)g_gameplay.chart.view.note_count,
@@ -786,6 +860,7 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
 static boolean retry_current_song(GSGLOBAL *gs)
 {
     char descriptor[sizeof(g_current_descriptor)];
+    boolean story_mode = g_current_story_mode;
 
     if (!g_descriptor_loaded && g_current_descriptor[0] == '\0')
         return false;
@@ -794,22 +869,133 @@ static boolean retry_current_song(GSGLOBAL *gs)
     descriptor[sizeof(descriptor) - 1] = '\0';
     printf("[PS2] retry: %s\n", descriptor);
     unload_current_song(gs);
-    return load_descriptor_song(gs, descriptor);
+    return load_descriptor_song(gs, descriptor, story_mode, false);
 }
 
-static boolean launch_browser_selection(GSGLOBAL *gs)
+static boolean loop_current_song(GSGLOBAL *gs)
 {
-    SongCatalogEntry entry;
+    char descriptor[sizeof(g_current_descriptor)];
+    boolean story_mode = g_current_story_mode;
 
-    if (!g_catalog_loaded || !FreeplayBrowser_Selected(&g_browser, &g_song_catalog, &entry))
+    strncpy(descriptor, g_current_descriptor, sizeof(descriptor) - 1);
+    descriptor[sizeof(descriptor) - 1] = '\0';
+    printf("[PS2] endless loop: %s\n", descriptor);
+    unload_current_song(gs);
+    return load_descriptor_song(gs, descriptor, story_mode, true);
+}
+
+static boolean launch_catalog_entry(GSGLOBAL *gs, const SongCatalogEntry *entry)
+{
+    if (entry == NULL || entry->descriptor_path == NULL)
         return false;
+    return load_descriptor_song(gs, entry->descriptor_path, false, false);
+}
 
-    printf("[PS2] launch catalog #%u: %s / %s / %s\n",
-        (unsigned)g_browser.selected,
-        entry.display_name,
-        entry.variation,
-        entry.difficulty);
-    return load_descriptor_song(gs, entry.descriptor_path);
+static boolean launch_story(
+    GSGLOBAL *gs,
+    u16 level_index,
+    StoryDifficulty difficulty)
+{
+    SongCatalogEntry first;
+    if (!g_story_loaded ||
+        !SessionRuntime_StartStory(
+            &g_session,
+            &g_story_catalog,
+            &g_song_catalog,
+            level_index,
+            difficulty,
+            &first))
+        return false;
+    if (!load_descriptor_song(gs, first.descriptor_path, true, false)) {
+        SessionRuntime_StopStory(&g_session);
+        return false;
+    }
+    return true;
+}
+
+static void leave_song_to_frontend(GSGLOBAL *gs, boolean award_endless)
+{
+    if (award_endless && g_session.song_active && g_session.endless.enabled &&
+        g_session.endless.current_loop != 0)
+        SessionRuntime_EndEndless(&g_session, &g_gameplay);
+    if (g_current_story_mode)
+        SessionRuntime_StopStory(&g_session);
+    unload_current_song(gs);
+    g_current_story_mode = false;
+}
+
+static void handle_song_completion(GSGLOBAL *gs)
+{
+    if (!g_gameplay_loaded || g_completion_handled ||
+        !Gameplay_IsFinished(&g_gameplay))
+        return;
+
+    g_completion = SessionRuntime_CompleteSong(&g_session, &g_gameplay);
+    g_completion_handled = true;
+    printf("[PS2] SONG COMPLETE score=%d misses=%u reward=%d\n",
+        (int)g_gameplay.rhythm.score,
+        (unsigned)g_gameplay.misses,
+        (int)g_completion.reward.funkbucks);
+
+    if (g_completion.action == SESSION_COMPLETE_ENDLESS_LOOP) {
+        if (!loop_current_song(gs)) {
+            printf("[PS2] endless reload failed\n");
+            leave_song_to_frontend(gs, true);
+        }
+        return;
+    }
+
+    if (g_completion.action == SESSION_COMPLETE_STORY_NEXT) {
+        SongCatalogEntry next = g_completion.next_song;
+        unload_current_song(gs);
+        if (!load_descriptor_song(gs, next.descriptor_path, true, false)) {
+            printf("[PS2] Story next-song load failed\n");
+            SessionRuntime_StopStory(&g_session);
+            g_current_story_mode = false;
+        }
+        return;
+    }
+
+    if (g_completion.story_level_cleared) {
+        printf("[PS2] STORY LEVEL CLEARED - next week unlocked\n");
+        g_current_story_mode = false;
+    }
+}
+
+static void handle_frontend_action(GSGLOBAL *gs, const FrontendAction *action)
+{
+    u16 pin_index;
+    if (action == NULL)
+        return;
+
+    switch (action->type) {
+        case FRONTEND_ACTION_LAUNCH_FREEPLAY:
+            if (!launch_catalog_entry(gs, &action->song))
+                printf("[PS2] Freeplay launch failed\n");
+            break;
+        case FRONTEND_ACTION_LAUNCH_STORY:
+            if (!launch_story(gs, action->story_level, action->story_difficulty))
+                printf("[PS2] Story launch failed\n");
+            break;
+        case FRONTEND_ACTION_BUY_BOX:
+            if (PointlessPins_BuyBox(
+                    &g_session.pins,
+                    &g_session.save,
+                    action->box_index,
+                    &pin_index)) {
+                printf("[PS2] pin acquired: %s\n",
+                    PointlessPins_PinName(&g_session.pins, pin_index));
+                SessionRuntime_Save(&g_session);
+            } else {
+                printf("[PS2] pin box purchase unavailable\n");
+            }
+            break;
+        case FRONTEND_ACTION_SAVE_CHANGED:
+            SessionRuntime_Save(&g_session);
+            break;
+        default:
+            break;
+    }
 }
 
 int main(int argc, char **argv)
@@ -821,9 +1007,9 @@ int main(int argc, char **argv)
     boolean font_ok;
 
     printf("\nFNF PS2 native port\n");
-    printf("logical canvas: 640x360\n");
+    printf("logical gameplay canvas: 640x360\n");
     printf("SELECT: toggle 16:9 / 4:3 letterbox\n");
-    printf("FREEPLAY: d-pad move, L1/R1 page, CROSS play\n");
+    printf("FRONTEND: L2/R2 pages, CROSS confirm, TRIANGLE BF/Pico in Freeplay\n");
     printf("GAMEPLAY: START pause, CROSS/START retry, CIRCLE back after death/end\n");
     printf("notes: d-pad OR square/cross/triangle/circle\n");
 
@@ -847,6 +1033,28 @@ int main(int argc, char **argv)
     disc_ok = Disc_Init();
     printf("[PS2] audio=%s disc=%s\n", audio_ok ? "ok" : "failed", disc_ok ? "ok" : "failed");
 
+    if (disc_ok) {
+        g_catalog_loaded = SongCatalog_Load(&g_song_catalog, SONG_CATALOG_PATH);
+        g_story_loaded = StoryCatalog_Load(&g_story_catalog, STORY_CATALOG_PATH);
+        printf("[PS2] song catalog=%s story catalog=%s\n",
+            g_catalog_loaded ? "ok" : "missing",
+            g_story_loaded ? "ok" : "missing");
+    }
+
+    SessionRuntime_Init(&g_session, &g_story_catalog, &g_song_catalog);
+    Frontend_Init(&g_frontend, font_ok ? g_browser.font : NULL);
+    if (g_catalog_loaded)
+        FreeplayBrowser_Reset(&g_browser);
+
+    if (disc_ok) {
+        g_better_alphabet_loaded = BetterAlphabet_Load(
+            gs,
+            &g_better_alphabet,
+            BETTER_ALPHABET_BASE);
+        printf("[PS2] Better Alphabet=%s\n",
+            g_better_alphabet_loaded ? "ok" : "unavailable");
+    }
+
     if (audio_ok) {
         if (argc >= 3) {
             ChartResult result = Gameplay_Load(
@@ -865,20 +1073,15 @@ int main(int argc, char **argv)
             } else {
                 printf("[PS2] direct gameplay load failed: %s\n", Chart_ResultString(result));
             }
-        } else if (disc_ok) {
-            g_catalog_loaded = SongCatalog_Load(&g_song_catalog, SONG_CATALOG_PATH);
-            if (g_catalog_loaded) {
-                FreeplayBrowser_Reset(&g_browser);
-                printf("[PS2] song catalog loaded: %u chart entries\n",
-                    (unsigned)g_song_catalog.count);
-            } else {
-                printf("[PS2] song catalog missing, falling back to Tutorial\n");
-                load_descriptor_song(gs, DEFAULT_DESCRIPTOR);
-            }
+        } else if (disc_ok && !g_catalog_loaded) {
+            printf("[PS2] song catalog missing, falling back to Tutorial\n");
+            load_descriptor_song(gs, DEFAULT_DESCRIPTOR, false, false);
         }
     }
 
     for (;;) {
+        Pad effective_pad;
+
         Pad_Update();
         Timer_Tick();
         Animatable_Animate(&g_boot_anim, &g_boot_anim_frame, boot_set_frame);
@@ -899,15 +1102,21 @@ int main(int argc, char **argv)
                         printf("[PS2] retry unavailable\n");
                 } else if (pad_state.press & PAD_CIRCLE) {
                     printf("[PS2] leaving game over\n");
-                    unload_current_song(gs);
+                    leave_song_to_frontend(gs, true);
                 }
             } else if (Gameplay_IsFinished(&g_gameplay)) {
-                if (pad_state.press & (PAD_CROSS | PAD_START)) {
-                    if (!retry_current_song(gs))
-                        printf("[PS2] replay unavailable\n");
-                } else if (pad_state.press & PAD_CIRCLE) {
-                    printf("[PS2] leaving completed song\n");
-                    unload_current_song(gs);
+                handle_song_completion(gs);
+                if (g_gameplay_loaded && Gameplay_IsFinished(&g_gameplay)) {
+                    if (pad_state.press & (PAD_CROSS | PAD_START)) {
+                        if (g_completion.story_level_cleared) {
+                            leave_song_to_frontend(gs, false);
+                        } else if (!retry_current_song(gs)) {
+                            printf("[PS2] replay unavailable\n");
+                        }
+                    } else if (pad_state.press & PAD_CIRCLE) {
+                        printf("[PS2] leaving completed song\n");
+                        leave_song_to_frontend(gs, false);
+                    }
                 }
             } else {
                 if (pad_state.press & PAD_START) {
@@ -918,51 +1127,55 @@ int main(int argc, char **argv)
 
                 if (Gameplay_IsPaused(&g_gameplay) && (pad_state.press & PAD_CIRCLE)) {
                     printf("[PS2] exit paused song\n");
-                    unload_current_song(gs);
+                    leave_song_to_frontend(gs, true);
                 } else if (!Gameplay_IsPaused(&g_gameplay)) {
-                    Gameplay_Tick(&g_gameplay, &pad_state);
-                    NoteLaneRenderer_Tick(&g_gameplay, &pad_state);
+                    SessionRuntime_PreparePad(
+                        &g_session,
+                        &g_gameplay,
+                        &pad_state,
+                        &effective_pad);
+                    Gameplay_Tick(&g_gameplay, &effective_pad);
+                    NoteLaneRenderer_Tick(&g_gameplay, &effective_pad);
+                    if (g_session.song_active)
+                        SessionRuntime_AfterGameplayFrame(
+                            &g_session,
+                            &g_gameplay,
+                            timer_dt);
                     tick_presentation();
 
-                    if (g_gameplay.events.player_died)
+                    if (g_gameplay.events.player_died) {
+                        SessionRuntime_OnDeath(&g_session);
                         printf("[PS2] GAME OVER score=%d misses=%u\n",
                             (int)g_gameplay.rhythm.score,
                             (unsigned)g_gameplay.misses);
+                    }
                     if (g_gameplay.events.song_finished)
-                        printf("[PS2] SONG COMPLETE score=%d misses=%u\n",
-                            (int)g_gameplay.rhythm.score,
-                            (unsigned)g_gameplay.misses);
+                        handle_song_completion(gs);
                 }
             }
 
             if (g_gameplay_loaded)
                 render_gameplay(gs, aspect, &g_gameplay);
             else if (g_catalog_loaded)
-                render_browser(gs);
+                render_frontend(gs, aspect);
             else
                 render_boot_test(gs, aspect);
         } else if (g_catalog_loaded) {
-            SongCatalogEntry selected;
-            u32 before = g_browser.selected;
-
-            FreeplayBrowser_Update(&g_browser, &g_song_catalog, &pad_state);
-            if (before != g_browser.selected &&
-                FreeplayBrowser_Selected(&g_browser, &g_song_catalog, &selected)) {
-                printf("[PS2] selected: %s / %s / %s\n",
-                    selected.display_name,
-                    selected.variation,
-                    selected.difficulty);
-            }
-
-            if (pad_state.press & PAD_CROSS) {
-                if (!launch_browser_selection(gs))
-                    printf("[PS2] catalog launch failed\n");
-            }
+            FrontendAction action = Frontend_Update(
+                &g_frontend,
+                &g_browser,
+                &g_song_catalog,
+                &g_story_catalog,
+                &g_session.progression,
+                &g_session.pins,
+                &g_session.save,
+                &pad_state);
+            handle_frontend_action(gs, &action);
 
             if (g_gameplay_loaded)
                 render_gameplay(gs, aspect, &g_gameplay);
             else
-                render_browser(gs);
+                render_frontend(gs, aspect);
         } else {
             render_boot_test(gs, aspect);
         }
