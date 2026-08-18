@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <sifrpc.h>
 #include <tamtypes.h>
 
@@ -11,15 +12,22 @@
 #include "core/audio.h"
 #include "core/disc.h"
 #include "core/gameplay.h"
+#include "core/song_descriptor.h"
+#include "core/texture_asset.h"
+#include "core/stage.h"
+#include "core/character.h"
 
 #define LOGICAL_W 640.0f
 #define LOGICAL_H 360.0f
 #define NTSC_W    640.0f
 #define NTSC_H    448.0f
 
-#define DEFAULT_CHART  "\\CHART\\TUTORIAL\\DEFAULT\\NORMAL.CHT;1"
-#define DEFAULT_INST   "\\AUDIO\\TUTORIAL\\INST.PCM;1"
-#define DEFAULT_VOICES "\\AUDIO\\TUTORIAL\\VOICES.PCM;1"
+#define DEFAULT_DESCRIPTOR "\\GAME\\SONG\\TUTORIAL\\DEFAULT\\NORMAL.FSON;1"
+#define DEFAULT_CHART      "\\CHART\\TUTORIAL\\DEFAULT\\NORMAL.CHT;1"
+#define DEFAULT_INST       "\\AUDIO\\TUTORIAL\\DEFAULT\\INST.PCM;1"
+#define DEFAULT_VOICES     "\\AUDIO\\TUTORIAL\\DEFAULT\\VOICES.PCM;1"
+#define STAGE_Z_MIN        ((s32)-0x7fffffff)
+#define STAGE_Z_MAX        ((s32)0x7fffffff)
 
 typedef enum AspectMode {
     ASPECT_WIDE_ANAMORPHIC = 0,
@@ -33,6 +41,11 @@ typedef struct VideoTransform {
     float y_offset;
 } VideoTransform;
 
+typedef struct CharacterLayer {
+    Character *character;
+    const StageCharacterSlot *slot;
+} CharacterLayer;
+
 static u8 g_boot_anim_frame = 0;
 static const u8 g_boot_anim_script[] = {
     0, 1, 2, 3, 2, 1, ASCR_REPEAT
@@ -42,7 +55,19 @@ static const Animation g_boot_anims[] = {
 };
 static Animatable g_boot_anim;
 static GameplayState g_gameplay;
+static SongDescriptor g_song_descriptor;
+static SongAssetPaths g_song_paths;
+static Stage g_stage;
+static StageCamera g_stage_camera;
+static Character g_player;
+static Character g_opponent;
+static Character g_girlfriend;
 static boolean g_gameplay_loaded;
+static boolean g_descriptor_loaded;
+static boolean g_stage_loaded;
+static boolean g_player_loaded;
+static boolean g_opponent_loaded;
+static boolean g_girlfriend_loaded;
 
 static void boot_set_frame(void *user, u8 frame)
 {
@@ -70,6 +95,12 @@ static VideoTransform video_transform(AspectMode mode)
     }
 
     return t;
+}
+
+static void apply_video_transform(AspectMode mode)
+{
+    VideoTransform t = video_transform(mode);
+    TextureAsset_SetDrawTransform(t.x_scale, t.y_scale, t.x_offset, t.y_offset);
 }
 
 static float video_x(const VideoTransform *t, float x)
@@ -162,6 +193,7 @@ static void render_boot_test(GSGLOBAL *gs, AspectMode aspect)
 
     gsKit_queue_exec(gs);
     gsKit_sync_flip(gs);
+    TextureAsset_EndFrame(gs);
 }
 
 static u64 lane_color(u8 lane)
@@ -179,10 +211,102 @@ static float lane_x(boolean opponent, u8 lane)
     return (opponent ? 72.0f : 392.0f) + ((float)(lane & 3) * 44.0f);
 }
 
+static u64 character_color(const StageCharacterSlot *slot)
+{
+    float alpha = slot != NULL ? slot->alpha : 1.0f;
+    u8 a;
+
+    if (alpha < 0.0f)
+        alpha = 0.0f;
+    if (alpha > 1.0f)
+        alpha = 1.0f;
+    a = (u8)(alpha * 128.0f + 0.5f);
+    return GS_SETREG_RGBAQ(0x80, 0x80, 0x80, a, 0);
+}
+
+static void draw_character_layer(
+    GSGLOBAL *gs,
+    const CharacterLayer *layer,
+    const StageCamera *camera)
+{
+    float zoom;
+    float world_scale;
+    float x;
+    float y;
+
+    if (layer == NULL || layer->character == NULL || layer->slot == NULL ||
+        !layer->character->loaded)
+        return;
+
+    zoom = camera != NULL ? camera->zoom : 1.0f;
+    if (zoom <= 0.0f)
+        zoom = 1.0f;
+    world_scale = 0.5f * zoom;
+    x = (layer->slot->x -
+        ((camera != NULL ? camera->scroll_x : 0.0f) * layer->slot->scroll_x)) * world_scale;
+    y = (layer->slot->y -
+        ((camera != NULL ? camera->scroll_y : 0.0f) * layer->slot->scroll_y)) * world_scale;
+
+    Character_Draw(
+        gs,
+        layer->character,
+        x,
+        y,
+        layer->slot->scale * world_scale,
+        2,
+        character_color(layer->slot));
+}
+
+static void render_world(GSGLOBAL *gs)
+{
+    CharacterLayer layers[3];
+    int count = 0;
+    int i;
+    int j;
+    s32 z_cursor = STAGE_Z_MIN;
+
+    if (!g_stage_loaded)
+        return;
+
+    if (g_opponent_loaded) {
+        layers[count].character = &g_opponent;
+        layers[count].slot = Stage_OpponentSlot(&g_stage);
+        ++count;
+    }
+    if (g_girlfriend_loaded) {
+        layers[count].character = &g_girlfriend;
+        layers[count].slot = Stage_GirlfriendSlot(&g_stage);
+        ++count;
+    }
+    if (g_player_loaded) {
+        layers[count].character = &g_player;
+        layers[count].slot = Stage_PlayerSlot(&g_stage);
+        ++count;
+    }
+
+    for (i = 1; i < count; ++i) {
+        CharacterLayer key = layers[i];
+        j = i - 1;
+        while (j >= 0 && layers[j].slot->z_index > key.slot->z_index) {
+            layers[j + 1] = layers[j];
+            --j;
+        }
+        layers[j + 1] = key;
+    }
+
+    for (i = 0; i < count; ++i) {
+        s32 z = layers[i].slot->z_index;
+        Stage_DrawRange(gs, &g_stage, &g_stage_camera, z_cursor, z);
+        draw_character_layer(gs, &layers[i], &g_stage_camera);
+        z_cursor = z;
+    }
+    Stage_DrawRange(gs, &g_stage, &g_stage_camera, z_cursor, STAGE_Z_MAX);
+}
+
 static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game)
 {
     const u64 black = GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x80, 0x00);
-    const u64 bg = GS_SETREG_RGBAQ(0x1b, 0x16, 0x25, 0x80, 0x00);
+    const u64 fallback_bg = GS_SETREG_RGBAQ(0x1b, 0x16, 0x25, 0x80, 0x00);
     const u64 receptor = GS_SETREG_RGBAQ(0xe8, 0xe8, 0xe8, 0x80, 0x00);
     const u64 mine = GS_SETREG_RGBAQ(0x10, 0x10, 0x10, 0x80, 0x00);
     const u64 health_bg = GS_SETREG_RGBAQ(0x38, 0x38, 0x38, 0x80, 0x00);
@@ -195,15 +319,18 @@ static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game
     float health_ratio;
 
     gsKit_clear(gs, black);
-    draw_logical_rect(gs, &t, 0.0f, 0.0f, 640.0f, 360.0f, 1, bg);
+    if (g_stage_loaded)
+        render_world(gs);
+    else
+        draw_logical_rect(gs, &t, 0.0f, 0.0f, 640.0f, 360.0f, 1, fallback_bg);
 
     for (lane = 0; lane < 4; ++lane) {
         float ox = lane_x(true, (u8)lane);
         float px = lane_x(false, (u8)lane);
         draw_logical_rect(gs, &t, ox, receptor_y, ox + 30.0f, receptor_y + 30.0f, 4, receptor);
         draw_logical_rect(gs, &t, px, receptor_y, px + 30.0f, receptor_y + 30.0f, 4, receptor);
-        draw_logical_rect(gs, &t, ox + 3.0f, receptor_y + 3.0f, ox + 27.0f, receptor_y + 27.0f, 5, bg);
-        draw_logical_rect(gs, &t, px + 3.0f, receptor_y + 3.0f, px + 27.0f, receptor_y + 27.0f, 5, bg);
+        draw_logical_rect(gs, &t, ox + 3.0f, receptor_y + 3.0f, ox + 27.0f, receptor_y + 27.0f, 5, black);
+        draw_logical_rect(gs, &t, px + 3.0f, receptor_y + 3.0f, px + 27.0f, receptor_y + 27.0f, 5, black);
     }
 
     for (i = game->first_note; i < chart->note_count; ++i) {
@@ -250,18 +377,184 @@ static void render_gameplay(GSGLOBAL *gs, AspectMode aspect, GameplayState *game
 
     gsKit_queue_exec(gs);
     gsKit_sync_flip(gs);
+    TextureAsset_EndFrame(gs);
+}
+
+static boolean load_character_from_base(
+    GSGLOBAL *gs,
+    Character *character,
+    const char *base)
+{
+    char config[320];
+    char texture[320];
+    char frames[320];
+
+    if (base == NULL || base[0] == '\0')
+        return false;
+
+    SongDescriptor_CharacterFile(config, sizeof(config), base, "CHAR.FCHR");
+    SongDescriptor_CharacterFile(texture, sizeof(texture), base, "ATLAS.FPTX");
+    SongDescriptor_CharacterFile(frames, sizeof(frames), base, "ATLAS.FATL");
+    if (config[0] == '\0' || texture[0] == '\0' || frames[0] == '\0')
+        return false;
+
+    if (!Character_Load(gs, character, config, texture, frames)) {
+        printf("[PS2] character load failed: %s\n", base);
+        return false;
+    }
+    return true;
+}
+
+static void load_presentation_assets(GSGLOBAL *gs)
+{
+    if (!g_descriptor_loaded)
+        return;
+
+    if (g_song_paths.stage_base[0] != '\0') {
+        g_stage_loaded = Stage_Load(gs, &g_stage, g_song_paths.stage_base);
+        if (g_stage_loaded) {
+            g_stage_camera.scroll_x = 0.0f;
+            g_stage_camera.scroll_y = 0.0f;
+            g_stage_camera.zoom = Stage_CameraZoom(&g_stage);
+            if (g_stage_camera.zoom <= 0.0f)
+                g_stage_camera.zoom = 1.0f;
+            printf("[PS2] stage loaded: %s (%u props, zoom %.3f)\n",
+                g_song_descriptor.stage,
+                (unsigned)g_stage.prop_count,
+                g_stage_camera.zoom);
+        } else {
+            printf("[PS2] stage load failed: %s\n", g_song_paths.stage_base);
+        }
+    }
+
+    g_player_loaded = load_character_from_base(gs, &g_player, g_song_paths.player_base);
+    g_opponent_loaded = load_character_from_base(gs, &g_opponent, g_song_paths.opponent_base);
+    g_girlfriend_loaded = load_character_from_base(gs, &g_girlfriend, g_song_paths.girlfriend_base);
+
+    printf("[PS2] presentation: bf=%s dad=%s gf=%s\n",
+        g_player_loaded ? "ok" : "missing",
+        g_opponent_loaded ? "ok" : "missing",
+        g_girlfriend_loaded ? "ok" : "missing");
+}
+
+static void play_lane_animation(Character *character, u8 mask)
+{
+    static const char *names[4] = {
+        "singLEFT", "singDOWN", "singUP", "singRIGHT"
+    };
+    int lane;
+
+    if (character == NULL || !character->loaded || mask == 0)
+        return;
+
+    for (lane = 0; lane < 4; ++lane) {
+        if (mask & (1u << lane))
+            Character_Play(character, names[lane], true);
+    }
+}
+
+static boolean character_is_singing(const Character *character)
+{
+    const char *name = Character_CurrentAnimationName(character);
+    return name != NULL && strncmp(name, "sing", 4) == 0;
+}
+
+static void dance_character_on_beat(Character *character, s32 beat)
+{
+    s32 cadence;
+
+    if (character == NULL || !character->loaded)
+        return;
+    cadence = (s32)(character->dance_every + 0.5f);
+    if (cadence < 1)
+        cadence = 1;
+    if ((beat % cadence) != 0)
+        return;
+    if (!character_is_singing(character) || Character_AnimationFinished(character))
+        Character_Dance(character, true);
+}
+
+static void tick_presentation(void)
+{
+    if (g_gameplay_loaded) {
+        play_lane_animation(&g_player, g_gameplay.events.player_hit_mask);
+        play_lane_animation(&g_opponent, g_gameplay.events.opponent_hit_mask);
+
+        if (g_gameplay.events.just_step && g_gameplay.song_step >= 0 &&
+            (g_gameplay.song_step & 3) == 0) {
+            s32 beat = g_gameplay.song_step / 4;
+            if (g_stage_loaded)
+                Stage_Beat(&g_stage, beat);
+            dance_character_on_beat(&g_player, beat);
+            dance_character_on_beat(&g_opponent, beat);
+            dance_character_on_beat(&g_girlfriend, beat);
+        }
+    }
+
+    if (g_stage_loaded)
+        Stage_Tick(&g_stage);
+    if (g_player_loaded)
+        Character_Tick(&g_player);
+    if (g_opponent_loaded)
+        Character_Tick(&g_opponent);
+    if (g_girlfriend_loaded)
+        Character_Tick(&g_girlfriend);
+}
+
+static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
+{
+    ChartResult result;
+
+    if (!SongDescriptor_Load(&g_song_descriptor, descriptor_path)) {
+        printf("[PS2] song descriptor load failed: %s\n", descriptor_path);
+        return false;
+    }
+    g_descriptor_loaded = true;
+
+    if (!SongDescriptor_BuildDiscPaths(&g_song_descriptor, &g_song_paths)) {
+        printf("[PS2] descriptor path build failed\n");
+        SongDescriptor_Free(&g_song_descriptor);
+        g_descriptor_loaded = false;
+        return false;
+    }
+
+    printf("[PS2] song: %s / %s / %s\n",
+        g_song_descriptor.display_name,
+        g_song_descriptor.variation,
+        g_song_descriptor.difficulty);
+    printf("[PS2] stage=%s player=%s opponent=%s gf=%s\n",
+        g_song_descriptor.stage,
+        g_song_descriptor.player,
+        g_song_descriptor.opponent,
+        g_song_descriptor.girlfriend);
+
+    result = Gameplay_Load(
+        &g_gameplay,
+        g_song_paths.chart,
+        g_song_paths.inst,
+        g_song_paths.voices,
+        false,
+        false,
+        g_song_descriptor.scroll_speed);
+    if (result != CHART_OK) {
+        printf("[PS2] gameplay load failed: %s\n", Chart_ResultString(result));
+        return false;
+    }
+
+    g_gameplay_loaded = true;
+    load_presentation_assets(gs);
+    printf("[PS2] gameplay loaded: %u notes, %u sections\n",
+        (unsigned)g_gameplay.chart.view.note_count,
+        (unsigned)g_gameplay.chart.view.section_count);
+    return true;
 }
 
 int main(int argc, char **argv)
 {
     GSGLOBAL *gs;
     AspectMode aspect = ASPECT_WIDE_ANAMORPHIC;
-    const char *chart_path = DEFAULT_CHART;
-    const char *inst_path = DEFAULT_INST;
-    const char *voices_path = DEFAULT_VOICES;
     boolean audio_ok;
     boolean disc_ok;
-    ChartResult game_result = CHART_ERR_IO;
 
     printf("\nFNF PS2 native port\n");
     printf("logical canvas: 640x360\n");
@@ -271,6 +564,8 @@ int main(int argc, char **argv)
     SifInitRpc(0);
     Pad_Init();
     gs = init_video();
+    TextureAsset_InitStreaming(gs);
+    apply_video_transform(aspect);
     Timer_Init();
 
     Animatable_Init(&g_boot_anim, g_boot_anims);
@@ -280,29 +575,26 @@ int main(int argc, char **argv)
     disc_ok = Disc_Init();
     printf("[PS2] audio=%s disc=%s\n", audio_ok ? "ok" : "failed", disc_ok ? "ok" : "failed");
 
-    /* ps2client may supply host: paths for fast emulator/hardware iteration. */
-    if (argc >= 3) {
-        chart_path = argv[1];
-        inst_path = argv[2];
-        voices_path = (argc >= 4) ? argv[3] : NULL;
-    }
-
-    if (audio_ok && (argc >= 3 || disc_ok)) {
-        game_result = Gameplay_Load(
-            &g_gameplay,
-            chart_path,
-            inst_path,
-            voices_path,
-            false,
-            false,
-            FIXED_DEC(1, 1));
-        if (game_result == CHART_OK) {
-            g_gameplay_loaded = true;
-            printf("[PS2] gameplay loaded: %u notes, %u sections\n",
-                (unsigned)g_gameplay.chart.view.note_count,
-                (unsigned)g_gameplay.chart.view.section_count);
-        } else {
-            printf("[PS2] gameplay load failed: %s\n", Chart_ResultString(game_result));
+    if (audio_ok) {
+        if (argc >= 3) {
+            /* Legacy host/dev path: chart, instrumental, optional voices. */
+            ChartResult result = Gameplay_Load(
+                &g_gameplay,
+                argv[1],
+                argv[2],
+                argc >= 4 ? argv[3] : NULL,
+                false,
+                false,
+                FIXED_DEC(1, 1));
+            if (result == CHART_OK) {
+                g_gameplay_loaded = true;
+                printf("[PS2] direct gameplay loaded: %u notes\n",
+                    (unsigned)g_gameplay.chart.view.note_count);
+            } else {
+                printf("[PS2] direct gameplay load failed: %s\n", Chart_ResultString(result));
+            }
+        } else if (disc_ok) {
+            load_descriptor_song(gs, DEFAULT_DESCRIPTOR);
         }
     }
 
@@ -315,12 +607,14 @@ int main(int argc, char **argv)
             aspect = (aspect == ASPECT_WIDE_ANAMORPHIC)
                 ? ASPECT_LETTERBOX_4_3
                 : ASPECT_WIDE_ANAMORPHIC;
+            apply_video_transform(aspect);
             printf("[PS2] aspect = %s\n",
                 aspect == ASPECT_WIDE_ANAMORPHIC ? "16:9 anamorphic" : "4:3 letterbox");
         }
 
         if (g_gameplay_loaded) {
             Gameplay_Tick(&g_gameplay, &pad_state);
+            tick_presentation();
             render_gameplay(gs, aspect, &g_gameplay);
         } else {
             render_boot_test(gs, aspect);
