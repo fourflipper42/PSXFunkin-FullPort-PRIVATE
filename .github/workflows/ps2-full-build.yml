@@ -7,6 +7,11 @@ on:
       - ps2-full-port
     paths:
       - '.github/workflows/ps2-full-build.yml'
+  pull_request:
+    branches:
+      - full-port-completion
+    paths:
+      - '.github/workflows/ps2-full-build.yml'
 
 permissions:
   contents: write
