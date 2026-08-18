@@ -69,20 +69,32 @@ static void Gameplay_DispatchSongEvent(
     const char *value_json)
 {
     GameplayState *state = (GameplayState *)user;
+    GameplayFrameEvents *frame;
 
     if (state == NULL || event == NULL)
         return;
 
-    state->events.song_event_fired = true;
-    state->events.last_song_event_kind = event->kind;
-    state->events.last_song_event_name = name;
-    state->events.last_song_event_value = value_json;
+    frame = &state->events;
+    frame->song_event_fired = true;
+    frame->last_song_event_kind = event->kind;
+    frame->last_song_event_name = name;
+    frame->last_song_event_value = value_json;
+
+    if (frame->song_event_count < GAMEPLAY_FRAME_SONG_EVENT_MAX) {
+        GameplaySongEventFrame *queued =
+            &frame->song_events[frame->song_event_count++];
+        queued->kind = event->kind;
+        queued->name = name;
+        queued->value = value_json;
+    } else {
+        frame->song_event_overflow = true;
+    }
 
     if (event->kind == SONG_EVENT_FOCUS_CAMERA) {
         s32 focus = (s32)(event->arg0 + 0.5f);
         if (focus >= 0 && focus <= 2) {
-            state->events.camera_focus_changed = true;
-            state->events.camera_focus = (u8)focus;
+            frame->camera_focus_changed = true;
+            frame->camera_focus = (u8)focus;
         }
     }
 }
@@ -264,6 +276,8 @@ ChartResult Gameplay_Load(
         return CHART_ERR_SECTION_LAYOUT;
     }
     Rhythm_ChangeBPM(&state->rhythm, first_bpm, 0);
+    state->player_scroll_speed = state->rhythm.speed;
+    state->opponent_scroll_speed = state->rhythm.speed;
 
     state->note_scroll = -(192 << FIXED_SHIFT);
     state->song_time = FIXED_DIV(state->note_scroll, state->rhythm.step_crochet);
