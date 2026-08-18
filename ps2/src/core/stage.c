@@ -20,7 +20,7 @@ typedef struct StageHeader {
     u32 character_slot_size;
 } __attribute__((packed)) StageHeader;
 
-#define STAGE_VERSION 1
+#define STAGE_VERSION 2
 #define STAGE_PROP_FLIP_X       (1u << 0)
 #define STAGE_PROP_FLIP_Y       (1u << 1)
 #define STAGE_PROP_PIXEL        (1u << 2)
@@ -198,7 +198,6 @@ static u64 prop_color(const StagePropData *prop)
     if (alpha > 1.0f) alpha = 1.0f;
     a = (u8)(((float)a * alpha * 128.0f) / 255.0f);
 
-    /* Textured GS modulation uses 0x80 as neutral RGB and full alpha. */
     r = (u8)(((u32)r * 0x80u + 127u) / 255u);
     g = (u8)(((u32)g * 0x80u + 127u) / 255u);
     b = (u8)(((u32)b * 0x80u + 127u) / 255u);
@@ -308,6 +307,11 @@ boolean Stage_Load(GSGLOBAL *gs, Stage *stage, const char *base_path)
         StagePropRuntime *runtime = &stage->runtime[i];
         const StagePropData *prop = &stage->props[i];
         char leaf[32];
+
+        if (stage_string(stage, prop->name_offset) == NULL) {
+            printf("[PS2] stage prop %u has invalid name\n", (unsigned)i);
+            goto fail;
+        }
 
         runtime->current_animation = -1;
         snprintf(leaf, sizeof(leaf), "P%03u.FPTX%s", (unsigned)i, is_disc_base(base_path) ? ";1" : "");
@@ -492,6 +496,45 @@ void Stage_DrawRange(
             break;
         draw_prop(gs, stage, camera, index);
     }
+}
+
+s32 Stage_FindProp(const Stage *stage, const char *name)
+{
+    u16 i;
+
+    if (stage == NULL || !stage->loaded || name == NULL)
+        return -1;
+    for (i = 0; i < stage->prop_count; ++i) {
+        const char *prop_name = stage_string(stage, stage->props[i].name_offset);
+        if (prop_name != NULL && strcmp(prop_name, name) == 0)
+            return (s32)i;
+    }
+    return -1;
+}
+
+boolean Stage_PlayNamedAnimation(
+    Stage *stage,
+    const char *target,
+    const char *animation,
+    boolean force)
+{
+    s32 index = Stage_FindProp(stage, target);
+    if (index < 0 || animation == NULL ||
+        !(stage->props[index].flags & STAGE_PROP_ANIMATED) ||
+        !stage->runtime[index].loaded)
+        return false;
+    return prop_play(stage, (u16)index, animation, force);
+}
+
+boolean Stage_SetNamedBopSpeed(Stage *stage, const char *target, float rate)
+{
+    s32 index = Stage_FindProp(stage, target);
+    if (index < 0)
+        return false;
+    if (rate < 0.0f)
+        rate = 0.0f;
+    stage->props[index].dance_every = rate;
+    return true;
 }
 
 const StageCharacterSlot *Stage_PlayerSlot(const Stage *stage)
