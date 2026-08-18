@@ -148,6 +148,14 @@ jobs:
           ])
           PY
 
+      - name: Convert discovered video cutscenes
+        run: |
+          python3 ps2/scripts/convert_cutscenes.py \
+            "$BUILD_ASSETS_ROOT" \
+            ps2/disc/GAME/CUTSCENE \
+            --manifest ps2/disc/GAME/CUTSCENE/CUTIDX.JSON \
+            --strict
+
       - name: Convert every used softcoded note style
         run: |
           python3 ps2/scripts/convert_note_styles.py \
@@ -181,11 +189,13 @@ jobs:
           find ps2/disc/CHART -name 'EVENTS.FEVT' -type f | wc -l | xargs echo 'event streams:'
           find ps2/disc/GAME/CHAR -name 'CHAR.FCHR' -type f 2>/dev/null | wc -l | xargs echo 'characters:'
           find ps2/disc/GAME/STAGE -name 'STAGE.FSTG' -type f 2>/dev/null | wc -l | xargs echo 'stages:'
-          find ps2/disc/GAME/ICON -name '*.FPTX' -o -name '*.FATL' 2>/dev/null | wc -l | xargs echo 'health icon assets:'
+          find ps2/disc/GAME/ICON \( -name '*.FPTX' -o -name '*.FATL' \) -type f 2>/dev/null | wc -l | xargs echo 'health icon assets:'
+          find ps2/disc/GAME/CUTSCENE -name 'CUT.FCUT' -type f 2>/dev/null | wc -l | xargs echo 'cutscenes:'
           find ps2/disc/GAME/NOTESTYLE -name 'STYLE.FNST' -type f 2>/dev/null | wc -l | xargs echo 'note styles:'
           find ps2/disc/GAME/SONG -name '*.FSON' -type f 2>/dev/null | wc -l | xargs echo 'song descriptors:'
           test -s ps2/disc/GAME/GAME.FCAT
           test -s ps2/disc/GAME/STORY.FSTY
+          test -s ps2/disc/GAME/CUTSCENE/CUTIDX.JSON
 
       - name: Master homebrew PS2 DVD ISO
         run: |
@@ -216,7 +226,7 @@ jobs:
         run: |
           TAG="ps2-native-${GITHUB_SHA::12}"
           TITLE="FNF PS2 native test ${GITHUB_SHA::12}"
-          NOTES=$'Native PS2 development checkpoint.\n\nIncludes the native ELF, full DVD ISO split into release-safe parts, Story/Freeplay catalogs, health icons, note kinds/events, and optional user modpack assets. Reassemble ISO parts in lexical order before testing.'
+          NOTES=$'Native PS2 development checkpoint.\n\nIncludes the native ELF, full DVD ISO split into release-safe parts, Story/Freeplay catalogs, health icons, cutscenes, note kinds/events, and optional user modpack assets. Reassemble ISO parts in lexical order before testing.'
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
@@ -233,4 +243,5 @@ jobs:
             ps2/disc/GAME/STORY.JSON \
             ps2/disc/GAME/MODPACK.JSON \
             ps2/disc/GAME/ICON/ICONIDX.JSON \
+            ps2/disc/GAME/CUTSCENE/CUTIDX.JSON \
             ps2/disc/GAME/NOTESTYLE/NOTESTYLE.JSON
