@@ -19,18 +19,29 @@ EE_OBJS = \
 	build/core_progression.o \
 	build/core_save_data.o \
 	build/core_ps2_glyph.o \
+	build/core_better_alphabet.o \
 	build/core_song_descriptor.o \
 	build/core_song_events.o \
+	build/core_note_kinds.o \
+	build/core_note_kind_runtime.o \
 	build/core_song_stream.o \
 	build/core_gameplay.o \
 	build/core_gameplay_scroll.o \
+	build/core_gammod.o \
+	build/core_health_drain.o \
+	build/core_endless_mode.o \
+	build/core_combo_system.o \
 	build/core_camera_effects.o \
+	build/core_camera_movement.o \
 	build/core_presentation_events.o \
+	build/core_pointless_pins.o \
 	build/core_freeplay_browser.o \
 	build/core_texture_asset.o \
 	build/core_sprite_atlas.o \
 	build/core_note_style.o \
 	build/core_note_lane_renderer.o \
+	build/core_health_icon.o \
+	build/core_hud.o \
 	build/core_character.o \
 	build/core_stage.o \
 	build/audsrv_irx.o
@@ -107,10 +118,19 @@ build/core_save_data.o: src/core/save_data.c | build
 build/core_ps2_glyph.o: src/core/ps2_glyph.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
+build/core_better_alphabet.o: src/core/better_alphabet.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
 build/core_song_descriptor.o: src/core/song_descriptor.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_song_events.o: src/core/song_events.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_note_kinds.o: src/core/note_kinds.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_note_kind_runtime.o: src/core/note_kind_runtime.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_song_stream.o: src/core/song_stream.c | build
@@ -122,10 +142,28 @@ build/core_gameplay.o: src/core/gameplay.c | build
 build/core_gameplay_scroll.o: src/core/gameplay_scroll.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
+build/core_gammod.o: src/core/gammod.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_health_drain.o: src/core/health_drain.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_endless_mode.o: src/core/endless_mode.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_combo_system.o: src/core/combo_system.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
 build/core_camera_effects.o: src/core/camera_effects.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
+build/core_camera_movement.o: src/core/camera_movement.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
 build/core_presentation_events.o: src/core/presentation_events.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_pointless_pins.o: src/core/pointless_pins.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_freeplay_browser.o: src/core/freeplay_browser.c | build
@@ -141,6 +179,12 @@ build/core_note_style.o: src/core/note_style.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_note_lane_renderer.o: src/core/note_lane_renderer.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_health_icon.o: src/core/health_icon.c | build
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+build/core_hud.o: src/core/hud.c | build
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
 build/core_character.o: src/core/character.c | build
