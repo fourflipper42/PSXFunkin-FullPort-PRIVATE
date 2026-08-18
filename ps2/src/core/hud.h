@@ -17,6 +17,8 @@ typedef struct HudRuntime {
     boolean opponent_icon_loaded;
     boolean fc_loaded;
     boolean fc_death_loaded;
+    boolean hidden;
+    boolean suppress_scoring_ui;
     u32 popup_combo;
     u32 swoosh_combo;
     fixed_t popup_timer;
@@ -30,6 +32,10 @@ void Hud_SetDrawTransform(
     float x_offset,
     float y_offset);
 void Hud_Init(HudRuntime *hud);
+void Hud_SetGameplayMode(
+    HudRuntime *hud,
+    boolean hidden,
+    boolean suppress_scoring_ui);
 boolean Hud_LoadSong(
     GSGLOBAL *gs,
     HudRuntime *hud,
