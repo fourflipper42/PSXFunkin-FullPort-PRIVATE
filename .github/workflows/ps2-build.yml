@@ -21,27 +21,38 @@ permissions:
 jobs:
   build-ps2:
     runs-on: ubuntu-latest
-    container: ps2dev/ps2dev:latest
+    env:
+      PS2DEV: /home/runner/ps2dev
+      PS2SDK: /home/runner/ps2dev/ps2sdk
+      GSKIT: /home/runner/ps2dev/gsKit
     steps:
-      - name: Install runner utilities
-        run: apk add --no-cache git make file coreutils
-
       - uses: actions/checkout@v4
+
+      - name: Install host utilities
+        run: sudo apt-get update && sudo apt-get install -y make file curl
+
+      - name: Install current official PS2DEV toolchain
+        run: |
+          mkdir -p "$PS2DEV"
+          curl -fL --retry 3 --retry-delay 3 \
+            https://github.com/ps2dev/ps2dev/releases/download/latest/ps2dev-ubuntu-latest.tar.gz \
+            -o /tmp/ps2dev-latest.tar.gz
+          tar -xf /tmp/ps2dev-latest.tar.gz --strip-components 1 -C "$PS2DEV"
+          echo "$PS2DEV/bin" >> "$GITHUB_PATH"
+          echo "$PS2DEV/ee/bin" >> "$GITHUB_PATH"
+          echo "$PS2DEV/iop/bin" >> "$GITHUB_PATH"
+          echo "$PS2DEV/dvp/bin" >> "$GITHUB_PATH"
+          echo "$PS2SDK/bin" >> "$GITHUB_PATH"
 
       - name: Build PS2 ELF
         working-directory: ps2
         run: |
           command -v mips64r5900el-ps2-elf-gcc
+          set +e
           make clean all > build-ci.log 2>&1
-
-      - name: Print compiler log
-        if: always()
-        run: |
-          if [ -f ps2/build-ci.log ]; then
-            cat ps2/build-ci.log
-          else
-            echo 'build-ci.log was not produced'
-          fi
+          STATUS=$?
+          cat build-ci.log
+          exit "$STATUS"
 
       - name: Verify ELF
         if: success()
