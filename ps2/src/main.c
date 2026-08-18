@@ -13,7 +13,6 @@
 #include "core/disc.h"
 #include "core/gameplay.h"
 #include "core/song_descriptor.h"
-#include "core/song_events.h"
 #include "core/texture_asset.h"
 #include "core/stage.h"
 #include "core/character.h"
@@ -55,7 +54,6 @@ static Animatable g_boot_anim;
 static GameplayState g_gameplay;
 static SongDescriptor g_song_descriptor;
 static SongAssetPaths g_song_paths;
-static SongEventStream g_song_events;
 static Stage g_stage;
 static StageCamera g_stage_camera;
 static Character g_player;
@@ -63,7 +61,6 @@ static Character g_opponent;
 static Character g_girlfriend;
 static boolean g_gameplay_loaded;
 static boolean g_descriptor_loaded;
-static boolean g_song_events_loaded;
 static boolean g_stage_loaded;
 static boolean g_player_loaded;
 static boolean g_opponent_loaded;
@@ -83,14 +80,10 @@ static VideoTransform video_transform(AspectMode mode)
     t.x_offset = 0.0f;
 
     if (mode == ASPECT_LETTERBOX_4_3) {
-        /* Preserve the canonical 16:9 640x360 canvas pixel-for-pixel inside
-         * the 640x448 NTSC framebuffer. This produces 44-line bars above
-         * and below instead of subtly squashing the image. */
         const float content_h = LOGICAL_H * t.x_scale;
         t.y_scale = t.x_scale;
         t.y_offset = (NTSC_H - content_h) * 0.5f;
     } else {
-        /* 16:9 TVs stretch the NTSC framebuffer vertically/anamorphically. */
         t.y_scale = NTSC_H / LOGICAL_H;
         t.y_offset = 0.0f;
     }
@@ -432,9 +425,6 @@ static void snap_camera_to_focus(void)
     if (zoom <= 0.0f)
         zoom = 1.0f;
 
-    /* Stage positions are kept in the original 1280x720 world. With the
-     * canonical 0.5 presentation scale, these scroll values put the focused
-     * character + authored camera offset at the center of 640x360. */
     g_stage_camera.scroll_x = slot->x + slot->camera_x - (LOGICAL_W / (0.5f * zoom));
     g_stage_camera.scroll_y = slot->y + slot->camera_y - (LOGICAL_H / (0.5f * zoom));
 }
@@ -466,32 +456,6 @@ static void tick_camera(void)
 
     g_stage_camera.scroll_x += (target_x - g_stage_camera.scroll_x) * alpha;
     g_stage_camera.scroll_y += (target_y - g_stage_camera.scroll_y) * alpha;
-}
-
-static void dispatch_song_event(
-    void *user,
-    const SongEventRecord *event,
-    const char *name,
-    const char *value_json)
-{
-    (void)user;
-
-    if (event == NULL || name == NULL || value_json == NULL)
-        return;
-
-    if (event->kind == SONG_EVENT_FOCUS_CAMERA) {
-        int focus = (int)(event->arg0 + 0.5f);
-        if (focus >= 0 && focus <= 2) {
-            g_camera_focus = focus;
-            printf("[PS2] FocusCamera -> %s\n",
-                focus == 0 ? "player" : (focus == 1 ? "opponent" : "girlfriend"));
-        }
-        return;
-    }
-
-    /* Unknown event payloads are deliberately retained on disc. Logging them
-     * here makes unimplemented handlers visible without losing source data. */
-    printf("[PS2] event %s value=%s\n", name, value_json);
 }
 
 static void load_presentation_assets(GSGLOBAL *gs)
@@ -566,9 +530,29 @@ static void dance_character_on_beat(Character *character, s32 beat)
         Character_Dance(character, true);
 }
 
+static void consume_gameplay_events(void)
+{
+    if (g_gameplay.events.camera_focus_changed) {
+        g_camera_focus = g_gameplay.events.camera_focus;
+        printf("[PS2] FocusCamera -> %s\n",
+            g_camera_focus == 0 ? "player" :
+            (g_camera_focus == 1 ? "opponent" : "girlfriend"));
+    }
+
+    if (g_gameplay.events.song_event_fired &&
+        g_gameplay.events.last_song_event_kind == SONG_EVENT_GENERIC &&
+        g_gameplay.events.last_song_event_name != NULL &&
+        g_gameplay.events.last_song_event_value != NULL) {
+        printf("[PS2] event %s value=%s\n",
+            g_gameplay.events.last_song_event_name,
+            g_gameplay.events.last_song_event_value);
+    }
+}
+
 static void tick_presentation(void)
 {
     if (g_gameplay_loaded) {
+        consume_gameplay_events();
         play_lane_animation(&g_player, g_gameplay.events.player_hit_mask);
         play_lane_animation(&g_opponent, g_gameplay.events.opponent_hit_mask);
 
@@ -621,11 +605,6 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
         g_song_descriptor.opponent,
         g_song_descriptor.girlfriend);
 
-    g_song_events_loaded = SongEvents_Load(&g_song_events, g_song_paths.events);
-    printf("[PS2] chart events=%s%s\n",
-        g_song_events_loaded ? "ok" : "missing",
-        g_song_events_loaded ? "" : " (gameplay continues; strict DVD build should catch this)");
-
     result = Gameplay_Load(
         &g_gameplay,
         g_song_paths.chart,
@@ -636,10 +615,6 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
         g_song_descriptor.scroll_speed);
     if (result != CHART_OK) {
         printf("[PS2] gameplay load failed: %s\n", Chart_ResultString(result));
-        if (g_song_events_loaded) {
-            SongEvents_Free(&g_song_events);
-            g_song_events_loaded = false;
-        }
         return false;
     }
 
@@ -649,7 +624,7 @@ static boolean load_descriptor_song(GSGLOBAL *gs, const char *descriptor_path)
     printf("[PS2] gameplay loaded: %u notes, %u sections, %u events\n",
         (unsigned)g_gameplay.chart.view.note_count,
         (unsigned)g_gameplay.chart.view.section_count,
-        g_song_events_loaded ? (unsigned)g_song_events.count : 0u);
+        g_gameplay.song_events.loaded ? (unsigned)g_gameplay.song_events.count : 0u);
     return true;
 }
 
@@ -681,7 +656,6 @@ int main(int argc, char **argv)
 
     if (audio_ok) {
         if (argc >= 3) {
-            /* Legacy host/dev path: chart, instrumental, optional voices. */
             ChartResult result = Gameplay_Load(
                 &g_gameplay,
                 argv[1],
@@ -718,13 +692,6 @@ int main(int argc, char **argv)
 
         if (g_gameplay_loaded) {
             Gameplay_Tick(&g_gameplay, &pad_state);
-            if (g_song_events_loaded) {
-                SongEvents_Tick(
-                    &g_song_events,
-                    g_gameplay.song_time,
-                    dispatch_song_event,
-                    NULL);
-            }
             tick_presentation();
             render_gameplay(gs, aspect, &g_gameplay);
         } else {
