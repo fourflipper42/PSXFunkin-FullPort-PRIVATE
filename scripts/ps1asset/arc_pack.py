@@ -12,7 +12,10 @@ def pack_arc(output: Path, files: list[Path], names: list[str] | None = None) ->
     if len(names)!=len(files): raise ValueError('name/file count mismatch')
     for n in names:
         if len(n.encode('ascii')) > 12: raise ValueError(f'ARC member name too long: {n}')
-    header=bytearray(16*16)
+    if any(not n or "\0" in n for n in names) or len(set(names)) != len(names):
+        raise ValueError("ARC member names must be nonempty and unique")
+    # Archive_Find walks until a zero name; reserve a terminator even at 16 files.
+    header=bytearray((len(files) + 1)*16)
     pos=len(header); payload=bytearray()
     entries=[]
     for p,n in zip(files,names):

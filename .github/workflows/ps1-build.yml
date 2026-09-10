@@ -3,6 +3,8 @@ name: PSXFunkin Full Port CI
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +27,9 @@ jobs:
             ffmpeg libavformat-dev libavfilter-dev libavcodec-dev libavutil-dev \
             libswscale-dev libswresample-dev libtinyxml2-dev
 
+      - name: Run conversion regression tests
+        run: python3 -m unittest discover -s tests -v
+
       - name: Fetch exact clean cuckydev t0.12 source
         run: |
           git clone https://github.com/cuckydev/PSXFunkin.git upstream
@@ -33,19 +38,7 @@ jobs:
 
       - name: Apply full-port source patches
         run: |
-          if [ -d overlay ]; then cp -a overlay/. upstream/; fi
-          for p in patches/*.patch; do
-            case "$p" in
-              *0002c-weekend1-stage-runtime.patch) continue ;;
-            esac
-            echo "Applying $p"
-            git -C upstream apply "../$p"
-          done
-          cat patches/chunks/0002c.*.b64 | base64 -d > /tmp/0002c-weekend1-stage-runtime.patch
-          echo "3c35dce44773fdbc771ceb694a83cc40f72e053b06a5e2889858a3ce702d94b6  /tmp/0002c-weekend1-stage-runtime.patch" | sha256sum -c -
-          test "$(stat -c%s /tmp/0002c-weekend1-stage-runtime.patch)" -eq 11471
-          git -C upstream apply /tmp/0002c-weekend1-stage-runtime.patch
-          git -C upstream diff --check
+          python3 scripts/apply_patches.py upstream
 
       - name: Download and merge official v0.8.4 assets
         env:
@@ -106,7 +99,8 @@ jobs:
             --root official-v084 \
             --out upstream/iso/music \
             --psxavenc psxavenc/build/psxavenc \
-            --report build/weekend1_audio.json
+            --report build/weekend1_audio.json \
+            --header upstream/src/weekend1_audio_generated.h
           python3 scripts/build_weekend1_movies.py \
             --root official-v084 \
             --out upstream/iso/movie \
@@ -125,7 +119,7 @@ jobs:
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
           mkdir -p /tmp/psyq-extract upstream/mips/psyq
-          curl -fL --retry 3 --retry-delay 2 http://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip -o /tmp/psyq.zip
+          curl -fL --retry 3 --retry-delay 2 https://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip -o /tmp/psyq.zip
           unzip -q /tmp/psyq.zip -d /tmp/psyq-extract
           INC="$(find /tmp/psyq-extract -type d -name include -print -quit)"
           LIB="$(find /tmp/psyq-extract -type d -name lib -print -quit)"
@@ -146,21 +140,19 @@ jobs:
       - name: Compile PSXFunkin executable
         working-directory: upstream
         run: |
-          make clean || true
+          make clean
           make -j2
           test -s funkin.ps-exe
           sha256sum funkin.ps-exe
 
-      - name: Build DuckStation MODE2 BIN CUE
+      - name: Build single-CD MODE2 BIN CUE
         working-directory: upstream
         run: |
           sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
           "$HOME/.local/bin/mkpsxiso" -y funkin.xml
           test -s funkin.bin
           test -s funkin.cue
-          sectors=$(( $(stat -c%s funkin.bin) / 2352 ))
-          echo "Raw disc sectors: $sectors"
-          test "$sectors" -le 360000
+          python3 ../scripts/validate_disc.py funkin.bin funkin.cue --report ../build/disc.json
 
       - name: Package Weekend 1 milestone
         run: |
@@ -172,6 +164,7 @@ jobs:
               INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/funkin.ps-exe
+          cp build/disc.json build/release/
           cp build/v084_charts.json build/weekend1_charts.json build/weekend1_assets.json build/weekend1_audio.json build/weekend1_movies.json build/release/
           (cd build/release && sha256sum PSXFunkin_v084_Weekend1.bin PSXFunkin_v084_Weekend1.cue funkin.ps-exe *.json > SHA256SUMS.txt)
 

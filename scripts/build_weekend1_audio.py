@@ -33,7 +33,7 @@ def interleave(out:Path, paths:list[Path], silence:list[bytes]):
     return count*8
 
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--out',type=Path,required=True); ap.add_argument('--psxavenc',type=Path,required=True); ap.add_argument('--ffmpeg',type=Path,default=Path('ffmpeg')); ap.add_argument('--report',type=Path,required=True); a=ap.parse_args()
+ ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--out',type=Path,required=True); ap.add_argument('--psxavenc',type=Path,required=True); ap.add_argument('--ffmpeg',type=Path,default=Path('ffmpeg')); ap.add_argument('--report',type=Path,required=True); ap.add_argument('--header',type=Path,required=True); a=ap.parse_args()
  a.out.mkdir(parents=True,exist_ok=True); rep={}
  with tempfile.TemporaryDirectory() as td:
   t=Path(td)
@@ -47,6 +47,10 @@ def main():
   assignments=[('darnell',0),('lit-up',2),('2hot',4),('blazin',6)]; mapping=[None]*8
   for song,base in assignments:
    pfull=t/f'{song}-full.xa'; pinst=t/f'{song}-inst.xa'; enc(a.psxavenc,t/f'{song}-full.wav',pfull,base); enc(a.psxavenc,t/f'{song}-inst.wav',pinst,base+1); mapping[base]=pfull; mapping[base+1]=pinst
+   rep[song]['physical_sectors']=max(pfull.stat().st_size,pinst.stat().st_size)//SECTOR*8
   name='week8.xa'; total=interleave(a.out/name,mapping,sil); rep[name]={'physical_sectors':total,'bytes':(a.out/name).stat().st_size,'sample_rate':18900,'channels':8}
+ a.header.parent.mkdir(parents=True,exist_ok=True)
+ defines=[f'#define W1_XA_{song.upper().replace("-","_")}_SECTORS {rep[song]["physical_sectors"]}u' for song in SONGS]
+ a.header.write_text('#ifndef WEEKEND1_AUDIO_GENERATED_H\n#define WEEKEND1_AUDIO_GENERATED_H\n'+'\n'.join(defines)+'\n#endif\n')
  a.report.parent.mkdir(parents=True,exist_ok=True); a.report.write_text(json.dumps(rep,indent=2)+'\n'); print(json.dumps(rep,indent=2))
 if __name__=='__main__': main()
