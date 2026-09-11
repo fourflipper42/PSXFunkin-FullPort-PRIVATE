@@ -162,7 +162,7 @@ jobs:
       - name: Build single-CD MODE2 BIN CUE
         working-directory: upstream
         run: |
-          sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
+          python3 ../scripts/prepare_homebrew_disc.py funkin.xml
           "$HOME/.local/bin/mkpsxiso" -y funkin.xml
           test -s funkin.bin
           test -s funkin.cue
