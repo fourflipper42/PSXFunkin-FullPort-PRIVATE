@@ -246,6 +246,8 @@ shutdown:
 	DecDCToutCallback(0);
 	StUnSetRing();
 	CdControlB(CdlPause, 0, 0);
+	// A failed first read must not leave the following game screen blank.
+	SetDispMask(1);
 
 }
 static void strCallback() {

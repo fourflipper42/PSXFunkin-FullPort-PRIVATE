@@ -28,11 +28,12 @@ typedef struct {int width,height,frameCount;} StHEADER;
 #define CdlModeStream 8
 #define CdlModeRT 16
 #define setRECT(r,a,b,c,d) (*(r)=(RECT){a,b,c,d})
+int display_mask;
 int available,read_count,get_calls,displayed,decoded,skip_after,frame_width=16,change_width,clears,shutdowns;
 u_long current_frame;
 StHEADER packet;
 void (*callback)(void);
-void SetDispMask(int x) {}
+void SetDispMask(int x) {display_mask=x;}
 int CdSearchFile(CdlFILE *f,const char *p) {return 1;}
 void DecDCTReset(int n) {}
 void DecDCToutCallback(void (*fn)(void)) {callback=fn;}
@@ -65,7 +66,7 @@ int CdRead2(int a) {return 1;}
 static int play(int frames,int present,int skip) {
  available=present;read_count=get_calls=displayed=decoded=0;skip_after=skip;
  STRFILE file={"TEST.STR",320,240,frames};
- return PlayStr(320,240,0,0,&file);
+ int result=PlayStr(320,240,0,0,&file);assert(display_mask==1);return result;
 }
 int main(void) {
  for(int n=1;n<=7;n++) {
