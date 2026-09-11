@@ -102,9 +102,14 @@ jobs:
       - name: Build psxavenc
         run: |
           git clone https://github.com/WonderfulToolchain/psxavenc.git psxavenc
+          git -C psxavenc checkout 82f3871c5fe5e82e71016a6636aba25ddddf2ca8
+          git -C psxavenc apply ../encoder-patches/0001-drain-video.patch
           meson setup psxavenc/build psxavenc --buildtype=release
           meson compile -C psxavenc/build
           test -x psxavenc/build/psxavenc
+
+      - name: Verify complete STR frame encoding
+        run: python3 scripts/check_video_encoder.py psxavenc/build/psxavenc
 
       - name: Encode Weekend 1 XA and STR media
         run: |

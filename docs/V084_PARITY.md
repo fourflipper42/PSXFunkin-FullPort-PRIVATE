@@ -22,7 +22,7 @@ finished port, and no console test has been performed.
 | Menus | Official animated title logo/GF and five main labels; 4:3 story/song/options lists; official intro messages and scrolling credits | Modern story character art, freeplay capsules/DJ/character select, full options, pause/results, title confirmation animation and menu sound effects remain unfinished |
 | Charts | 98 Tutorial/Weeks 1–7 and 14 Weekend 1 charts convert successfully | Add all playable character variants and Spaghetti; route scroll speeds, metadata, events and characters per variant |
 | Audio | Original upstream tracks plus a Weekend 1 encoder | Regenerate/remap base, Erect/Nightmare and character variants; retain separate vocal behavior; verify offsets and endings |
-| Cutscenes | Weekend 1 only, 15 fps conversion | Cover all gameplay cutscenes and censorship variants; preserve source timing/aspect without stretching 16:9 footage |
+| Cutscenes | Three Weekend 1 movies at source 24 fps, centered letterboxing, complete encoded/decoded frame checks | Cover Week 7 and remaining gameplay/censorship variants; verify synchronized playback on hardware |
 | Characters | Existing converter samples 2–4 frames per animation | Integrate the full-frame bank prototype, preserve source frame selection/timing, offsets, flips and event animations |
 | Stage effects | Legacy stages and static Weekend 1 backgrounds | Reimplement scripted effects and variant backgrounds within GPU/CPU limits |
 | Memory | Fixed 1 MiB game heap | Redesign asset lifetimes and death/menu loading; measure peak heap, stack and decoder buffers |
@@ -91,7 +91,7 @@ returns, stage selection, freeing menu banks, options, credits bounds, text boun
 and rejecting a previously selected difficulty unsupported by the new song.
 These tests do not emulate GPU, SPU, CD timing or controller hardware.
 
-26 host tests pass. All eight source patches and the overlay apply to the clean
+28 host tests pass. All eight source patches and the overlay apply to the clean
 pinned upstream. The four new/replaced runtime modules compile with MIPS1 flags
 and PsyQ headers. `preview_menu_art.py` reproduces the generated palette layout;
 its image is a layout preview, not an emulator capture.
@@ -102,5 +102,31 @@ Baseline CI at `5cfb13bb3be3a6c53f83a739523745ea4af03e7b` completed the full med
 conversion, MIPS link and BIN/CUE build in run `34444744129`. Its disc contains
 169,561 raw sectors (398,807,472 bytes), below the 333,000-sector budget. This
 baseline predates the new menu runtime and does not contain complete 0.8.4 content.
-The new menu build must be checked independently. Neither build establishes
+Menu revision `5685efad0c0412fb823bc0aa55dac27235980ed5` also completed CI
+(run `34595010476`): 169,740 raw sectors, 399,228,480 bytes. That build includes
+the new menus but predates the 24 fps cutscene changes. Neither build establishes
 emulator or real-console readiness.
+
+## Complete-frame cutscene encoding
+
+The pinned psxavenc revision is `82f3871c5fe5e82e71016a6636aba25ddddf2ca8`.
+The local encoder patch drains buffered video after input EOF and tolerates
+floating-point roundoff at frame boundaries. A 24-frame test previously produced
+22 frames; the corrected encoder produces all 24. CI additionally tests 1- and
+61-frame clips, complete STR sector/chunk sequences, and software MDEC decoding.
+
+The converter uses a lossless FFV1/NUT intermediate with rational timestamps,
+scales the 16:9 image proportionally to 320x180, and pads it to 320x240 with 30-pixel
+bars. It encodes at 24 fps and 2x CD speed with 37.8 kHz stereo XA audio. These
+are PS1-format conversions, not lossless copies of the original video/audio.
+
+Local conversion and software MDEC decoding retain 2,074 Darnell, 684 2Hot and
+1,051 Blazin frames. All three decoded completely. Reports include mean and
+maximum quantization scale, dimensions, sector counts and source/decoded frame
+counts. Console decoding and A/V timing remain unverified.
+
+The STR player now displays the last prefetched frame, stops cleanly on an
+unavailable next frame, avoids a squared timeout loop, rejects invalid/changing
+frame dimensions, and clears its remembered dimensions between movies. Its
+actual playback loop passes host sanitizer tests for 1-7 frames, truncated input,
+skipping and malformed dimensions. These stubs do not simulate interrupt timing.

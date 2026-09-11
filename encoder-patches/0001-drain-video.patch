@@ -1,0 +1,42 @@
+diff --git a/psxavenc/decoding.c b/psxavenc/decoding.c
+index c8cf676..974088e 100644
+--- a/psxavenc/decoding.c
++++ b/psxavenc/decoding.c
+@@ -429,7 +429,8 @@ static void poll_av_packet_video(decoder_t *decoder, AVPacket *packet) {
+ 	if (pts < 0.0)
+ 		return;
+ #endif
+-	if (decoder->video_frame_count >= 1 && pts < av->video_next_pts)
++	// Ignore floating-point roundoff at exact rational frame boundaries.
++	if (decoder->video_frame_count >= 1 && pts + pts_step * 1e-6 < av->video_next_pts)
+ 		return;
+ 	if (decoder->video_frame_count < 1)
+ 		av->video_next_pts = pts;
+@@ -440,7 +441,7 @@ static void poll_av_packet_video(decoder_t *decoder, AVPacket *packet) {
+ 
+ 	// Insert duplicate frames if the frame rate of the input stream is lower
+ 	// than the target frame rate.
+-	int dupe_frames = (int)ceil((pts - av->video_next_pts) / pts_step);
++	int dupe_frames = (int)ceil((pts - av->video_next_pts) / pts_step - 1e-6);
+ 
+ 	if (dupe_frames < 0)
+ 		dupe_frames = 0;
+diff --git a/psxavenc/filefmt.c b/psxavenc/filefmt.c
+index d444b32..0024fa4 100644
+--- a/psxavenc/filefmt.c
++++ b/psxavenc/filefmt.c
+@@ -447,8 +447,13 @@ void encode_file_str(const args_t *args, decoder_t *decoder, FILE *output) {
+ 
+ 	int sector_count = 0;
+ 
+-	for (; !decoder->end_of_input || encoder.state.frame_data_offset < encoder.state.frame_max_size; sector_count++) {
++	for (;; sector_count++) {
+ 		ensure_av_data(decoder, audio_samples_per_sector * args->audio_channels, frames_needed);
++		// EOF may be observed with complete decoded frames still queued.
++		// Drain them and the current sector payload before stopping.
++		if (decoder->end_of_input && decoder->video_frame_count == 0 &&
++			encoder.state.frame_data_offset >= encoder.state.frame_max_size)
++			break;
+ 
+ 		uint8_t sector[PSX_CDROM_SECTOR_SIZE];
+ 		bool is_video_sector;
