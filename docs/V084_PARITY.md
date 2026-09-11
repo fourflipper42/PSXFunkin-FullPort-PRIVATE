@@ -21,7 +21,7 @@ finished port, and no console test has been performed.
 | --- | --- | --- |
 | Menus | Official animated title logo/GF and five main labels; 4:3 story/song/options lists; official intro messages and scrolling credits | Modern story character art, freeplay capsules/DJ/character select, full options, pause/results, title confirmation animation and menu sound effects remain unfinished |
 | Charts | 98 Tutorial/Weeks 1–7 and 14 Weekend 1 charts convert successfully | Add all playable character variants and Spaghetti; route scroll speeds, metadata, events and characters per variant |
-| Audio | Original upstream tracks plus a Weekend 1 encoder | Regenerate/remap base, Erect/Nightmare and character variants; retain separate vocal behavior; verify offsets and endings |
+| Audio | 17 Erect/Nightmare remix routes with player-only muting, plus original upstream tracks and Weekend 1 encoder | Regenerate base/character variants; improve Weekend 1 vocal muting; verify hardware sync and endings |
 | Cutscenes | Three Weekend 1 movies at source 24 fps, centered letterboxing, complete encoded/decoded frame checks | Cover Week 7 and remaining gameplay/censorship variants; verify synchronized playback on hardware |
 | Characters | Existing converter samples 2–4 frames per animation | Integrate the full-frame bank prototype, preserve source frame selection/timing, offsets, flips and event animations |
 | Stage effects | Legacy stages and static Weekend 1 backgrounds | Reimplement scripted effects and variant backgrounds within GPU/CPU limits |
@@ -91,7 +91,7 @@ returns, stage selection, freeing menu banks, options, credits bounds, text boun
 and rejecting a previously selected difficulty unsupported by the new song.
 These tests do not emulate GPU, SPU, CD timing or controller hardware.
 
-29 host tests pass. All eight source patches and the overlay apply to the clean
+35 host tests pass. All nine source patches and the overlay apply to the clean
 pinned upstream. The four new/replaced runtime modules compile with MIPS1 flags
 and PsyQ headers. `preview_menu_art.py` reproduces the generated palette layout;
 its image is a layout preview, not an emulator capture.
@@ -136,3 +136,27 @@ observe callback updates. The build also checks the executable's load range and
 linked BSS end against the retail 2 MiB RAM region and reserves 512 KiB below the
 initial stack pointer. This covers the current 388,096-byte movie local arrays
 with additional stack headroom. It does not measure dynamic heap peaks.
+
+## Erect/Nightmare audio routing
+
+The 17 supported remixes now select their official instrumental and vocal stems,
+with separate full and player-muted mixes. The opponent stays audible on a miss.
+The runtime selects the generated file, channel pair, song length and individual
+Erect/Nightmare scroll speed; retries and returning to base difficulty reset the
+route. Base audio, character variants and stage artwork are not corrected by this
+change. Scroll-speed metadata is now used, but screen-space note geometry remains
+that of the legacy engine.
+
+Stem selection follows the pinned Song.hx explicit vocal lists and character-name
+fallbacks. Offset lookup follows the selected instrumental's table, including
+0.8.4's distinction between `vocals` and `altVocals`. These remixes have zero
+instrumental clock offsets; the build rejects unsupported nonzero values.
+Full/player-muted mixes retain the same shared-stem gains and aligned durations.
+
+Five XA files use 18.9 kHz stereo 4-bit audio and eight interleaved channels at
+1x CD speed. Length grouping limits silent padding without cutting song audio.
+Locally they total 47,080 sectors (109,978,880 source XA bytes). Every channel in
+all five files passes software XA decoding through EOF. The generator validates
+sector subheaders, channel order, coding mode and complete encoded sample counts.
+This verifies conversion and routing, not physical CD latency or SPU playback.
+The full disc build is pending for this revision.

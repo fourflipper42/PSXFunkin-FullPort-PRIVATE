@@ -1,0 +1,81 @@
+diff --git a/Makefile b/Makefile
+index 1dd18ce..38c9921 100644
+--- a/Makefile
++++ b/Makefile
+@@ -20,6 +20,7 @@ SRCS = src/main.c \
+        src/framebank.c \
+        src/framecodec.c \
+        src/stage.c \
++       src/stage_music.c \
+        src/stage/dummy.c \
+        src/stage/week1.c \
+        src/stage/week2.c \
+diff --git a/src/stage.c b/src/stage.c
+index 5002cc6..a8768a5 100644
+--- a/src/stage.c
++++ b/src/stage.c
+@@ -1,4 +1,5 @@
+ #include "stage.h"
++#include "stage_music.h"
+ 
+ #include "mem.h"
+ #include "timer.h"
+@@ -59,7 +60,7 @@ void Stage_StartVocal()
+ {
+ 	if (!(stage.flag & STAGE_FLAG_VOCAL_ACTIVE))
+ 	{
+-		Audio_ChannelXA(stage.stage_def->music_channel);
++		Audio_ChannelXA(stage.music_channel);
+ 		stage.flag |= STAGE_FLAG_VOCAL_ACTIVE;
+ 	}
+ }
+@@ -68,7 +69,7 @@ void Stage_CutVocal()
+ {
+ 	if (stage.flag & STAGE_FLAG_VOCAL_ACTIVE)
+ 	{
+-		Audio_ChannelXA(stage.stage_def->music_channel + 1);
++		Audio_ChannelXA(stage.music_channel + 1);
+ 		stage.flag &= ~STAGE_FLAG_VOCAL_ACTIVE;
+ 	}
+ }
+@@ -937,7 +938,8 @@ void Stage_LoadChart(void)
+ 	stage.cur_section = stage.sections;
+ 	stage.cur_note = stage.notes;
+ 	
+-	stage.speed = stage.stage_def->speed[(stage.stage_diff <= StageDiff_Hard) ? stage.stage_diff : StageDiff_Hard];
++	stage.speed = StageMusic_Speed(stage.stage_id, stage.stage_diff,
++		stage.stage_def->speed[(stage.stage_diff <= StageDiff_Hard) ? stage.stage_diff : StageDiff_Hard]);
+ 	
+ 	stage.step_crochet = 0;
+ 	stage.time_base = 0;
+@@ -949,8 +951,7 @@ void Stage_LoadChart(void)
+ void Stage_LoadMusic(void)
+ {
+ 	//Find music file and begin seeking to it
+-	Audio_GetXAFile(&stage.music_file, stage.stage_def->music_track);
+-	IO_SeekFile(&stage.music_file);
++	StageMusic_Load(&stage);
+ 	
+ 	//Initialize music state
+ 	stage.note_scroll = FIXED_DEC(-4 * 4 * 12,1);
+@@ -1188,7 +1189,7 @@ void Stage_Tick()
+ 				{
+ 					//Song has started
+ 					playing = true;
+-					Audio_PlayXA_File(&stage.music_file, 0x40, stage.stage_def->music_channel, 0);
++					Audio_PlayXA_File(&stage.music_file, 0x40, stage.music_channel, 0);
+ 					
+ 					//Wait until first sector has played
+ 					while (1)
+diff --git a/src/stage.h b/src/stage.h
+index db01058..0067e4d 100644
+--- a/src/stage.h
++++ b/src/stage.h
+@@ -221,6 +221,7 @@ typedef struct
+ 	
+ 	//Music file
+ 	CdlFILE music_file;
++	u8 music_channel;
+ 	
+ 	//Object lists
+ 	ObjectList objlist_fg, objlist_bg;
