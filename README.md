@@ -65,7 +65,7 @@ source; run them before compiling. No SDK or official asset files are bundled.
 
 ## Verification and remaining work
 
-28 host tests pass, including the menu state machine under address/undefined
+29 host tests pass, including the menu state machine under address/undefined
 behavior sanitizers. Eight patches and the overlay apply to the pinned base.
 The menu revision completed CI, including the MIPS link and a
 399,228,480-byte BIN (169,740 sectors). See the checkpoint document for exact

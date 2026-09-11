@@ -163,6 +163,8 @@ jobs:
           make -j2
           test -s funkin.ps-exe
           sha256sum funkin.ps-exe
+          mipsel-linux-gnu-nm -n funkin.elf > ../build/memory_symbols.txt
+          python3 ../scripts/validate_ps1_memory.py funkin.ps-exe ../build/memory_symbols.txt --report ../build/memory.json
 
       - name: Build single-CD MODE2 BIN CUE
         working-directory: upstream
@@ -183,7 +185,7 @@ jobs:
               INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/funkin.ps-exe
-          cp build/disc.json build/menu_art.json build/release/
+          cp build/disc.json build/menu_art.json build/memory.json build/release/
           cp build/v084_charts.json build/weekend1_charts.json build/weekend1_assets.json build/weekend1_audio.json build/weekend1_movies.json build/release/
           (cd build/release && sha256sum PSXFunkin_v084_Weekend1.bin PSXFunkin_v084_Weekend1.cue funkin.ps-exe *.json > SHA256SUMS.txt)
 

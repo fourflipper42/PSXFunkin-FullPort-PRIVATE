@@ -79,9 +79,9 @@ typedef struct {
 	RECT	rect[2];			// VRAM parameters on where to draw the frame data to
 	RECT	slice;				// Frame slice parameters for loading into VRAM
 	int		VlcID;				// Current VLC buffer ID
-	int		ImgID;				// Current slice buffer ID
-	int 	RectID;				// Current video buffer ID
-	int		FrameDone;			// Frame decode completion flag
+	volatile int ImgID;				// Current slice buffer ID
+	volatile int RectID;				// Current video buffer ID
+	volatile int FrameDone;			// Frame decode completion flag
 } STRENV;
 
 // A bunch of internal variables

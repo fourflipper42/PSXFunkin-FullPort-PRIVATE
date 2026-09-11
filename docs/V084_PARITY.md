@@ -91,7 +91,7 @@ returns, stage selection, freeing menu banks, options, credits bounds, text boun
 and rejecting a previously selected difficulty unsupported by the new song.
 These tests do not emulate GPU, SPU, CD timing or controller hardware.
 
-28 host tests pass. All eight source patches and the overlay apply to the clean
+29 host tests pass. All eight source patches and the overlay apply to the clean
 pinned upstream. The four new/replaced runtime modules compile with MIPS1 flags
 and PsyQ headers. `preview_menu_art.py` reproduces the generated palette layout;
 its image is a layout preview, not an emulator capture.
@@ -130,3 +130,9 @@ unavailable next frame, avoids a squared timeout loop, rejects invalid/changing
 frame dimensions, and clears its remembered dimensions between movies. Its
 actual playback loop passes host sanitizer tests for 1-7 frames, truncated input,
 skipping and malformed dimensions. These stubs do not simulate interrupt timing.
+
+The MDEC interrupt completion/buffer indices are volatile so optimized builds
+observe callback updates. The build also checks the executable's load range and
+linked BSS end against the retail 2 MiB RAM region and reserves 512 KiB below the
+initial stack pointer. This covers the current 388,096-byte movie local arrays
+with additional stack headroom. It does not measure dynamic heap peaks.
