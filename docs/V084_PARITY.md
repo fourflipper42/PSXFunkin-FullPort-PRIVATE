@@ -12,14 +12,14 @@ finished port, and no console test has been performed.
 - The repository's `assets-v084` ZIP release was downloaded and extracted.
   It omits some reference files, including Spaghetti audio. Missing runtime
   reference files were recovered from the exact assets commit for local inspection.
-  The CI input download still uses the three original ZIPs; it does not yet fetch
-  these additions or include the collab content in the game.
+  CI also fetches the pinned VCR font and credits JSON. It does not yet fetch
+  Spaghetti audio or include the collab content in the game.
 
 ## Confirmed coverage and gaps
 
 | Area | Current implementation | Required work |
 | --- | --- | --- |
-| Menus | Original PSXFunkin menus; a Week 8 label fix | Rebuild title, main, story, new freeplay, character select, options, pause, results and credits using 0.8.4 artwork/layout behavior reflowed for 4:3 |
+| Menus | Official animated title logo/GF and five main labels; 4:3 story/song/options lists; official intro messages and scrolling credits | Modern story character art, freeplay capsules/DJ/character select, full options, pause/results, title confirmation animation and menu sound effects remain unfinished |
 | Charts | 98 Tutorial/Weeks 1–7 and 14 Weekend 1 charts convert successfully | Add all playable character variants and Spaghetti; route scroll speeds, metadata, events and characters per variant |
 | Audio | Original upstream tracks plus a Weekend 1 encoder | Regenerate/remap base, Erect/Nightmare and character variants; retain separate vocal behavior; verify offsets and endings |
 | Cutscenes | Weekend 1 only, 15 fps conversion | Cover all gameplay cutscenes and censorship variants; preserve source timing/aspect without stretching 16:9 footage |
@@ -35,10 +35,11 @@ finished port, and no console test has been performed.
 scale (default 0.22). It refuses textures larger than 256x256 at that scale rather
 than shrinking them silently. It uses one 256-color palette per bank, retains
 repeated frames in the timeline, deduplicates identical pixel buffers, and RLE
-compresses the indexed data losslessly. The current game does **not** load this
-format yet. `overlay/src/framecodec.c` is a standalone, host-tested decoder,
-not a completed texture loader/animation runtime. Do not confuse generated banks
-with an integrated or performance-tested PS1 feature.
+compresses the indexed data losslessly. The menu runtime now loads this format through `overlay/src/framebank.c`.
+The bounded decoder uploads 8-bit textures through a shared 66,080-byte buffer;
+identical frame payloads reuse the current GPU upload while keeping their
+timeline entries. Character banks remain prototypes and are not enabled in
+gameplay. Runtime performance has not been measured on a console.
 
 Measurements from the exact reference atlases:
 
@@ -67,11 +68,39 @@ python3 scripts/ps1asset/build_full_atlas.py \
   build/pico-basic.fbk
 ```
 
-Validation: 23 host tests pass, including native C decoding, malformed-stream
-rejection, frame deduplication without timing loss, palette transparency, chart
-conversion and disc packaging checks. All seven restored source patches apply.
-Full official chart/Weekend 1 asset conversion passes. A portable MIPS compiler
-and PsyQ libraries were recovered locally, but the prebuilt psxavenc v0.3.1
-aborted even on a one-second silent WAV in this execution environment. No local
-full media build, linked game, disc image, emulator run or hardware validation
-is claimed. CI builds psxavenc from source and must be checked separately.
+## Menu runtime checkpoint
+
+All 105 source Sparrow frames are retained across the five main labels (12 each),
+logo (15) and title Girlfriend (30), with 24 fps source sequences. Artwork is
+resized proportionally and quantized to a shared 256-color bank palette; RLE is
+lossless after that conversion. The 320x240 background is a centered 4:3 crop.
+Nine banks total 340,944 bytes, excluding CD-sector allocation padding. Menu
+banks are loaded before music and freed before loading gameplay; page navigation
+performs no CD reads. Title/main texture-page reuse explicitly invalidates caches.
+
+Main entries are Story Mode, Freeplay, Merch, Options and Credits. Credits use
+the exact 0.8.4 credits JSON plus port attribution. The official backer-fetch
+function returns an empty list in this release, so no names are invented.
+Merch displays the official fallback shop address for another device. A stock
+PS1 cannot reproduce the desktop browser action. Options still expose the
+legacy port settings, not all official preferences, and do not persist to a card.
+
+The actual menu state machine is exercised with controller/CD stubs under host
+AddressSanitizer and UndefinedBehaviorSanitizer: wraparound, all five routes and
+returns, stage selection, freeing menu banks, options, credits bounds, text bounds,
+and rejecting a previously selected difficulty unsupported by the new song.
+These tests do not emulate GPU, SPU, CD timing or controller hardware.
+
+26 host tests pass. All eight source patches and the overlay apply to the clean
+pinned upstream. The four new/replaced runtime modules compile with MIPS1 flags
+and PsyQ headers. `preview_menu_art.py` reproduces the generated palette layout;
+its image is a layout preview, not an emulator capture.
+
+## Disc validation
+
+Baseline CI at `5cfb13bb3be3a6c53f83a739523745ea4af03e7b` completed the full media
+conversion, MIPS link and BIN/CUE build in run `34444744129`. Its disc contains
+169,561 raw sectors (398,807,472 bytes), below the 333,000-sector budget. This
+baseline predates the new menu runtime and does not contain complete 0.8.4 content.
+The new menu build must be checked independently. Neither build establishes
+emulator or real-console readiness.

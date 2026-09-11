@@ -50,6 +50,10 @@ jobs:
           unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
           unzip -qo official-assets/Sounds.and.Songs.zip -d official-v084
           unzip -qo official-assets/WEEKS.zip -d official-v084
+          mkdir -p official-v084/fonts official-v084/exclude/data
+          ASSET_REV=d1d027d4747aaba151c6df121ea736c31d6aed38
+          curl -fL --retry 3 "https://raw.githubusercontent.com/FunkinCrew/Funkin.assets/$ASSET_REV/fonts/vcr.ttf" -o official-v084/fonts/vcr.ttf
+          curl -fL --retry 3 "https://raw.githubusercontent.com/FunkinCrew/Funkin.assets/$ASSET_REV/exclude/data/credits.json" -o official-v084/exclude/data/credits.json
           test -d official-v084/data/songs
           test -d official-v084/shared/images/characters/pico
           test -s official-v084/songs/darnell/Inst.ogg
@@ -84,6 +88,16 @@ jobs:
           test "$(find upstream/iso/chart -name '8.*.cht' | wc -l)" -eq 14
           for f in upstream/iso/picoplay.arc upstream/iso/nene.arc upstream/iso/darnell.arc upstream/iso/picobl.arc upstream/iso/darnbl.arc upstream/iso/week8/back.arc upstream/iso/week8/blazin.arc; do test -s "$f"; done
           for f in upstream/src/character/picoplayer.c upstream/src/character/nene.c upstream/src/character/darnell.c upstream/src/character/picoblazin.c upstream/src/character/darnellblazin.c; do test -s "$f"; done
+
+      - name: Generate complete-frame 4:3 menu artwork
+        run: |
+          python3 scripts/build_menu_art.py \
+            --root official-v084 \
+            --upstream upstream \
+            --report build/menu_art.json
+          test -s upstream/src/menu_art_generated.h
+          test -s upstream/src/menu_intro_generated.h
+          test -s upstream/iso/menu/story.fbk
 
       - name: Build psxavenc
         run: |
@@ -164,7 +178,7 @@ jobs:
               INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/funkin.ps-exe
-          cp build/disc.json build/release/
+          cp build/disc.json build/menu_art.json build/release/
           cp build/v084_charts.json build/weekend1_charts.json build/weekend1_assets.json build/weekend1_audio.json build/weekend1_movies.json build/release/
           (cd build/release && sha256sum PSXFunkin_v084_Weekend1.bin PSXFunkin_v084_Weekend1.cue funkin.ps-exe *.json > SHA256SUMS.txt)
 

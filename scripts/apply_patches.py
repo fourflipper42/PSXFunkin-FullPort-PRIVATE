@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 import subprocess
+import shutil
 
 UPSTREAM_REV = '850e0207479d8fb658bdc7637f6bfbc28a2b4066'
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,12 @@ def apply(upstream):
     for patch in patches:
         git('apply', '--check', str(patch))
         git('apply', str(patch))
+    # Overlay files are maintained as ordinary C sources, not embedded diffs.
+    for source in sorted((ROOT / 'overlay').rglob('*')):
+        if source.is_file():
+            target = upstream / source.relative_to(ROOT / 'overlay')
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
     git('diff', '--check')
     print(f'Applied {len(patches)} patches to {UPSTREAM_REV}')
 

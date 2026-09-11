@@ -43,33 +43,34 @@ python3 scripts/apply_patches.py upstream
 
 The applicator expects a fresh clean checkout. If a patch fails, it leaves
 already applied patches in place for diagnosis; use a fresh checkout to retry.
-The canonical patches are applied in filename order. No overlay is required.
+The canonical patches are applied in filename order, then `overlay/` sources
+are copied into the prepared tree by the same applicator.
 
 ## Full build inputs
 
-The GitHub Actions workflow downloads these files from this repository's private
+The GitHub Actions workflow downloads these files from this repository's
 `assets-v084` release:
 
 - `Shared.Shaders.Scripts.Music.Images.and.Data.zip`
 - `Sounds.and.Songs.zip`
 - `WEEKS.zip`
 
-Extract all three into `official-v084/` as shown in the workflow. They were not
-included in the uploaded source ZIP and were unavailable during this repair.
+Extract all three into `official-v084/` as shown in the workflow. They are available from the release and were used for the baseline CI build.
+CI additionally downloads the VCR font and credits JSON at the pinned official
+assets revision.
 The workflow also obtains the MIPS compiler, PsyQ compatibility libraries,
 psxavenc, and mkpsxiso. See `.github/workflows/ps1-build.yml` for exact commands.
-Both audio and movie generators now write headers required by the patched C
+The audio, movie and menu generators write headers required by the patched C
 source; run them before compiling. No SDK or official asset files are bundled.
 
 ## Verification and remaining work
 
-Verified locally: all seven patches apply to the pinned upstream revision;
-`git diff --check` passes; all 18 Python regression tests pass; Python scripts
-compile; workflow YAML parses.
-
-Not verified: full official asset conversion, MIPS compilation/linking, final
-BIN/CUE size, emulator playback, or real-console behavior. No playable disc
-image is included. Passing the host checks does not establish hardware readiness.
+26 host tests pass, including the menu state machine under address/undefined
+behavior sanitizers. Eight patches and the overlay apply to the pinned base.
+The new menu modules compile for MIPS. The earlier baseline CI built a
+398,807,472-byte BIN (169,561 sectors). See the checkpoint document for exact
+commit coverage and unfinished features. No emulator or real-console verification
+is claimed.
 
 Known remaining work:
 

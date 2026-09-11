@@ -2,6 +2,7 @@ import ctypes
 from pathlib import Path
 import random
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -54,6 +55,35 @@ class FrameBanks(unittest.TestCase):
         self.assertEqual(report['unique_frames'],1)
         self.assertEqual(palette[frames[0][1]],0x8000)
         self.assertEqual(frames[0][0],0)
+
+    def test_native_bank_validates_directory_and_capacity(self):
+        cc=shutil.which('cc')
+        if not cc:self.skipTest('host C compiler unavailable')
+        class Info(ctypes.Structure):
+            _fields_=[(name,ctypes.c_uint) for name in ('width','height','frames','size')]
+        with tempfile.TemporaryDirectory() as td:
+            library=Path(td)/'codec.so'
+            subprocess.run([cc,'-shared','-fPIC','-Wall','-Wextra','-Werror',str(ROOT/'overlay/src/framecodec.c'),'-o',str(library)],check=True)
+            lib=ctypes.CDLL(str(library))
+            lib.FrameCodec_Open.argtypes=[ctypes.c_void_p,ctypes.c_uint,ctypes.POINTER(Info)]
+            lib.FrameCodec_Frame.argtypes=[ctypes.c_void_p,ctypes.c_uint,ctypes.c_uint,ctypes.c_void_p,ctypes.c_uint]
+            frames=[bytes(range(16)),bytes(16),bytes(range(16))]
+            data=pack_indices(4,4,[0]*256,frames)
+            info=Info()
+            self.assertEqual(lib.FrameCodec_Open(data,len(data),ctypes.byref(info)),1)
+            self.assertEqual((info.width,info.height,info.frames),(4,4,3))
+            dst=ctypes.create_string_buffer(18)
+            for i,expected in enumerate(frames):
+                dst.raw=b'Z'*18
+                self.assertEqual(lib.FrameCodec_Frame(data,len(data),i,dst,16),1)
+                self.assertEqual(dst.raw,expected+b'ZZ')
+            self.assertEqual(lib.FrameCodec_Frame(data,len(data),3,dst,16),0)
+            self.assertEqual(lib.FrameCodec_Frame(data,len(data),0,dst,15),0)
+            for size in (0,15,527,528,len(data)-1):
+                self.assertEqual(lib.FrameCodec_Open(data,size,ctypes.byref(info)),0)
+            for offset,fmt,value in [(0,'I',0),(4,'I',1),(8,'H',3),(10,'H',257),(12,'H',65535),(14,'H',16),(528,'I',0),(528,'I',0xffffffff),(532,'I',0xffffffff),(532,'I',0)]:
+                bad=bytearray(data);struct.pack_into('<'+fmt,bad,offset,value)
+                self.assertEqual(lib.FrameCodec_Open(bytes(bad),len(bad),ctypes.byref(info)),0)
 
     def test_reject_truncated_commands(self):
         for data in [b'\x80',b'\x01\x22',b'\xff\x00']:
