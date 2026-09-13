@@ -20,17 +20,18 @@ def make_mix(ffmpeg:Path, sdir:Path, voices:list[str], out:Path):
     n=1+len(voices); inputs=''.join(f'[{i}:a]' for i in range(n))
     cmd += ['-filter_complex',f'{inputs}amix=inputs={n}:duration=longest:normalize=0[a]','-map','[a]','-ar','18900','-ac','2',out]
     run(cmd)
-def enc(enc:Path, inp:Path, out:Path, chan:int): run([enc,'-q','-t','xa','-f','18900','-b','4','-c','2','-F','1','-C',str(chan),inp,out])
+def enc(enc:Path, inp:Path, out:Path, chan:int, rate:int=18900): run([enc,'-q','-t','xa','-f',str(rate),'-b','4','-c','2','-F','1','-C',str(chan),inp,out])
 def sectors(path:Path):
     b=path.read_bytes()
     if len(b)%SECTOR: raise ValueError(f'{path} not 2336-sector aligned')
     return [b[i:i+SECTOR] for i in range(0,len(b),SECTOR)]
 def interleave(out:Path, paths:list[Path], silence:list[bytes]):
+    if len(paths) not in (4,8) or len(silence)!=len(paths): raise ValueError('Expected four or eight XA channels')
     streams=[sectors(p) for p in paths]; count=max(map(len,streams)); data=bytearray()
     for i in range(count):
         for ch,st in enumerate(streams): data += st[i] if i<len(st) else silence[ch]
     out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(data)
-    return count*8
+    return count*len(paths)
 
 def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--root',type=Path,required=True); ap.add_argument('--out',type=Path,required=True); ap.add_argument('--psxavenc',type=Path,required=True); ap.add_argument('--ffmpeg',type=Path,default=Path('ffmpeg')); ap.add_argument('--report',type=Path,required=True); ap.add_argument('--header',type=Path,required=True); a=ap.parse_args()

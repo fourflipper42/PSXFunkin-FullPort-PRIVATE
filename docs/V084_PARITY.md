@@ -160,3 +160,18 @@ all five files passes software XA decoding through EOF. The generator validates
 sector subheaders, channel order, coding mode and complete encoded sample counts.
 This verifies conversion and routing, not physical CD latency or SPU playback.
 The full disc build is pending for this revision.
+
+## Default-song audio rebuild
+
+`build_base_audio.py` replaces the 26 default song recordings with mixes selected
+from the official metadata. Weeks 1–7 retain 37.8 kHz stereo four-channel XA;
+Weekend 1 retains 18.9 kHz stereo eight-channel XA. Instrumental-only Blazin
+produces identical full/muted channels. The hidden legacy Test song is preserved
+in its original WEEK4B channels.
+
+Generated routes supply Easy/Normal/Hard scroll speeds and encoded song lengths.
+Opponent notes no longer restore a missed player vocal in separate-stem mixes.
+37 host tests pass, including the real C route loader and a 37.8 kHz conversion
+check. The stage patches apply to the pinned upstream source. Full conversion,
+MIPS link and disc checks are pending for this new batch; no hardware validation
+has been performed.

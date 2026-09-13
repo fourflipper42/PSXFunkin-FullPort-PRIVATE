@@ -119,15 +119,14 @@ jobs:
             --psxavenc psxavenc/build/psxavenc \
             --report build/remix_audio.json
 
-      - name: Encode Weekend 1 XA and STR media
+      - name: Encode official default-song XA and Weekend 1 STR media
         run: |
           mkdir -p upstream/iso/music upstream/iso/movie
-          python3 scripts/build_weekend1_audio.py \
+          python3 scripts/build_base_audio.py \
             --root official-v084 \
-            --out upstream/iso/music \
+            --upstream upstream \
             --psxavenc psxavenc/build/psxavenc \
-            --report build/weekend1_audio.json \
-            --header upstream/src/weekend1_audio_generated.h
+            --report build/base_audio.json
           python3 scripts/build_weekend1_movies.py \
             --root official-v084 \
             --out upstream/iso/movie \
@@ -194,7 +193,7 @@ jobs:
           EOF
           cp upstream/funkin.ps-exe build/release/funkin.ps-exe
           cp build/disc.json build/menu_art.json build/memory.json build/remix_audio.json build/release/
-          cp build/v084_charts.json build/weekend1_charts.json build/weekend1_assets.json build/weekend1_audio.json build/weekend1_movies.json build/release/
+          cp build/v084_charts.json build/weekend1_charts.json build/weekend1_assets.json build/base_audio.json build/weekend1_movies.json build/release/
           (cd build/release && sha256sum PSXFunkin_v084_Weekend1.bin PSXFunkin_v084_Weekend1.cue funkin.ps-exe *.json > SHA256SUMS.txt)
 
       - name: Upload Weekend 1 BIN CUE

@@ -1,0 +1,23 @@
+diff --git a/src/stage.h b/src/stage.h
+--- a/src/stage.h
++++ b/src/stage.h
+@@ -222,6 +222,7 @@
+ 	//Music file
+ 	CdlFILE music_file;
+ 	u8 music_channel;
++	boolean music_separate_vocals;
+ 	
+ 	//Object lists
+ 	ObjectList objlist_fg, objlist_bg;
+diff --git a/src/stage.c b/src/stage.c
+--- a/src/stage.c
++++ b/src/stage.c
+@@ -1386,5 +1386,7 @@
+ 					//Opponent hits note
+-					Stage_StartVocal();
++					//Only shared legacy vocals need restoring on opponent hits.
++					if (!stage.music_separate_vocals)
++						Stage_StartVocal();
+ 					if (!Stage_ApplyModernOpponentKind(note))
+ 						stage.opponent->set_anim(stage.opponent, note_anims[note->type & 0x3][(note->type & NOTE_FLAG_ALT_ANIM) != 0]);
+ 					note->type |= NOTE_FLAG_HIT;
