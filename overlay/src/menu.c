@@ -1,6 +1,7 @@
 #include "menu.h"
 #include "menu_art.h"
 #include "menu_sound.h"
+#include "freeplay_art.h"
 #include "main.h"
 #include "timer.h"
 #include "io.h"
@@ -76,6 +77,8 @@ static struct {
     boolean confirming;
     fixed_t confirm_elapsed;
     fixed_t title_elapsed, camera_y;
+    boolean freeplay_art;
+    fixed_t freeplay_scroll;
     Gfx_Tex tex_ng;
 } menu;
 
@@ -127,10 +130,12 @@ static void Play(StageId id, boolean story)
 static void Footer(void) { MenuArt_Text("X / START: PLAY    O: BACK", 160, 216, 1, 1); }
 void Menu_Load(MenuPage page)
 {
+    Audio_StopXA();
     IO_Data arc = IO_Read("\\MENU\\MENU.ARC;1");
     Gfx_LoadTex(&menu.tex_ng, Archive_Find(arc, "ng.tim"), 0);
     Mem_Free(arc);
-    MenuArt_Load();
+    menu.freeplay_art = page == MenuPage_Freeplay;
+    if (menu.freeplay_art) FreeplayArt_Load(); else MenuArt_Load();
     MenuSound_Load();
     menu.select = menu.next_select = 0;
     menu.page = menu.next_page = page;
@@ -144,7 +149,12 @@ void Menu_Load(MenuPage page)
     Audio_WaitPlayXA();
     Gfx_SetClear(0, 0, 0);
 }
-void Menu_Unload(void) { MenuArt_Free(); MenuSound_Free(); }
+void Menu_Unload(void)
+{
+    if (menu.freeplay_art) FreeplayArt_Free();
+    else MenuArt_Free();
+    MenuSound_Free();
+}
 void Menu_Tick(void)
 {
     unsigned int song_ms = Audio_TellXA_Milli();
@@ -156,11 +166,22 @@ void Menu_Tick(void)
         menu.page_swap = true;
     }
     if (menu.page_swap) {
-        MenuArt_Enter();
+        if (menu.page != MenuPage_Stage && (menu.page == MenuPage_Freeplay) != menu.freeplay_art) {
+            /* A page change owns the CD while loading; never seek underneath
+             * XA playback. Selection within Freeplay uses resident assets. */
+            Audio_StopXA();
+            if (menu.freeplay_art) FreeplayArt_Free(); else MenuArt_Free();
+            menu.freeplay_art = menu.page == MenuPage_Freeplay;
+            if (menu.freeplay_art) FreeplayArt_Load(); else MenuArt_Load();
+            Audio_PlayXA_Track(XA_GettinFreaky, 0x40, 0, 1);
+            Audio_WaitPlayXA();
+        }
+        if (!menu.freeplay_art) MenuArt_Enter();
         menu.confirming = false;
         menu.confirm_elapsed = 0;
         menu.title_elapsed = 0;
         menu.camera_y = 0;
+        menu.freeplay_scroll = menu.select * FIXED_UNIT;
         menu.credits_scroll = 0;
         if (menu.page == MenuPage_Story || menu.page == MenuPage_Freeplay)
             menu.difficulty = StageDiff_Normal;
@@ -294,23 +315,28 @@ void Menu_Tick(void)
         }
         case MenuPage_Freeplay:
         {
-            if (InputReady()) {
+            menu.title_elapsed += timer_dt;
+            if (menu.title_elapsed >= FIXED_DEC(3600,1)) menu.title_elapsed = FIXED_DEC(1,1);
+            if (InputReady() && menu.title_elapsed >= FIXED_DEC(17,24)) {
+                int previous = menu.select;
                 Select(COUNT_OF(songs));
+                /* A wrap crosses the ends, not the whole 26-song column. */
+                if (previous - menu.select > 1 || menu.select - previous > 1)
+                    menu.freeplay_scroll = menu.select * FIXED_UNIT;
                 Difficulty(songs[menu.select].stage, true);
                 if (pad_state.press & PAD_CIRCLE) Go(MenuPage_Main, 1);
-                else if (pad_state.press & (PAD_CROSS | PAD_START)) Play(songs[menu.select].stage, false);
+                else if (pad_state.press & (PAD_CROSS | PAD_START)) Confirm();
+            } else if (menu.confirming && menu.next_page == menu.page) {
+                menu.confirm_elapsed += timer_dt;
+                if (menu.confirm_elapsed >= FIXED_DEC(28,24)) Play(songs[menu.select].stage, false);
             }
-            MenuArt_Text("FREEPLAY", 160, 16, 1, 1);
-            for (int offset = -3; offset <= 3; offset++) {
-                int i = (int)menu.select + offset;
-                if (i < 0 || i >= COUNT_OF(songs)) continue;
-                MenuArt_Text(songs[i].text, 160, 110 + offset * 22, 1, !offset);
-                if (!offset) {
-                    RECT bar = {12, 108, 296, 16};
-                    Gfx_DrawRect(&bar, 69, 30, 96);
-                }
-            }
-            DrawDifficulty(); Footer(); MenuArt_Back();
+            fixed_t step = timer_dt * 12;
+            if (step > FIXED_UNIT) step = FIXED_UNIT;
+            menu.freeplay_scroll += ((menu.select * FIXED_UNIT - menu.freeplay_scroll) * step) >> FIXED_SHIFT;
+            FreeplayArt_UI(menu.difficulty, menu.title_elapsed);
+            for (int i = 0; i < COUNT_OF(songs); i++)
+                FreeplayArt_Song(songs[i].text, i, i == menu.select, i * FIXED_UNIT - menu.freeplay_scroll, menu.title_elapsed, menu.confirming ? menu.confirm_elapsed : -1);
+            FreeplayArt_Back(menu.difficulty, menu.title_elapsed, menu.confirming, menu.confirm_elapsed);
             break;
         }
         case MenuPage_Options:

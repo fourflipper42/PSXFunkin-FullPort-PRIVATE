@@ -42,11 +42,18 @@ int sound_counts[3];
 void MenuSound_Load(void) {} void MenuSound_Free(void) {}
 void MenuSound_Play(int sound) {assert(sound>=0 && sound<3);sound_counts[sound]++;}
 StageId played_id; StageDiff played_diff; boolean played_story;
-void MenuArt_Load(void) {} void MenuArt_Free(void) {freed++;}
-void MenuArt_Enter(void) {} void MenuArt_Tick(int s) {}
+int art_owner,xa_active,freeplay_loads;
+void MenuArt_Load(void) {assert(art_owner==0 && !xa_active);art_owner=1;}
+void MenuArt_Free(void) {assert(art_owner==1);art_owner=0;freed++;}
+void MenuArt_Enter(void) {assert(art_owner==1);} void MenuArt_Tick(int s) {}
 void MenuArt_Label(int i,int s,int x,int y) {assert(i>=0 && i<5);}
 void MenuArt_Title(unsigned int t) {} void MenuArt_Back(void) {}
 void MenuArt_Prompt(int c,fixed_t t) {} void MenuArt_MainBack(int y,int m) {}
+void FreeplayArt_Load(void) {assert(!xa_active && art_owner==0);art_owner=2;freeplay_loads++;}
+void FreeplayArt_Free(void) {assert(art_owner==2);art_owner=0;}
+void FreeplayArt_Song(const char*n,int i,int s,fixed_t o,fixed_t t,fixed_t c) {assert(art_owner==2);}
+void FreeplayArt_Back(int d,fixed_t t,int c,fixed_t e) {assert(art_owner==2 && d>=0 && d<5);}
+void FreeplayArt_UI(int d,fixed_t t) {assert(art_owner==2 && d>=0 && d<5);}
 void MenuArt_Text(const char *s,int x,int y,int c,int b) {
  if (!s) return;
  int left=c ? x-(int)strlen(s)*4:x;
@@ -60,7 +67,8 @@ IO_Data Archive_Find(IO_Data a,const char *n) {return NULL;}
 void Mem_Free(IO_Data a) {} void Gfx_LoadTex(Gfx_Tex*t,IO_Data a,int f) {}
 void Gfx_SetClear(int r,int g,int b) {} void Gfx_BlitTex(Gfx_Tex*t,RECT*r,int x,int y) {}
 void Gfx_DrawRect(RECT*r,int x,int y,int z) {}
-void Audio_PlayXA_Track(int a,int b,int c,int d) {} void Audio_WaitPlayXA(void) {}
+void Audio_PlayXA_Track(int a,int b,int c,int d) {xa_active=1;} void Audio_WaitPlayXA(void) {}
+void Audio_StopXA(void) {xa_active=0;}
 unsigned int Audio_TellXA_Milli(void) {return 10000;}
 void Trans_Start(void) {pending=1;} void Trans_Clear(void) {pending=0;}
 boolean Trans_Idle(void) {return !pending;}
@@ -72,8 +80,8 @@ void LoadScr_Start(void) {} void LoadScr_End(void) {}
 '''.replace('STAGES',','.join(stages))
   harness=r'''
 #include "menu.c"
-static void tick(unsigned int press,unsigned int held) {pad_state.press=press;pad_state.held=held;Menu_Tick();}
-static void reset(MenuPage p) {memset(&menu,0,sizeof(menu));menu.page=menu.next_page=p;menu.page_swap=true;pending=0;tick(0,0);}
+static void tick(unsigned int press,unsigned int held) {pad_state.press=press;pad_state.held=held;if(gameloop!=GameLoop_Stage)Menu_Tick();}
+static void reset(MenuPage p) {memset(&menu,0,sizeof(menu));menu.page=menu.next_page=p;menu.page_swap=true;pending=0;gameloop=0;art_owner=1;xa_active=1;tick(0,0);}
 int main(void) {
  reset(MenuPage_Title);tick(PAD_START,0);
  assert(sound_counts[MenuSound_Confirm]==1);
@@ -92,13 +100,22 @@ int main(void) {
   assert(menu.page==MenuPage_Main && menu.select==i);
   for(int j=0;j<40;j++)tick(0,0);
   assert(menu.page==pages[i]);
+  if(menu.page==MenuPage_Freeplay)for(int j=0;j<60;j++)tick(0,0);
   tick(PAD_CIRCLE,0);tick(0,0);assert(menu.page==MenuPage_Main && menu.select==i);
  }
  reset(MenuPage_Story);tick(PAD_UP,0);assert(menu.select==8);tick(PAD_START,0);tick(0,0);
- assert(played==1 && freed==1 && played_id==StageId_8_1 && played_story);
+ assert(played==1 && freed>=1 && played_id==StageId_8_1 && played_story);
  reset(MenuPage_Freeplay);menu.select=1;menu.difficulty=StageDiff_Nightmare;
- tick(PAD_UP|PAD_START,0);tick(0,0);
- assert(played==2 && freed==2 && played_id==StageId_1_4 && played_diff==StageDiff_Normal && !played_story);
+ for(int j=0;j<60;j++)tick(0,0);
+ tick(PAD_UP|PAD_START,0);
+ for(int j=0;j<45;j++)tick(PAD_DOWN|PAD_START,0);
+ assert(played==1 && menu.select==0);
+ for(int j=0;j<40;j++)tick(0,0);
+ assert(played==2 && played_id==StageId_1_4 && played_diff==StageDiff_Normal && !played_story);
+ reset(MenuPage_Freeplay);int loaded=freeplay_loads;
+ for(int j=0;j<60;j++)tick(0,0);
+ for(int j=0;j<100;j++)tick(PAD_DOWN|PAD_RIGHT,0);
+ assert(freeplay_loads==loaded && art_owner==2);
  reset(MenuPage_Options);boolean before=stage.expsync;tick(PAD_RIGHT,0);assert(stage.expsync!=before);
  reset(MenuPage_Credits);for(int i=0;i<400;i++)tick(PAD_RIGHT,0);
  assert(menu.credits_scroll==FIXED_DEC((262-13)*12,1));
