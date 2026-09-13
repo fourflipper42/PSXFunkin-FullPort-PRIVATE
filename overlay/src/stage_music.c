@@ -37,6 +37,9 @@ void StageMusic_Load(Stage *state)
     const StageMusicDef *music = StageMusic_Find(state->stage_id, state->stage_diff);
     state->music_channel = state->stage_def->music_channel;
     state->music_separate_vocals = (music != NULL);
+    /* Playback starts on the full mix, including before the first successful
+       player note. A first-note miss must be able to switch to the muted mix. */
+    state->flag |= STAGE_FLAG_VOCAL_ACTIVE;
     if (music)
     {
         IO_FindFile(&state->music_file, music->path);

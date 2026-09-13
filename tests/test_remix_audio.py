@@ -119,7 +119,8 @@ typedef enum {StageId_1_1, StageId_8_1, StageId_8_2, StageId_1_4} StageId;
 typedef enum {StageDiff_Easy, StageDiff_Normal, StageDiff_Hard, StageDiff_Erect, StageDiff_Nightmare} StageDiff;
 typedef struct {u32 size; int pos;} CdlFILE;
 typedef struct {int music_track; u8 music_channel;} StageDef;
-typedef struct {StageId stage_id; StageDiff stage_diff; const StageDef *stage_def; CdlFILE music_file; u8 music_channel; int music_separate_vocals;} Stage;
+typedef struct {StageId stage_id; StageDiff stage_diff; const StageDef *stage_def; CdlFILE music_file; u8 music_channel; int music_separate_vocals; u8 flag;} Stage;
+#define STAGE_FLAG_VOCAL_ACTIVE 1
 #define IO_SECT_SIZE 2048
 void IO_FindFile(CdlFILE *, const char *);
 void IO_SeekFile(CdlFILE *);
@@ -147,8 +148,9 @@ void Audio_GetXAFile(CdlFILE *file,int track) {
     base_calls++;assert(track==7);file->size=2048*20;file->pos=333;
 }
 int main(void) {
-    StageDef def={7,6};Stage state={StageId_1_1,StageDiff_Erect,&def,{0,0},0,0};
+    StageDef def={7,6};Stage state={StageId_1_1,StageDiff_Erect,&def,{0,0},0,0,0};
     StageMusic_Load(&state);
+    assert(state.flag & STAGE_FLAG_VOCAL_ACTIVE);
     assert(state.music_separate_vocals && state.music_channel==4 && state.music_file.size==800*2048 && state.music_file.pos==555);
     StageMusic_Load(&state);assert(remix_calls==2 && base_calls==0 && seeks==2);
     assert(StageMusic_Speed(StageId_1_1,StageDiff_Erect,100)==2252);
