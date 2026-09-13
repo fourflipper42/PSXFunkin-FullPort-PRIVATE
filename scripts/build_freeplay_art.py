@@ -31,7 +31,7 @@ def build(root,upstream,report_path):
     bank('dj',frames,groups)
     for name,indices in groups.items():
         arrays.append('static const u16 freeplay_dj_'+name.lower()+'[] = {'+','.join(map(str,indices))+'};')
-    frames,groups=sparrow(root/'images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png',.3)
+    frames,groups=sparrow(root/'images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png',.23)
     bank('selected',[frames[i] for i in groups['mp3 capsule w backing']])
     bank('capsule',[frames[i] for i in groups['mp3 capsule w backing NOT SELECTED']])
     # Idle backing card's original tint and orange band, with an angled right
@@ -46,6 +46,7 @@ def build(root,upstream,report_path):
     panel=Image.new('RGBA',bg.size);panel.alpha_composite(right,(90,0))
     mask=Image.new('L',bg.size);ImageDraw.Draw(mask).polygon([(146,0),(320,0),(320,240),(102,240)],fill=255)
     bg=Image.composite(panel,bg,mask)
+    ImageDraw.Draw(bg).rectangle((0,0,319,25),fill=(0,0,0,255))
     for i,(data,record) in enumerate(tile_banks([bg],160,240)):
         name=f'back{i}';(out/f'{name}.fbk').write_bytes(data);files.append(f'{name}.fbk')
         records.append(dict(record,name=name))
@@ -63,7 +64,7 @@ def build(root,upstream,report_path):
             indices.append(len(diffs));diffs.append(canvas)
         arrays.append('static const u16 freeplay_diff_'+name+'[] = {'+','.join(map(str,indices))+'};')
     bank('diff',diffs)
-    icon_names=('bf','dad','spooky','monster','pico','mom','parents-christmas','senpai','spirit','tankman','darnell')
+    icon_names=('bf','dad','spooky','monster','pico','mom','parents-christmas','senpai','spirit','tankman','darnell','gf')
     icon_frames=[];icon_groups=[]
     for name in icon_names:
         images,groups=sparrow(root/f'images/freeplay/icons/{name}pixel.png',.5)

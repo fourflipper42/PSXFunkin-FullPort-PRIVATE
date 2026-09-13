@@ -105,17 +105,21 @@ int main(void) {
  }
  reset(MenuPage_Story);tick(PAD_UP,0);assert(menu.select==8);tick(PAD_START,0);tick(0,0);
  assert(played==1 && freed>=1 && played_id==StageId_8_1 && played_story);
- reset(MenuPage_Freeplay);menu.select=1;menu.difficulty=StageDiff_Nightmare;
+ reset(MenuPage_Freeplay);menu.select=2;menu.difficulty=StageDiff_Nightmare;
  for(int j=0;j<60;j++)tick(0,0);
  tick(PAD_UP|PAD_START,0);
  for(int j=0;j<45;j++)tick(PAD_DOWN|PAD_START,0);
- assert(played==1 && menu.select==0);
+ assert(played==1 && menu.select==1);
  for(int j=0;j<40;j++)tick(0,0);
  assert(played==2 && played_id==StageId_1_4 && played_diff==StageDiff_Normal && !played_story);
  reset(MenuPage_Freeplay);int loaded=freeplay_loads;
  for(int j=0;j<60;j++)tick(0,0);
  for(int j=0;j<100;j++)tick(PAD_DOWN|PAD_RIGHT,0);
  assert(freeplay_loads==loaded && art_owner==2);
+ reset(MenuPage_Freeplay);menu.difficulty=StageDiff_Nightmare;
+ for(int j=0;j<60;j++)tick(0,0);
+ tick(PAD_START,0);for(int j=0;j<85;j++)tick(0,0);
+ assert(played==3 && played_id==StageId_1_1 && played_diff==StageDiff_Nightmare);
  reset(MenuPage_Options);boolean before=stage.expsync;tick(PAD_RIGHT,0);assert(stage.expsync!=before);
  reset(MenuPage_Credits);for(int i=0;i<400;i++)tick(PAD_RIGHT,0);
  assert(menu.credits_scroll==FIXED_DEC((262-13)*12,1));

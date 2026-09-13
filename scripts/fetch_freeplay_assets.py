@@ -15,7 +15,7 @@ def fetch(root):
         images += [f'freeplay/{name}/{part}' for part in ('Animation.json','spritemap1.json','spritemap1.png')]
     for name in ('freeplayCapsule/capsule/freeplayCapsule','freeplaySelector/freeplaySelector'):
         images += [f'freeplay/{name}.{ext}' for ext in ('png','xml')]
-    for name in ('bf','dad','spooky','monster','pico','mom','parents-christmas','senpai','spirit','tankman','darnell'):
+    for name in ('bf','dad','spooky','monster','pico','mom','parents-christmas','senpai','spirit','tankman','darnell','gf'):
         images += [f'freeplay/icons/{name}pixel.{ext}' for ext in ('png','xml')]
     paths += ['preload/images/'+p for p in images]
     def download(source):

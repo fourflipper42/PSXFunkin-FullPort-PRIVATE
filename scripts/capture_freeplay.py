@@ -50,13 +50,13 @@ class Capture:
         (p/'stubs.h').write_text('#define ASSET_ROOT '+json.dumps(str((upstream/'iso/freeplay').resolve()))+'\n'+STUB)
         for name in ('fixed.h','framebank.h'):(p/name).write_text('#include "stubs.h"\n')
         source=re.sub(r'//[^\n]*','',(repo/'overlay/src/menu.c').read_text())
-        names=re.findall(r'\{StageId_\d_\d,\s*"([^"]+)"\}',source)
+        names=['Random']+re.findall(r'\{StageId_\d_\d,\s*"([^"]+)"\}',source)
         (p/'capture.c').write_text('#include "freeplay_art.c"\nstatic const char *names[]={'+','.join(json.dumps(s) for s in names)+r'''};
 int main(int argc,char **argv) {
  assert(argc==4);int selection=atoi(argv[1]);fixed_t time=atoi(argv[2]);fixed_t confirm=atoi(argv[3]);
  FreeplayArt_Load();
  FreeplayArt_UI(1,time);
- for(int i=0;i<COUNT_OF(names);i++)FreeplayArt_Song(names[i],i,i==selection,(i-selection)*1024,time,confirm);
+ for(int i=0;i<COUNT_OF(names);i++)FreeplayArt_Song(names[i],i-1,i==selection,(i-selection)*1024,time,confirm);
  FreeplayArt_Back(1,time,confirm>=0,confirm);FreeplayArt_Free();return 0;
 }
 ''')

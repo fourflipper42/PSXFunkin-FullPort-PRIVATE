@@ -24,41 +24,55 @@ void FreeplayArt_Free(void)
     FrameBank_Free(&dj); FrameBank_Free(&selected); FrameBank_Free(&capsule);
     FrameBank_Free(&backgrounds[0]); FrameBank_Free(&backgrounds[1]); FrameBank_Free(&difficulty);
 }
-static void Text(const char *name, int x, int y, int bright)
+static void TextClip(const char *name, int x, int y, int bright, int left, int right)
 {
     int color = bright ? 128 : 80;
     if (y < 8 || y + 14 > 232) return;
     for (; *name; name++, x += 6) {
         unsigned int c = (unsigned char)*name;
         RECT source;
-        if (x < 8 || x + 8 > 312 || c == ' ') continue;
+        if (x + 8 <= left || x >= right || c == ' ') continue;
         if (c < 32 || c > 127) c = '?';
         c -= 32;
         source.x = (c & 15) * 8; source.y = (c >> 4) * 14;
         source.w = 8; source.h = 14;
-        Gfx_BlitTexCol(&font, &source, x, y, color, color, color);
-        if (bright) Gfx_BlitTexCol(&font, &source, x + 1, y, 0, 70, 100);
+        int dx = x;
+        if (dx < left) {source.x += left-dx;source.w -= left-dx;dx=left;}
+        if (dx + source.w > right) source.w=right-dx;
+        Gfx_BlitTexCol(&font, &source, dx, y, color, color, color);
+        if (bright && dx + source.w < right) Gfx_BlitTexCol(&font, &source, dx + 1, y, 0, 70, 100);
     }
 }
+static void Text(const char *name, int x, int y, int bright) {TextClip(name,x,y,bright,8,312);}
 void FreeplayArt_Song(const char *name, int song, int is_selected, fixed_t offset, fixed_t elapsed, fixed_t confirm_elapsed)
 {
-    static const u8 song_icons[] = {0,1,1,1,2,2,3,4,4,4,5,5,5,6,6,3,7,7,8,9,9,9,10,10,10,10};
+    static const u8 song_icons[] = {11,1,1,1,2,2,3,4,4,4,5,5,5,6,6,3,7,7,8,9,9,9,10,10,10,10};
     /* Curved capsule column. Continuous positions allow a smooth selection
      * change without a frame bank, allocation or CD access per song. */
-    int y = 68 + (offset * 44 >> FIXED_SHIFT);
-    static const s8 curve[] = {-2,-14,-13,0,13,14,2,-11};
+    int y = 138 + (offset * 38 >> FIXED_SHIFT);
+    static const s8 curve[] = {-2,-8,-7,0,7,8,1,-6};
     int row = offset >> FIXED_SHIFT;
     int x;
     FrameBank *bank = is_selected ? &selected : &capsule;
-    if (y > 232 || y + 40 < 8) return;
-    x = 112 + curve[row + 3] + ((curve[row + 4] - curve[row + 3]) * (offset & 1023) >> FIXED_SHIFT);
-    unsigned int icon = song_icons[song];
-    unsigned int pose = freeplay_icon_idle[icon];
-    if (is_selected && confirm_elapsed >= 0)
-        pose = freeplay_icon_confirm[icon][((confirm_elapsed * 24) >> FIXED_SHIFT) % freeplay_icon_counts[icon]];
-    RECT source = {(pose % 48 % 6) * 40, (pose % 48 / 6) * 32, 40, 32};
-    Gfx_BlitTex(&icons[pose / 48], &source, x + 4, y + 3);
-    Text(name, x + 45, y + 10, is_selected);
+    if (y > 232 || y + 31 < 62) return;
+    x = 92 + curve[row + 3] + ((curve[row + 4] - curve[row + 3]) * (offset & 1023) >> FIXED_SHIFT);
+    if (song >= 0) {
+        unsigned int icon = song_icons[song];
+        unsigned int pose = freeplay_icon_idle[icon];
+        if (is_selected && confirm_elapsed >= 0)
+            pose = freeplay_icon_confirm[icon][((confirm_elapsed * 24) >> FIXED_SHIFT) % freeplay_icon_counts[icon]];
+        RECT source = {(pose % 48 % 6) * 40, (pose % 48 / 6) * 32, 40, 32};
+        Gfx_BlitTex(&icons[pose / 48], &source, x - 8, y - 1);
+    }
+    int scroll = 0;
+    int excess = (int)strlen(name) * 6 - 77;
+    if (is_selected && excess > 0) {
+        int distance = (elapsed * 18 >> FIXED_SHIFT) % (excess * 2 + 72);
+        if (distance > 36 && distance < excess + 36) scroll = distance - 36;
+        else if (distance >= excess + 36 && distance < excess + 72) scroll = excess;
+        else if (distance >= excess + 72) scroll = excess * 2 + 72 - distance;
+    }
+    TextClip(name, x + 34 - scroll, y + 5, is_selected, x + 34, x + 111);
     FrameBank_Draw(bank, ((elapsed * 24) >> FIXED_SHIFT) % bank->info.frames, x, y);
 }
 void FreeplayArt_UI(int diff, fixed_t elapsed)
@@ -69,7 +83,8 @@ void FreeplayArt_UI(int diff, fixed_t elapsed)
         COUNT_OF(freeplay_diff_hard), COUNT_OF(freeplay_diff_erect), COUNT_OF(freeplay_diff_nightmare)};
     unsigned int frame = (elapsed * 24) >> FIXED_SHIFT;
     Text("<", 8, 37, 1); Text(">", 108, 37, 1);
-    Text("FREEPLAY", 12, 12, 1);
+    Text("FREEPLAY", 8, 8, 1);
+    Text("OFFICIAL OST", 238, 8, 1);
     Text("X: PLAY  O: BACK", 210, 216, 1);
     FrameBank_Draw(&difficulty, diffs[diff][frame % counts[diff]], 16, 30);
 }
@@ -83,7 +98,7 @@ void FreeplayArt_Back(int diff, fixed_t elapsed, int confirming, fixed_t confirm
         pose = freeplay_dj_confirm[f];
     } else if (frame < COUNT_OF(freeplay_dj_intro)) pose = freeplay_dj_intro[frame];
     else pose = freeplay_dj_idle[(frame - COUNT_OF(freeplay_dj_intro)) % COUNT_OF(freeplay_dj_idle)];
-    FrameBank_Draw(&dj, pose, 0, 0);
+    FrameBank_Draw(&dj, pose, 0, 35);
     FrameBank_Draw(&backgrounds[0], 0, 0, 0);
     FrameBank_Draw(&backgrounds[1], 0, 160, 0);
 }

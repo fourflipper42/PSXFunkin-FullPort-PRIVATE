@@ -10,23 +10,29 @@ pixel icons and 5by7 font. It is not complete Freeplay parity.
 Implemented:
 
 - Uniformly scaled artwork composed for 320x240; no full-screen stretching.
+  BF and his turntable are placed 35 pixels lower following user review.
+  The supplied reference now guides the whole composition: 142px capsules form
+  a narrower central column, Tutorial sits beside BF's head, and the lower songs
+  sit alongside the turntable. The right side is reserved for album/score UI.
 - All 59 DJ frames across Intro (17), Idle (14) and Confirm (28), at 24 fps.
 - All selected/unselected capsule frames and difficulty-art frames.
-- All 68 icon idle/confirm frames in two static GPU atlases. Each song uses its
+- All 74 icon idle/confirm frames in two static GPU atlases. Each song uses its
   character icon. The font uses monochrome rasterization to preserve thin strokes
   through PS1's binary transparency.
 - Interpolated curved song positions and confirmation input lock. The selected
   supported chart launches after the DJ confirm sequence.
+- Random is the first entry and selects uniformly among charts supporting the
+  chosen difficulty. Long titles scroll within the capsule's text window.
 - Exclusive menu page ownership: stop XA, free old art, load the new page, then
   restart menu music. No disc reads, bank reloads or per-song allocation during
   scrolling or difficulty changes. Freeplay banks free before gameplay.
-- Source-art assets total 587,951 bytes including transient TIM uploads, under
+- Source-art assets total 570,149 bytes including transient TIM uploads, under
   the 850,000-byte page budget. The resident frame banks are smaller. The port
   retains a 1 MB heap; hardware peak usage still needs measurement.
 
 Remaining:
 
-- Song preview audio, Random, filters, favourites and sorting.
+- Song preview audio, filters, favourites and sorting.
 - Album display, real score/rank/completion widgets and capsule metadata.
 - Character selection and Pico's matching presentation/playable variants.
 - DJ AFK, TV, result reactions and unlock transitions. These source animations
@@ -49,4 +55,15 @@ positions/frame choices, not PS1 GPU behavior or performance.
 CI runs `fetch_freeplay_assets.py`, `build_freeplay_art.py` and
 `preview_freeplay.py`, checks the page budget, compiles the MIPS executable, checks
 linked RAM/stack and CD size, and packages the PNG/GIF and asset report with the
-BIN/CUE. Full-build validation for this checkpoint is pending until CI completes.
+BIN/CUE. Full CI [34763683714](https://github.com/fourflipper42/PSXFunkin-FullPort-PRIVATE/actions/runs/34763683714)
+passed at `41f45d3cc2635ab50852757e157c1d81d0e86397`: all 39 host tests, asset and
+media conversion, MIPS compilation/link, RAM/stack checks and disc packaging.
+The disc is 505,498,896 bytes / 214,923 sectors, leaving 118,077 sectors within
+the 333,000-sector budget. Static memory ends at `0x80172c04`; 578,300 bytes remain
+below the initial stack pointer, including the 524,288-byte stack reserve.
+
+The follow-up reflows the composition using the supplied reference, adds Random,
+corrects Tutorial's icon, and corrects preview sampling to retain all 59 DJ frames
+at 24fps average GIF timing. The actual C renderer preview and 39 host tests pass,
+including Random's difficulty filtering. Full-build numbers above refer to the
+initial checkpoint, before this follow-up; the follow-up needs its own CI result.

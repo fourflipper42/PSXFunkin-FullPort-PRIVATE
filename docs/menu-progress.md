@@ -28,8 +28,9 @@ assets `d1d027d4747aaba151c6df121ea736c31d6aed38`.
   Current page changes still use the base port's screen wipe after confirmation.
 - Main-menu flashing preference and complete official settings behavior.
 - Story Mode's character stage, week lettering and difficulty artwork.
-- Official v0.8.4 Freeplay presentation, character selection, score/rank UI and
-  transitions. Current Freeplay remains a functional text list.
+- Complete official v0.8.4 Freeplay presentation, character selection, score/rank
+  UI and transitions. The initial native BF DJ/capsule presentation is now
+  implemented; see [freeplay-progress.md](freeplay-progress.md) for its status.
 - Original Options and Credits presentation and missing functionality.
 - Compare emulator captures against the reference, including safe edges,
   frame pacing, SPU sound playback, VRAM residency and return from gameplay.

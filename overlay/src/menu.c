@@ -79,6 +79,7 @@ static struct {
     fixed_t title_elapsed, camera_y;
     boolean freeplay_art;
     fixed_t freeplay_scroll;
+    u32 random_seed;
     Gfx_Tex tex_ng;
 } menu;
 
@@ -158,6 +159,7 @@ void Menu_Unload(void)
 void Menu_Tick(void)
 {
     unsigned int song_ms = Audio_TellXA_Milli();
+    menu.random_seed = menu.random_seed * 1664525u + 1013904223u + song_ms;
     MenuPage exec_page;
     stage.song_step = song_ms * 102 / 15000;
     if (Trans_Tick()) {
@@ -319,23 +321,39 @@ void Menu_Tick(void)
             if (menu.title_elapsed >= FIXED_DEC(3600,1)) menu.title_elapsed = FIXED_DEC(1,1);
             if (InputReady() && menu.title_elapsed >= FIXED_DEC(17,24)) {
                 int previous = menu.select;
-                Select(COUNT_OF(songs));
+                Select(COUNT_OF(songs) + 1);
                 /* A wrap crosses the ends, not the whole 26-song column. */
                 if (previous - menu.select > 1 || menu.select - previous > 1)
                     menu.freeplay_scroll = menu.select * FIXED_UNIT;
-                Difficulty(songs[menu.select].stage, true);
+                if (menu.select) Difficulty(songs[menu.select - 1].stage, true);
+                else if (pad_state.press & (PAD_LEFT | PAD_RIGHT))
+                    menu.difficulty = (menu.difficulty + StageDiff_Max + ((pad_state.press & PAD_RIGHT) ? 1 : -1)) % StageDiff_Max;
                 if (pad_state.press & PAD_CIRCLE) Go(MenuPage_Main, 1);
-                else if (pad_state.press & (PAD_CROSS | PAD_START)) Confirm();
+                else if (pad_state.press & (PAD_CROSS | PAD_START)) {
+                    int pick = menu.select ? menu.select - 1 : menu.random_seed % COUNT_OF(songs);
+                    if (!menu.select) {
+                        int eligible = 0;
+                        for (int i = 0; i < COUNT_OF(songs); i++)
+                            if (Stage_SupportsDifficulty(songs[i].stage, menu.difficulty)) eligible++;
+                        if (eligible) {
+                            int choice = menu.random_seed % eligible;
+                            for (int i = 0; i < COUNT_OF(songs); i++)
+                                if (Stage_SupportsDifficulty(songs[i].stage, menu.difficulty) && choice-- == 0) {pick = i;break;}
+                        } else menu.difficulty = StageDiff_Normal;
+                    }
+                    menu.stage_id = songs[pick].stage;
+                    Confirm();
+                }
             } else if (menu.confirming && menu.next_page == menu.page) {
                 menu.confirm_elapsed += timer_dt;
-                if (menu.confirm_elapsed >= FIXED_DEC(28,24)) Play(songs[menu.select].stage, false);
+                if (menu.confirm_elapsed >= FIXED_DEC(28,24)) Play(menu.stage_id, false);
             }
             fixed_t step = timer_dt * 12;
             if (step > FIXED_UNIT) step = FIXED_UNIT;
             menu.freeplay_scroll += ((menu.select * FIXED_UNIT - menu.freeplay_scroll) * step) >> FIXED_SHIFT;
             FreeplayArt_UI(menu.difficulty, menu.title_elapsed);
-            for (int i = 0; i < COUNT_OF(songs); i++)
-                FreeplayArt_Song(songs[i].text, i, i == menu.select, i * FIXED_UNIT - menu.freeplay_scroll, menu.title_elapsed, menu.confirming ? menu.confirm_elapsed : -1);
+            for (int i = 0; i <= COUNT_OF(songs); i++)
+                FreeplayArt_Song(i ? songs[i-1].text : "Random", i-1, i == menu.select, i * FIXED_UNIT - menu.freeplay_scroll, menu.title_elapsed, menu.confirming ? menu.confirm_elapsed : -1);
             FreeplayArt_Back(menu.difficulty, menu.title_elapsed, menu.confirming, menu.confirm_elapsed);
             break;
         }
