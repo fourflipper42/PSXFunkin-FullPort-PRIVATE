@@ -12,7 +12,7 @@ typedef struct {
 } MenuArtDef;
 #include "menu_art_generated.h"
 
-static FrameBank banks[COUNT_OF(menu_art_defs)], backgrounds[2];
+static FrameBank banks[COUNT_OF(menu_art_defs)], backgrounds[4], prompts[2];
 static Gfx_Tex small_font;
 static fixed_t elapsed;
 static int previous_selection;
@@ -25,8 +25,12 @@ void MenuArt_Load(void)
         const MenuArtDef *d = &menu_art_defs[i];
         FrameBank_Load(&banks[i], d->path, d->x, d->y, 0, d->clut_y);
     }
-    FrameBank_Load(&backgrounds[0], "\\MENU\\BACK0.FBK;1", 448, 256, 0, 489);
-    FrameBank_Load(&backgrounds[1], "\\MENU\\BACK1.FBK;1", 576, 256, 0, 490);
+    FrameBank_Load(&backgrounds[0], "\\MENU\\BACK0.FBK;1", 384, 256, 0, 489);
+    FrameBank_Load(&backgrounds[1], "\\MENU\\BACK1.FBK;1", 512, 256, 0, 490);
+    FrameBank_Load(&backgrounds[2], "\\MENU\\BACK2.FBK;1", 640, 256, 0, 491);
+    FrameBank_Load(&backgrounds[3], "\\MENU\\BACK3.FBK;1", 896, 0, 0, 492);
+    FrameBank_Load(&prompts[0], "\\MENU\\PROMPT0.FBK;1", 384, 256, 0, 493);
+    FrameBank_Load(&prompts[1], "\\MENU\\PROMPT1.FBK;1", 512, 256, 0, 494);
     Gfx_LoadTex(&small_font, IO_Read("\\MENU\\SMALL.TIM;1"), GFX_LOADTEX_FREE);
     MenuArt_Enter();
 }
@@ -35,12 +39,15 @@ void MenuArt_Free(void)
     unsigned int i;
     for (i = 0; i < COUNT_OF(banks); i++) FrameBank_Free(&banks[i]);
     for (i = 0; i < COUNT_OF(backgrounds); i++) FrameBank_Free(&backgrounds[i]);
+    for (i = 0; i < COUNT_OF(prompts); i++) FrameBank_Free(&prompts[i]);
 }
 void MenuArt_Enter(void)
 {
     unsigned int i;
     /* Title and main labels deliberately share texture pages, never a frame. */
     for (i = 0; i < COUNT_OF(banks); i++) FrameBank_Invalidate(&banks[i]);
+    for (i = 0; i < COUNT_OF(backgrounds); i++) FrameBank_Invalidate(&backgrounds[i]);
+    for (i = 0; i < COUNT_OF(prompts); i++) FrameBank_Invalidate(&prompts[i]);
     elapsed = 0;
     previous_selection = -1;
 }
@@ -67,14 +74,25 @@ void MenuArt_Title(unsigned int song_ms)
     unsigned int beat = song_ms * 102 / 60000;
     unsigned int phase = (song_ms * 102 % 60000) * 24 / 102000;
     unsigned int frame = phase < 15 ? phase : 14;
-    FrameBank_Draw(&banks[5], menu_art_defs[5].idle[frame], 14, 20);
-    FrameBank_Draw(&banks[6], menu_art_defs[6].idle[frame + ((beat & 1) ? 15 : 0)], 178, 74);
+    FrameBank_Draw(&banks[5], menu_art_defs[5].idle[frame], -20, -10);
+    FrameBank_Draw(&banks[6], menu_art_defs[6].idle[frame + ((beat & 1) ? 15 : 0)], 145, 24);
 }
-void MenuArt_Back(void)
+void MenuArt_Prompt(int confirming, fixed_t time)
 {
-    FrameBank_Draw(&backgrounds[0], 0, 0, 0);
-    FrameBank_Draw(&backgrounds[1], 0, 160, 0);
+    const u16 *sequence = confirming ? menu_prompt_confirm : menu_prompt_idle;
+    unsigned int count = confirming ? COUNT_OF(menu_prompt_confirm) : COUNT_OF(menu_prompt_idle);
+    unsigned int frame = ((time * 24) >> FIXED_SHIFT) % count;
+    int x = 160 - prompts[0].info.width;
+    FrameBank_Draw(&prompts[0], sequence[frame], x, 188);
+    FrameBank_Draw(&prompts[1], sequence[frame], 160, 188);
 }
+void MenuArt_MainBack(int camera_y, int magenta)
+{
+    unsigned int i;
+    for (i = 0; i < COUNT_OF(backgrounds); i++)
+        FrameBank_Draw(&backgrounds[i], !!magenta, -32 + (i & 1) * 192, -24 + (i >> 1) * 144 - camera_y * 17 / 100);
+}
+void MenuArt_Back(void) { MenuArt_MainBack(0, 0); }
 void MenuArt_Text(const char *text, int x, int y, int center, int bright)
 {
     int length;

@@ -1,0 +1,11 @@
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -17,6 +17,7 @@ SRCS = src/main.c \
+        src/loadscr.c \
+        src/menu.c \
+        src/menu_art.c \
++       src/menu_sound.c \
+        src/framebank.c \
+        src/framecodec.c \
+        src/stage.c \

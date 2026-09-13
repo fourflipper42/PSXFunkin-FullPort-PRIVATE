@@ -1,5 +1,6 @@
 #include "menu.h"
 #include "menu_art.h"
+#include "menu_sound.h"
 #include "main.h"
 #include "timer.h"
 #include "io.h"
@@ -72,20 +73,32 @@ static struct {
     StageDiff difficulty;
     boolean story;
     fixed_t credits_scroll;
+    boolean confirming;
+    fixed_t confirm_elapsed;
+    fixed_t title_elapsed, camera_y;
     Gfx_Tex tex_ng;
 } menu;
 
 static void Go(MenuPage page, int selection)
 {
+    if (pad_state.press & PAD_CIRCLE) MenuSound_Play(MenuSound_Cancel);
     menu.next_page = page;
     menu.next_select = selection;
     Trans_Start();
 }
-static boolean InputReady(void) { return menu.next_page == menu.page && Trans_Idle(); }
+static boolean InputReady(void) { return !menu.confirming && menu.next_page == menu.page && Trans_Idle(); }
+static void Confirm(void)
+{
+    menu.confirming = true;
+    menu.confirm_elapsed = 0;
+    MenuSound_Play(MenuSound_Confirm);
+}
 static void Select(int count)
 {
+    int previous = menu.select;
     if (pad_state.press & PAD_UP) menu.select = (menu.select + count - 1) % count;
     else if (pad_state.press & PAD_DOWN) menu.select = (menu.select + 1) % count;
+    if (previous != menu.select) MenuSound_Play(MenuSound_Scroll);
 }
 static void Difficulty(StageId id, boolean extra)
 {
@@ -118,10 +131,12 @@ void Menu_Load(MenuPage page)
     Gfx_LoadTex(&menu.tex_ng, Archive_Find(arc, "ng.tim"), 0);
     Mem_Free(arc);
     MenuArt_Load();
+    MenuSound_Load();
     menu.select = menu.next_select = 0;
     menu.page = menu.next_page = page;
     menu.funny_message = ((*((volatile u32*)0xBF801120)) >> 3) % COUNT_OF(funny_messages);
     menu.page_swap = true;
+    menu.confirming = false;
     menu.difficulty = StageDiff_Normal;
     Trans_Clear();
     stage.song_step = 0;
@@ -129,7 +144,7 @@ void Menu_Load(MenuPage page)
     Audio_WaitPlayXA();
     Gfx_SetClear(0, 0, 0);
 }
-void Menu_Unload(void) { MenuArt_Free(); }
+void Menu_Unload(void) { MenuArt_Free(); MenuSound_Free(); }
 void Menu_Tick(void)
 {
     unsigned int song_ms = Audio_TellXA_Milli();
@@ -142,6 +157,10 @@ void Menu_Tick(void)
     }
     if (menu.page_swap) {
         MenuArt_Enter();
+        menu.confirming = false;
+        menu.confirm_elapsed = 0;
+        menu.title_elapsed = 0;
+        menu.camera_y = 0;
         menu.credits_scroll = 0;
         if (menu.page == MenuPage_Story || menu.page == MenuPage_Freeplay)
             menu.difficulty = StageDiff_Normal;
@@ -213,8 +232,15 @@ void Menu_Tick(void)
 	//Fallthrough
         case MenuPage_Title:
         {
-            if (InputReady() && (pad_state.press & PAD_START)) Go(MenuPage_Main, 0);
-            MenuArt_Text("PRESS START TO BEGIN", 160, 208, 1, (song_ms / 300) & 1);
+            if (menu.confirming) {
+                menu.confirm_elapsed += timer_dt;
+                if (menu.confirm_elapsed >= FIXED_DEC(2,1) || (pad_state.press & (PAD_START | PAD_CROSS)))
+                    Go(MenuPage_Main, 0);
+            } else if (InputReady() && (pad_state.press & (PAD_START | PAD_CROSS))) Confirm();
+            menu.title_elapsed += timer_dt;
+            if (menu.title_elapsed >= FIXED_DEC(3600,1)) menu.title_elapsed = 0;
+            MenuArt_Prompt(menu.confirming, menu.confirming ? menu.confirm_elapsed : menu.title_elapsed);
+            MenuArt_Text("START / X", 160, 216, 1, 1);
             MenuArt_Title(song_ms);
             break;
         }
@@ -224,12 +250,24 @@ void Menu_Tick(void)
             if (InputReady()) {
                 Select(COUNT_OF(pages));
                 if (pad_state.press & PAD_CIRCLE) Go(MenuPage_Title, 0);
-                else if (pad_state.press & (PAD_CROSS | PAD_START)) Go(pages[menu.select], 0);
+                else if (pad_state.press & (PAD_CROSS | PAD_START)) Confirm();
+            } else if (menu.confirming && menu.next_page == menu.page) {
+                menu.confirm_elapsed += timer_dt;
+                if (menu.confirm_elapsed >= FIXED_DEC(14,10)) Go(pages[menu.select], 0);
             }
             MenuArt_Tick(menu.select);
-            for (int i = 0; i < COUNT_OF(pages); i++)
-                MenuArt_Label(i, menu.select == i, 160, 35 + i * 42);
-            MenuArt_Back();
+            /* Desktop camera follow: 0.06 at 60 Hz; preserve the separate
+             * label (0.4) and background (0.17) scroll factors in 4:3. */
+            fixed_t follow = timer_dt * 36 / 10;
+            if (follow > FIXED_UNIT) follow = FIXED_UNIT;
+            menu.camera_y += (((menu.select * 40 - 80) * FIXED_UNIT - menu.camera_y) * follow) >> FIXED_SHIFT;
+            for (int i = 0; i < COUNT_OF(pages); i++) {
+                if (menu.confirming && i == menu.select &&
+                    (menu.confirm_elapsed >= FIXED_DEC(1,1) || (menu.confirm_elapsed / FIXED_DEC(6,100)) & 1)) continue;
+                MenuArt_Label(i, menu.select == i, 160, 40 + i * 40 - (menu.camera_y * 4 / 10 >> FIXED_SHIFT));
+            }
+            MenuArt_MainBack(menu.camera_y >> FIXED_SHIFT, menu.confirming && menu.confirm_elapsed < FIXED_DEC(11,10) &&
+                !((menu.confirm_elapsed / FIXED_DEC(15,100)) & 1));
             break;
         }
         case MenuPage_Story:

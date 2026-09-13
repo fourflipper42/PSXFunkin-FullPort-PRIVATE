@@ -21,6 +21,7 @@ typedef int boolean; typedef int fixed_t;
 #define true 1
 #define false 0
 #define FIXED_SHIFT 10
+#define FIXED_UNIT 1024
 #define FIXED_DEC(n,d) (((n)*1024)/(d))
 #define COUNT_OF(a) (sizeof(a)/sizeof((a)[0]))
 #define SCREEN_WIDTH 320
@@ -36,11 +37,16 @@ struct {unsigned int press,held;} pad_state;
 enum {PAD_UP=1,PAD_DOWN=2,PAD_LEFT=4,PAD_RIGHT=8,PAD_CROSS=16,PAD_START=32,PAD_CIRCLE=64};
 enum {GameLoop_Stage=1,XA_GettinFreaky=1};
 int gameloop,pending,reads,freed,played,timer_dt=17;
+enum {MenuSound_Scroll,MenuSound_Confirm,MenuSound_Cancel};
+int sound_counts[3];
+void MenuSound_Load(void) {} void MenuSound_Free(void) {}
+void MenuSound_Play(int sound) {assert(sound>=0 && sound<3);sound_counts[sound]++;}
 StageId played_id; StageDiff played_diff; boolean played_story;
 void MenuArt_Load(void) {} void MenuArt_Free(void) {freed++;}
 void MenuArt_Enter(void) {} void MenuArt_Tick(int s) {}
 void MenuArt_Label(int i,int s,int x,int y) {assert(i>=0 && i<5);}
 void MenuArt_Title(unsigned int t) {} void MenuArt_Back(void) {}
+void MenuArt_Prompt(int c,fixed_t t) {} void MenuArt_MainBack(int y,int m) {}
 void MenuArt_Text(const char *s,int x,int y,int c,int b) {
  if (!s) return;
  int left=c ? x-(int)strlen(s)*4:x;
@@ -69,10 +75,23 @@ void LoadScr_Start(void) {} void LoadScr_End(void) {}
 static void tick(unsigned int press,unsigned int held) {pad_state.press=press;pad_state.held=held;Menu_Tick();}
 static void reset(MenuPage p) {memset(&menu,0,sizeof(menu));menu.page=menu.next_page=p;menu.page_swap=true;pending=0;tick(0,0);}
 int main(void) {
- reset(MenuPage_Main);tick(PAD_UP,0);assert(menu.select==4);tick(PAD_DOWN,0);assert(menu.select==0);
+ reset(MenuPage_Title);tick(PAD_START,0);
+ assert(sound_counts[MenuSound_Confirm]==1);
+ for(int i=0;i<90;i++)tick(0,0);
+ assert(menu.page==MenuPage_Title && menu.next_page==MenuPage_Title);
+ for(int i=0;i<40;i++)tick(0,0);
+ assert(menu.page==MenuPage_Main);
+ reset(MenuPage_Title);tick(PAD_CROSS,0);tick(PAD_START,0);tick(0,0);
+ assert(menu.page==MenuPage_Main);
+ reset(MenuPage_Main);int scrolls=sound_counts[MenuSound_Scroll];tick(PAD_UP,0);assert(menu.select==4);tick(PAD_DOWN,0);assert(menu.select==0);
+ assert(sound_counts[MenuSound_Scroll]==scrolls+2);
  MenuPage pages[]={MenuPage_Story,MenuPage_Freeplay,MenuPage_Merch,MenuPage_Options,MenuPage_Credits};
  for (int i=0;i<5;i++) {
-  reset(MenuPage_Main);menu.select=i;tick(PAD_CROSS,0);assert(menu.next_page==pages[i]);tick(0,0);assert(menu.page==pages[i]);
+  reset(MenuPage_Main);menu.select=i;tick(PAD_CROSS,0);
+  for(int j=0;j<50;j++)tick(PAD_DOWN|PAD_CROSS,0);
+  assert(menu.page==MenuPage_Main && menu.select==i);
+  for(int j=0;j<40;j++)tick(0,0);
+  assert(menu.page==pages[i]);
   tick(PAD_CIRCLE,0);tick(0,0);assert(menu.page==MenuPage_Main && menu.select==i);
  }
  reset(MenuPage_Story);tick(PAD_UP,0);assert(menu.select==8);tick(PAD_START,0);tick(0,0);

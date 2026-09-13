@@ -6,8 +6,28 @@ from PIL import Image
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 from build_menu_art import sparrow
+import build_menu_art
+from framebank import unpack_indices
 
 class SparrowMenu(unittest.TestCase):
+    def test_tiled_animation_preserves_frames_and_seams(self):
+        # A wide animation must keep its full width, including pixels across
+        # tile seams, and retain repeated frames at their original positions.
+        frames=[]
+        for color in ('red','blue','red'):
+            im=Image.new('RGBA',(284,24),color)
+            im.putpixel((141,8),(0,255,0,255));im.putpixel((142,8),(255,255,255,255))
+            frames.append(im)
+        tiles=build_menu_art.tile_banks(frames,142,24)
+        self.assertEqual(len(tiles),2)
+        decoded=[unpack_indices(data) for data,record in tiles]
+        for w,h,pal,indices in decoded:
+            self.assertEqual((w,h,len(indices)),(142,24,3))
+            self.assertEqual(indices[0],indices[2])
+            self.assertNotEqual(indices[0],indices[1])
+        self.assertEqual(decoded[0][2][decoded[0][3][0][8*142+141]],0x03e0)
+        self.assertEqual(decoded[1][2][decoded[1][3][0][8*142]],0x7fff)
+
     def test_restore_trimming_and_repeated_frames(self):
         with tempfile.TemporaryDirectory() as td:
             path=Path(td)/'label.png'

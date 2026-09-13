@@ -14,8 +14,55 @@ from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, str(Path(__file__).resolve().parent/'ps1asset'))
 from framebank import encode_images, unpack_indices, pack_indices
 from png_to_tim import encode_tim
+from animateatlas_flatten import AnimateAtlas, leaf_bounds, render_leaves_fixed
 
 MAIN = ['storymode','freeplay','merch','options','credits']
+
+def tile_banks(frames, tile_width, tile_height):
+    """One palette across tiles prevents seams; every tile retains the timeline."""
+    width,height=frames[0].size
+    if any(im.size!=(width,height) for im in frames): raise ValueError('Inconsistent frame dimensions')
+    if width%tile_width or height%tile_height: raise ValueError('Tiles must exactly cover the canvas')
+    if tile_width>256 or tile_height>256 or tile_width%2: raise ValueError('Invalid PS1 texture tile')
+    tiles=[[im.crop((x,y,x+tile_width,y+tile_height)) for im in frames]
+           for y in range(0,height,tile_height) for x in range(0,width,tile_width)]
+    data,record=encode_images([im for tile in tiles for im in tile])
+    _,_,palette,indexed=unpack_indices(data)
+    result=[]
+    for i in range(len(tiles)):
+        encoded=pack_indices(tile_width,tile_height,palette,indexed[i*len(frames):(i+1)*len(frames)])
+        indices=indexed[i*len(frames):(i+1)*len(frames)]
+        result.append((encoded,dict(record,frames=len(frames),unique_frames=len(set(indices)),
+                                   decoded_pixel_bytes=tile_width*tile_height*len(frames),bank_bytes=len(encoded))))
+    return result
+
+def prompt_frames(path, scale=0.185):
+    atlas=AnimateAtlas(path)
+    labels=atlas.labels()
+    source=sorted({i for label in labels for i in range(label['start'],label['start']+label['duration'])})
+    leaves={i:atlas.leaves_for_frame(i) for i in source}
+    bounds=[leaf_bounds(leaf) for values in leaves.values() for leaf in values]
+    minx,miny=min(b[0] for b in bounds),min(b[1] for b in bounds)
+    maxx,maxy=max(b[2] for b in bounds),max(b[3] for b in bounds)
+    # Multiple of four gives two even-width hardware tiles, no rescaling.
+    width=(math.ceil((maxx-minx)*scale)+11)&~3
+    height=math.ceil((maxy-miny)*scale)+8
+    if width>296 or height>40: raise ValueError('Title prompt exceeds the intended 4:3 layout')
+    # Evaluate near source resolution, then filter down; affine bicubic alone
+    # does not integrate thin strokes when shrinking by more than five times.
+    sampling=6
+    transform=tuple(v*sampling for v in (scale,0,0,scale,4-minx*scale,4-miny*scale))
+    frames=[]
+    for i in source:
+        frame=render_leaves_fixed(leaves[i],(width*sampling,height*sampling),transform).resize((width,height),Image.Resampling.LANCZOS)
+        # The source idle fades its alpha. PS1 cutout alpha would erase it below
+        # 50%; bake coverage into RGB against the title's always-black backdrop.
+        matte=Image.new('RGBA',frame.size,(0,0,0,255))
+        matte.alpha_composite(frame)
+        frames.append(matte)
+    lookup={v:i for i,v in enumerate(source)}
+    groups={label['name']:[lookup[i] for i in range(label['start'],label['start']+label['duration'])] for label in labels}
+    return frames,groups
 
 def sparrow(path: Path, scale: float):
     sheet = Image.open(path).convert('RGBA')
@@ -51,7 +98,7 @@ def ctext(text):
 def build(root: Path, upstream: Path, report_path: Path):
     out=upstream/'iso/menu';out.mkdir(parents=True,exist_ok=True)
     reports=[];definitions=[];arraydefs=[]
-    specs=[(name,f'mainmenu/{name}.png',0.25) for name in MAIN]+[('logo','logoBumpin.png',0.18),('titlegf','gfDanceTitle.png',0.18)]
+    specs=[(name,f'mainmenu/{name}.png',0.25) for name in MAIN]+[('logo','logoBumpin.png',0.24),('titlegf','gfDanceTitle.png',0.23)]
     for index,(name,source,scale) in enumerate(specs):
         frames,groups=sparrow(root/'images'/source,scale)
         data,record=encode_images(frames)
@@ -69,14 +116,20 @@ def build(root: Path, upstream: Path, report_path: Path):
         y=[0,0,0,0,256,0,0][index]
         definitions.append(f'{{"\\\\MENU\\\\{disk_name.upper()}.FBK;1", {x}, {y}, {482+index}, menu_{name}_idle, {len(idle)}, menu_{name}_selected, {len(selected)}}}')
     # Center crop decorative background to 4:3; do not distort its proportions.
-    bg=Image.open(root/'images/menuBG.png').convert('RGBA')
-    crop_width=round(bg.height*4/3)
-    bg=bg.crop(((bg.width-crop_width)//2,0,(bg.width+crop_width)//2,bg.height)).resize((320,240),Image.Resampling.LANCZOS)
-    data,record=encode_images([bg.crop((0,0,160,240)),bg.crop((160,0,320,240))])
-    _,_,palette,indexed=unpack_indices(data)
-    for i,frame in enumerate(indexed):
-        (out/f'back{i}.fbk').write_bytes(pack_indices(160,240,palette,[frame]))
-    reports.append(dict(record,name='background',frames_dropped=0))
+    backgrounds=[]
+    for name in ('menuBG','menuBGMagenta'):
+        bg=Image.open(root/f'images/{name}.png').convert('RGBA')
+        crop_width=round(bg.height*4/3)
+        backgrounds.append(bg.crop(((bg.width-crop_width)//2,0,(bg.width+crop_width)//2,bg.height)).resize((384,288),Image.Resampling.LANCZOS))
+    for i,(data,record) in enumerate(tile_banks(backgrounds,192,144)):
+        (out/f'back{i}.fbk').write_bytes(data)
+        reports.append(dict(record,name=f'back{i}',frames_dropped=0))
+    frames,groups=prompt_frames(root/'images/title-screen-text')
+    for i,(data,record) in enumerate(tile_banks(frames,frames[0].width//2,frames[0].height)):
+        (out/f'prompt{i}.fbk').write_bytes(data)
+        reports.append(dict(record,name=f'prompt{i}',groups=groups,frame_rate=24,scale=0.185,frames_dropped=0))
+    for name,values in groups.items():
+        arraydefs.append(f'static const u16 menu_prompt_{name.lower()}[] = {{'+','.join(map(str,values))+'};')
     # Compact text for lists/status/credits from the official VCR face.
     font=ImageFont.truetype(str(root/'fonts/vcr.ttf'),10)
     atlas=Image.new('RGBA',(128,72));draw=ImageDraw.Draw(atlas)
@@ -98,7 +151,7 @@ def build(root: Path, upstream: Path, report_path: Path):
     intro=[line.strip().split('--',1) for line in (root/'data/introText.txt').read_text().splitlines() if '--' in line]
     if not intro: raise ValueError('No official intro messages')
     (upstream/'src/menu_intro_generated.h').write_text('static const char *const funny_messages[][2] = {\n'+',\n'.join('{'+ctext(a)+','+ctext(b)+'}' for a,b in intro)+'\n};\n')
-    menu_files=['story.fbk','freeplay.fbk','merch.fbk','options.fbk','credits.fbk','logo.fbk','titlegf.fbk','back0.fbk','back1.fbk','small.tim']
+    menu_files=['story.fbk','freeplay.fbk','merch.fbk','options.fbk','credits.fbk','logo.fbk','titlegf.fbk','back0.fbk','back1.fbk','back2.fbk','back3.fbk','prompt0.fbk','prompt1.fbk','small.tim']
     manifest=upstream/'funkin.xml'
     xml=ET.parse(manifest)
     directory=xml.find(".//dir[@name='menu']")
