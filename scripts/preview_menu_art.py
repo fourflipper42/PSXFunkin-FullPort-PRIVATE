@@ -31,7 +31,10 @@ def render(upstream,report,output):
     def title(frame=0,confirm=False):
         im=Image.new('RGBA',(320,240),(0,0,0,255))
         # Reverse ordering table: GF behind the logo, prompt in front.
-        im.alpha_composite(bank('titlegf',frame%30),(145,24));im.alpha_composite(bank('logo',min(frame%15,14)),(-20,-10))
+        song_ms=(frame+(90 if confirm else 0))*1000//24
+        beat= song_ms*102//60000
+        phase=min((song_ms*102%60000)*24//102000,14)
+        im.alpha_composite(bank('titlegf',phase+(15 if beat&1 else 0)),(145,24));im.alpha_composite(bank('logo',phase),(-20,-10))
         group=records['prompt0']['groups']['Confirm' if confirm else 'Idle']
         for i in range(2):
             prompt=bank(f'prompt{i}',group[frame%len(group)])

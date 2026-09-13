@@ -29,7 +29,7 @@ void MenuSound_Load(void)
         u8 *data;
         u32 size;
         IO_FindFile(&file, paths[i]);
-        data = IO_ReadFile(&file);
+        data = (u8*)IO_ReadFile(&file);
         size = file.size >= 48 ? ReadBE(data + 12) : 0;
         if (!size || memcmp(data, "VAGp", 4) || size % 16 || size > file.size - 48 ||
             ReadBE(data + 16) != 44100 || size > 0x80000 - address) {

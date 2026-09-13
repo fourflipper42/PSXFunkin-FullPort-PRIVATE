@@ -49,7 +49,27 @@ frames, repeated frames and cross-tile palette pixels.
 palette/layout previews, not emulator captures. This checkpoint's local artwork
 banks total 577,824 bytes; the sound allocation ends at SPU address 85,056.
 
-The last verified full disc before this checkpoint is commit
-`3a3068fd5b8c5b732947aacb9209357081a60b0c` (504,426,384 bytes). A new CI run must
-verify the checkpoint's linked memory and disc size before those numbers are
-updated. Menus are **not finished** at this checkpoint.
+Full CI run [34747965272](https://github.com/fourflipper42/PSXFunkin-FullPort-PRIVATE/actions/runs/34747965272)
+passed at `15c8c5e83322e013e9cea72aa7abd2473e9f6d57`: 39 host tests, all media
+conversion, MIPS compilation/link, RAM/stack validation and BIN/CUE packaging.
+The disc is 504,802,704 bytes / 214,627 sectors, with 118,373 sectors remaining
+within the 333,000-sector budget. Static memory ends at `0x80171a44`, leaving
+582,844 bytes below the initial stack pointer (524,288 reserved).
+
+The follow-up makes the IO word-buffer-to-byte-buffer cast explicit and corrects
+the preview GIF's beat timing; it does not add menu functionality. Menus are
+**not finished** at this checkpoint.
+
+## Next Story Mode pass
+
+Use `source/funkin/ui/story/StoryMenuState.hx` and the pinned
+`preload/data/levels/*.json`, rather than the old port's list layout. The original
+uses an upper character stage, scrolling week-title images, pink track text at
+lower left, and an illustrated difficulty selector at lower right. Week 1's
+background is `#F9CF51`; Weekend 1's is `#413CAE`. Character offsets, animation
+prefixes and special confirmation offsets are supplied by each level JSON.
+
+The base runtime has a 1 MB heap. Do not simply append all Story character banks
+to the current title/main banks: measure their encoded sizes and implement page
+asset lifetimes first. Preserve every animation frame. Any page/level CD reads
+must explicitly coordinate with XA playback rather than seeking underneath it.
