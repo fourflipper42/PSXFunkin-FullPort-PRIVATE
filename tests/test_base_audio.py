@@ -8,11 +8,22 @@ import unittest
 import wave
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from build_base_audio import GROUPS, MAPPING, WEEKEND
+from build_base_audio import GROUPS, MAPPING, WEEKEND, preserve_legacy_channel
 from build_remix_audio import describe, make_pair
 
 
 class BaseAudio(unittest.TestCase):
+    def test_legacy_eof_header_repair_preserves_audio(self):
+        payload = bytes(range(256)) * 9 + bytes(24)
+        normal = bytes.fromhex('0102640101026401') + payload
+        old_eof = bytes.fromhex('0102e40101026401') + payload
+        result = preserve_legacy_channel([normal, old_eof], 2)
+        self.assertEqual(result[:2336], normal)
+        self.assertEqual(result[2336:2344], bytes.fromhex('0102e4010102e401'))
+        self.assertEqual(result[2344:], payload)
+        with self.assertRaisesRegex(ValueError, 'mismatch'):
+            preserve_legacy_channel([old_eof, normal], 2)
+
     def test_every_default_song_is_assigned_once(self):
         assigned = [song for songs in GROUPS.values() for song in songs]
         self.assertEqual(len(assigned), len(set(assigned)))

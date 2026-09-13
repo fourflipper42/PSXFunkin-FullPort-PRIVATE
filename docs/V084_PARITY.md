@@ -171,7 +171,12 @@ in its original WEEK4B channels.
 
 Generated routes supply Easy/Normal/Hard scroll speeds and encoded song lengths.
 Opponent notes no longer restore a missed player vocal in separate-stem mixes.
-37 host tests pass, including the real C route loader and a 37.8 kHz conversion
+38 host tests pass, including the real C route loader and a 37.8 kHz conversion
 check. The stage patches apply to the pinned upstream source. Full conversion,
 MIPS link and disc checks are pending for this new batch; no hardware validation
 has been performed.
+
+The preserved Test track had mismatched EOF bits in the two copies of its final
+XA subheader. The converter repairs that exact final-header defect while keeping
+the encoded audio payload intact; other header mismatches still fail validation.
+Vocal state is initialized to the full mix so even a first-note miss can mute it.

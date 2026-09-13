@@ -22,6 +22,22 @@ GROUPS = {
 WEEKEND = [('darnell', 8, 1), ('lit-up', 8, 2), ('2hot', 8, 3), ('blazin', 8, 4)]
 
 
+def preserve_legacy_channel(blocks, channel):
+    stream = [sector for sector in blocks if sector[0] == 1 and sector[1] == channel]
+    if not stream:
+        raise ValueError('Missing legacy Test XA channel')
+    for index, sector in enumerate(stream):
+        if sector[:4] == sector[4:8]:
+            continue
+        # The pinned legacy encoder set EOF in only the first copy of the
+        # final subheader. Repair that exact defect without altering ADPCM data.
+        if (index != len(stream) - 1 or sector[:2] != sector[4:6]
+                or sector[3] != sector[7] or sector[2] ^ sector[6] != 0x80):
+            raise ValueError('Unexpected legacy XA subheader mismatch')
+        stream[index] = sector[:4] + sector[:4] + sector[8:]
+    return b''.join(stream)
+
+
 def build(root, upstream, encoder, ffmpeg, report):
     records = {song: describe(root, song, week, index, variation='')
                for song, week, index in MAPPING + WEEKEND}
@@ -33,11 +49,7 @@ def build(root, upstream, encoder, ffmpeg, report):
         test_paths = []
         for channel in (2, 3):
             path = temp / f'test{channel}.xa'
-            stream = [sector for sector in legacy_test
-                      if sector[0] == 1 and sector[1] == channel]
-            if not stream:
-                raise ValueError('Missing legacy Test XA channel')
-            path.write_bytes(b''.join(stream))
+            path.write_bytes(preserve_legacy_channel(legacy_test, channel))
             test_paths.append(path)
 
         for name, songs in GROUPS.items():
