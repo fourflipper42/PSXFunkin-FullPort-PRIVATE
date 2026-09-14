@@ -1,0 +1,25 @@
+--- a/src/audio.c
++++ b/src/audio.c
+@@ -1,6 +1,7 @@
+ #include "psx.h"
+ 
+ #include "audio.h"
++#include "weekend1_audio_generated.h"
+ #include "io.h"
+ #include "main.h"
+ 
+@@ -65,10 +66,10 @@
+ 	//WEEK7B.XA
+ 	{XA_Week7B, XA_LENGTH(12200)}, //XA_Stress
+ 	//WEEK8.XA (18900 Hz, four song pairs on channels 0..7)
+-	{XA_Week8, XA_LENGTH(12697)}, //XA_Darnell
+-	{XA_Week8, XA_LENGTH(11455)}, //XA_LitUp
+-	{XA_Week8, XA_LENGTH(12000)}, //XA_2Hot
+-	{XA_Week8, XA_LENGTH(12267)}, //XA_Blazin
++	{XA_Week8, W1_XA_DARNELL_SECTORS * IO_SECT_SIZE}, //XA_Darnell
++	{XA_Week8, W1_XA_LIT_UP_SECTORS * IO_SECT_SIZE}, //XA_LitUp
++	{XA_Week8, W1_XA_2HOT_SECTORS * IO_SECT_SIZE}, //XA_2Hot
++	{XA_Week8, W1_XA_BLAZIN_SECTORS * IO_SECT_SIZE}, //XA_Blazin
+ };
+ 
+ 

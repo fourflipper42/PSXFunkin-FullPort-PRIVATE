@@ -1,0 +1,55 @@
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from PIL import Image
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'scripts'))
+from build_menu_art import sparrow
+import build_menu_art
+from framebank import unpack_indices
+
+class SparrowMenu(unittest.TestCase):
+    def test_verbose_animate_export_preserves_matrix_and_timing(self):
+        import animateatlas_flatten as flatten
+        data={'ANIMATION':{'SYMBOL_name':'root','TIMELINE':{'LAYERS':[{'Layer_name':'art','Frames':[{'index':3,'duration':5,'elements':[{'ATLAS_SPRITE_instance':{'name':'sprite','Matrix3D':{'m00':1,'m11':1,'m22':1,'m33':1,'m30':12,'m31':-4}}}]}]}]}},'SYMBOL_DICTIONARY':{'Symbols':[]},'metadata':{'framerate':24}}
+        self.assertTrue(hasattr(flatten,'normalize_export'))
+        result=flatten.normalize_export(data)
+        frame=result['AN']['TL']['L'][0]['FR'][0]
+        self.assertEqual((frame['I'],frame['DU']),(3,5))
+        self.assertEqual(flatten.matrix_from_element(frame['E'][0]['ASI']),(1,0,0,1,12,-4))
+    def test_tiled_animation_preserves_frames_and_seams(self):
+        # A wide animation must keep its full width, including pixels across
+        # tile seams, and retain repeated frames at their original positions.
+        frames=[]
+        for color in ('red','blue','red'):
+            im=Image.new('RGBA',(284,24),color)
+            im.putpixel((141,8),(0,255,0,255));im.putpixel((142,8),(255,255,255,255))
+            frames.append(im)
+        tiles=build_menu_art.tile_banks(frames,142,24)
+        self.assertEqual(len(tiles),2)
+        decoded=[unpack_indices(data) for data,record in tiles]
+        for w,h,pal,indices in decoded:
+            self.assertEqual((w,h,len(indices)),(142,24,3))
+            self.assertEqual(indices[0],indices[2])
+            self.assertNotEqual(indices[0],indices[1])
+        self.assertEqual(decoded[0][2][decoded[0][3][0][8*142+141]],0x03e0)
+        self.assertEqual(decoded[1][2][decoded[1][3][0][8*142]],0x7fff)
+
+    def test_restore_trimming_and_repeated_frames(self):
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/'label.png'
+            Image.new('RGBA',(2,2),'red').save(path)
+            path.with_suffix('.xml').write_text('''<TextureAtlas>
+              <SubTexture name="label idle0001" x="0" y="0" width="2" height="2" frameX="-2" frameY="-1" frameWidth="6" frameHeight="4"/>
+              <SubTexture name="label idle0000" x="0" y="0" width="2" height="2" frameX="-2" frameY="-1" frameWidth="6" frameHeight="4"/>
+            </TextureAtlas>''')
+            frames,groups=sparrow(path,1)
+            self.assertEqual(groups,{'label idle':[1,0]})
+            self.assertEqual(len(frames),2)
+            self.assertEqual(frames[0].size,(6,4))
+            self.assertEqual(frames[0].getbbox(),(2,1,4,3))
+            self.assertEqual(frames[0].tobytes(),frames[1].tobytes())
+            with self.assertRaises(ValueError):sparrow(path,100)
+
+if __name__=='__main__':unittest.main()

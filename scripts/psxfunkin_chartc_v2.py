@@ -42,11 +42,33 @@ def round_half_up(value: float) -> int:
 
 def read_time_changes(metadata: dict[str, Any]) -> list[TimeChange]:
     changes: list[TimeChange] = []
-    for item in metadata.get("timeChanges", []):
-        changes.append(TimeChange(float(item.get("t", 0)), float(item.get("b", 0)), float(item["bpm"])))
+    for item in sorted(metadata.get("timeChanges", []), key=lambda item: float(item.get("t", 0))):
+        time_ms = float(item.get("t", 0))
+        beat = item.get("b")
+        if beat is None:
+            if changes:
+                previous = changes[-1]
+                beat = previous.beat + (time_ms - previous.time_ms) * previous.bpm / 60000.0
+            else:
+                beat = 0.0
+        changes.append(TimeChange(time_ms, float(beat), float(item["bpm"])))
     if not changes:
         raise ValueError("metadata has no timeChanges")
     changes.sort(key=lambda x: x.time_ms)
+    for index, change in enumerate(changes):
+        if not all(math.isfinite(v) for v in (change.time_ms, change.beat, change.bpm)):
+            raise ValueError("non-finite tempo value")
+        if not 1 <= round_half_up(change.bpm * 24) <= SECTION_FLAG_BPM_MASK:
+            raise ValueError("BPM cannot be represented in the PS1 chart format")
+        if index and (change.time_ms <= changes[index - 1].time_ms or change.beat <= changes[index - 1].beat):
+            raise ValueError("tempo changes must advance in both time and beats")
+        if index:
+            previous = changes[index - 1]
+            expected = previous.beat + (change.time_ms - previous.time_ms) * previous.bpm / 60000.0
+            if abs(expected - change.beat) * UNITS_PER_BEAT > 0.5:
+                raise ValueError("discontinuous timeChanges beat positions")
+    if abs(time_to_beat(0, changes)) > 1e-6:
+        raise ValueError("chart must start at beat zero at audio time zero")
     return changes
 
 
@@ -115,7 +137,7 @@ def convert(chart: dict[str, Any], metadata: dict[str, Any], difficulty: str,
     for item in source_notes:
         time_ms = float(item["t"])
         direction = int(item["d"])
-        if direction < 0:
+        if not 0 <= direction <= 7:
             raise ValueError(f"invalid direction {direction}")
         pos = round_half_up(time_to_beat(time_ms, changes) * UNITS_PER_BEAT)
         note_type = direction & 0x07
@@ -127,15 +149,16 @@ def convert(chart: dict[str, Any], metadata: dict[str, Any], difficulty: str,
             note_type |= NOTE_FLAG_ALT_ANIM
 
         sustain_ms = max(0.0, float(item.get("l", 0)))
-        sustain_steps = 0
+        sustain_steps = -1
         if sustain_ms > 0:
             start_beat = time_to_beat(time_ms, changes)
             end_beat = time_to_beat(time_ms + sustain_ms, changes)
-            sustain_steps = max(0, round_half_up((end_beat - start_beat) * 4.0) - 1)
-            note_type |= NOTE_FLAG_SUSTAIN_END
+            sustain_steps = round_half_up((end_beat - start_beat) * 4.0) - 1
+            if sustain_steps >= 0:
+                note_type |= NOTE_FLAG_SUSTAIN_END
 
         notes.append((pos, note_type, pad))
-        for index in range(sustain_steps + (1 if sustain_ms > 0 else 0)):
+        for index in range(sustain_steps + 1):
             sustain_type = note_type | NOTE_FLAG_SUSTAIN
             if index != sustain_steps:
                 sustain_type &= ~NOTE_FLAG_SUSTAIN_END
@@ -152,14 +175,33 @@ def convert(chart: dict[str, Any], metadata: dict[str, Any], difficulty: str,
     if section_count is None:
         section_count = max(1, math.ceil(max_beat / 4.0))
 
+    if not isinstance(section_count, int) or section_count < 1:
+        raise ValueError("section_count must be a positive integer")
+    end_pos = section_count * UNITS_PER_SECTION
+    if end_pos >= 0xFFFF:
+        raise ValueError("chart sections exceed the 16-bit position limit")
+    # The runtime supports variable-length sections. Split at tempo and focus
+    # changes instead of delaying both to the next four-beat boundary.
+    boundaries = set(range(0, end_pos + 1, UNITS_PER_SECTION))
+    for beat in [c.beat for c in changes] + [event[0] for event in events]:
+        position = round_half_up(beat * UNITS_PER_BEAT)
+        if 0 < position < end_pos:
+            boundaries.add(position)
+    boundaries = sorted(boundaries)
     sections: list[tuple[int, int]] = []
-    for index in range(section_count):
-        start_beat = index * 4.0
-        end_pos = (index + 1) * UNITS_PER_SECTION
-        bpm_flag = round_half_up(bpm_at_beat(start_beat, changes) * 24.0) & SECTION_FLAG_BPM_MASK
-        if focus_at_beat(start_beat, events) == 1:
+    for start, end in zip(boundaries, boundaries[1:]):
+        active = changes[0]
+        for change in changes[1:]:
+            if round_half_up(change.beat * UNITS_PER_BEAT) <= start:
+                active = change
+        bpm_flag = round_half_up(active.bpm * 24.0)
+        focus = 0
+        for beat, value in events:
+            if round_half_up(beat * UNITS_PER_BEAT) <= start:
+                focus = value
+        if focus == 1:
             bpm_flag |= SECTION_FLAG_OPPFOCUS
-        sections.append((end_pos, bpm_flag))
+        sections.append((end, bpm_flag))
 
     # Sentinels expected by PSXFunkin's pointer-walking runtime.
     last_flag = sections[-1][1]
@@ -167,6 +209,10 @@ def convert(chart: dict[str, Any], metadata: dict[str, Any], difficulty: str,
     notes.append((0xFFFF, NOTE_FLAG_HIT, 0))
 
     notes_offset = 2 + len(sections) * 4
+    if notes_offset > 0xFFFF:
+        raise ValueError("section table exceeds the 16-bit offset limit")
+    if any(not 0 <= pos < 0xFFFF for pos, _, _ in notes[:-1]):
+        raise ValueError("note position overlaps the end sentinel or is out of range")
     out = bytearray(struct.pack("<H", notes_offset))
     for end_pos, flags in sections:
         out += struct.pack("<HH", end_pos, flags)

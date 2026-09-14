@@ -14,14 +14,15 @@ def psx_color(r: int, g: int, b: int, a: int) -> int:
     value = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10)
     if a < 255:
         value |= 0x8000
-    return value
+    # Zero is transparent on the GPU, including for opaque black pixels.
+    return value or 0x8000
 
 
 def quantize_rgba(image: Image.Image, colors: int) -> tuple[list[int], bytes]:
     rgba = image.convert("RGBA")
     alpha = rgba.getchannel("A")
     opaque = Image.new("RGB", rgba.size, (0, 0, 0))
-    opaque.paste(rgba.convert("RGB"), mask=alpha)
+    opaque.paste(rgba.convert("RGB"))
     q = opaque.quantize(colors=colors - 1, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     source_palette = q.getpalette() or []
     palette = [0]

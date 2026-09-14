@@ -24,7 +24,7 @@ VRAM={
 
 def c_ident(s:str)->str: return ''.join(ch if ch.isalnum() else '_' for ch in s)
 def animation_script(frames:list[int], loop=True, change:int|None=None)->str:
-    if not frames: frames=[0]
+    if not frames: raise ValueError('required animation has no source frames')
     vals=', '.join(str(i) for i in frames)
     if change is not None: return '{'+vals+', ASCR_CHGANI, '+str(change)+'}'
     if loop: return '{'+vals+', ASCR_BACK, '+str(max(1,len(frames)))+'}'
@@ -77,7 +77,7 @@ def write_char_module(srcdir:Path, ctor:str, arcpath:str, m:dict, role:str, mapp
     lines.append('static const char *const page_names[] = {'); lines += [f'    "{p["member"]}",' for p in m['pages']]; lines.append('    NULL\n};\n')
     lines += [
     'static void SetFrame(void *user, u8 frame) {','    ModernGenerated *this=(ModernGenerated*)user;','    if (frame != this->frame) {','        const CharFrame *cf=&frames[this->frame=frame];','        if (cf->tex != this->tex_id) Gfx_LoadTex(&this->tex, this->arc_ptr[this->tex_id=cf->tex], 0);','    }','}',
-    'static void Tick(Character *character) {','    ModernGenerated *this=(ModernGenerated*)character;','    Character_CheckEndSing(character);','    if ((stage.flag & STAGE_FLAG_JUST_STEP) && Animatable_Ended(&character->animatable) && (stage.song_step & 0x7)==0)','        character->set_anim(character, CharAnim_Idle);','    Animatable_Animate(&character->animatable,(void*)this,SetFrame);','    Character_Draw(character,&this->tex,&frames[this->frame]);','}',
+    'static void Tick(Character *character) {','    ModernGenerated *this=(ModernGenerated*)character;','    Character_CheckEndSing(character);','    if (character->animatable.anim < CharAnim_Max && (stage.flag & STAGE_FLAG_JUST_STEP) && Animatable_Ended(&character->animatable) && (stage.song_step & 0x7)==0)','        character->set_anim(character, CharAnim_Idle);','    Animatable_Animate(&character->animatable,(void*)this,SetFrame);','    Character_Draw(character,&this->tex,&frames[this->frame]);','}',
     'static void SetAnim(Character *character,u8 anim) { Animatable_SetAnim(&character->animatable,anim); Character_CheckStartSing(character); }',
     'static void Free(Character *character) { ModernGenerated *this=(ModernGenerated*)character; Mem_Free(this->arc_main); }',
     f'Character *{ctor}(fixed_t x, fixed_t y) {{','    ModernGenerated *this=Mem_Alloc(sizeof(ModernGenerated));',f'    if (!this) {{ sprintf(error_msg,"[{ctor}] allocation failed"); ErrorLock(); return NULL; }}','    this->character.tick=Tick; this->character.set_anim=SetAnim; this->character.free=Free;','    Animatable_Init(&this->character.animatable,anims); Character_Init((Character*)this,x,y);',f'    this->character.health_i={health};',f'    this->character.focus_x=FIXED_DEC({focus[0]},1); this->character.focus_y=FIXED_DEC({focus[1]},1); this->character.focus_zoom=FIXED_DEC({focus[2]},100);',f'    this->arc_main=IO_Read("{arcpath}");','    const char *const *pp=page_names; IO_Data *ap=this->arc_ptr; for (; *pp; ++pp) *ap++=Archive_Find(this->arc_main,*pp);','    this->tex_id=this->frame=0xFF;','    return (Character*)this;','}','']

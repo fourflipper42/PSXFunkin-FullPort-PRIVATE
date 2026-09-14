@@ -1,0 +1,56 @@
+--- a/Makefile
++++ b/Makefile
+@@ -19,6 +19,7 @@ SRCS = src/main.c \
+        src/menu_art.c \
+        src/menu_sound.c \
+        src/freeplay_art.c \
++       src/freeplay_results.c \
+        src/framebank.c \
+        src/framecodec.c \
+        src/stage.c \
+--- a/src/stage.c
++++ b/src/stage.c
+@@ -9,6 +9,7 @@
+ #include "random.h"
+ 
+ #include "menu.h"
++#include "freeplay_results.h"
+ #include "trans.h"
+ #include "loadscr.h"
+ 
+@@ -329,6 +330,7 @@
+ 		if (combo != NULL)
+ 			ObjectList_Add(&stage.objlist_fg, (Object*)combo);
+ 	}
++	FreeplayResults_Hit(hit_type);
+ }
+ 
+ enum {
+@@ -491,6 +493,7 @@
+ 		{
+ 			stage.player->set_anim(stage.player, note_anims[type][1]);
+ 			Stage_MissNote();
++			FreeplayResults_GhostMiss();
+ 			
+ 			stage.health -= stage.kade ? 1000 : 400;
+ 			stage.score -= 1;
+@@ -974,6 +977,10 @@
+ 	stage.health = 10000;
+ 	stage.combo = 0;
+ 	stage.score = 0;
++	unsigned int total_notes = 0;
++	for (Note *note = stage.notes; note->pos != 0xFFFF; note++)
++		if (!(note->type & (NOTE_FLAG_OPPONENT | NOTE_FLAG_SUSTAIN | NOTE_FLAG_MINE))) total_notes++;
++	FreeplayResults_Begin(total_notes);
+ 	strcpy(stage.score_text, "0");
+ 	
+ 	stage.state = StageState_Play;
+@@ -1266,6 +1273,7 @@
+ 				//Update scroll
+ 				next_scroll = ((fixed_t)stage.step_base << FIXED_SHIFT) + FIXED_MUL(stage.song_time - stage.time_base, stage.step_crochet);
+ 				
++				FreeplayResults_Finish(stage.stage_id, stage.stage_diff, stage.score * 10);
+ 				//Transition to menu or next song
+ 				if (stage.story && stage.stage_def->next_stage != stage.stage_id)
+ 				{
+

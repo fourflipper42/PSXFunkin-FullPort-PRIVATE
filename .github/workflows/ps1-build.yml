@@ -3,6 +3,8 @@ name: PSXFunkin Full Port CI
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +27,9 @@ jobs:
             ffmpeg libavformat-dev libavfilter-dev libavcodec-dev libavutil-dev \
             libswscale-dev libswresample-dev libtinyxml2-dev
 
+      - name: Run conversion regression tests
+        run: python3 -m unittest discover -s tests -v
+
       - name: Fetch exact clean cuckydev t0.12 source
         run: |
           git clone https://github.com/cuckydev/PSXFunkin.git upstream
@@ -33,19 +38,7 @@ jobs:
 
       - name: Apply full-port source patches
         run: |
-          if [ -d overlay ]; then cp -a overlay/. upstream/; fi
-          for p in patches/*.patch; do
-            case "$p" in
-              *0002c-weekend1-stage-runtime.patch) continue ;;
-            esac
-            echo "Applying $p"
-            git -C upstream apply "../$p"
-          done
-          cat patches/chunks/0002c.*.b64 | base64 -d > /tmp/0002c-weekend1-stage-runtime.patch
-          echo "3c35dce44773fdbc771ceb694a83cc40f72e053b06a5e2889858a3ce702d94b6  /tmp/0002c-weekend1-stage-runtime.patch" | sha256sum -c -
-          test "$(stat -c%s /tmp/0002c-weekend1-stage-runtime.patch)" -eq 11471
-          git -C upstream apply /tmp/0002c-weekend1-stage-runtime.patch
-          git -C upstream diff --check
+          python3 scripts/apply_patches.py upstream
 
       - name: Download and merge official v0.8.4 assets
         env:
@@ -57,6 +50,10 @@ jobs:
           unzip -qo official-assets/Shared.Shaders.Scripts.Music.Images.and.Data.zip -d official-v084
           unzip -qo official-assets/Sounds.and.Songs.zip -d official-v084
           unzip -qo official-assets/WEEKS.zip -d official-v084
+          mkdir -p official-v084/fonts official-v084/exclude/data
+          ASSET_REV=d1d027d4747aaba151c6df121ea736c31d6aed38
+          curl -fL --retry 3 "https://raw.githubusercontent.com/FunkinCrew/Funkin.assets/$ASSET_REV/fonts/vcr.ttf" -o official-v084/fonts/vcr.ttf
+          curl -fL --retry 3 "https://raw.githubusercontent.com/FunkinCrew/Funkin.assets/$ASSET_REV/exclude/data/credits.json" -o official-v084/exclude/data/credits.json
           test -d official-v084/data/songs
           test -d official-v084/shared/images/characters/pico
           test -s official-v084/songs/darnell/Inst.ogg
@@ -92,21 +89,62 @@ jobs:
           for f in upstream/iso/picoplay.arc upstream/iso/nene.arc upstream/iso/darnell.arc upstream/iso/picobl.arc upstream/iso/darnbl.arc upstream/iso/week8/back.arc upstream/iso/week8/blazin.arc; do test -s "$f"; done
           for f in upstream/src/character/picoplayer.c upstream/src/character/nene.c upstream/src/character/darnell.c upstream/src/character/picoblazin.c upstream/src/character/darnellblazin.c; do test -s "$f"; done
 
+      - name: Generate complete-frame 4:3 menu artwork
+        run: |
+          python3 scripts/fetch_menu_assets.py official-v084
+          python3 scripts/build_menu_art.py \
+            --root official-v084 \
+            --upstream upstream \
+            --report build/menu_art.json
+          test -s upstream/src/menu_art_generated.h
+          test -s upstream/src/menu_intro_generated.h
+          test -s upstream/iso/menu/story.fbk
+          python3 scripts/preview_menu_art.py upstream build/menu_art.json build/menu-preview.png
+
+      - name: Build native BF Freeplay presentation
+        run: |
+          python3 scripts/fetch_freeplay_assets.py official-v084
+          python3 scripts/build_freeplay_art.py --root official-v084 --upstream upstream --report build/freeplay_art.json
+          python3 scripts/preview_freeplay.py upstream build/freeplay-preview.png
+
       - name: Build psxavenc
         run: |
           git clone https://github.com/WonderfulToolchain/psxavenc.git psxavenc
+          git -C psxavenc checkout 82f3871c5fe5e82e71016a6636aba25ddddf2ca8
+          git -C psxavenc apply ../encoder-patches/0001-drain-video.patch
           meson setup psxavenc/build psxavenc --buildtype=release
           meson compile -C psxavenc/build
           test -x psxavenc/build/psxavenc
 
-      - name: Encode Weekend 1 XA and STR media
+      - name: Verify complete STR frame encoding
+        run: python3 scripts/check_video_encoder.py psxavenc/build/psxavenc
+
+      - name: Encode resident official menu sounds
+        run: |
+          python3 scripts/build_menu_sound.py --root official-v084 --upstream upstream \
+            --encoder psxavenc/build/psxavenc --report build/menu_sound.json
+
+      - name: Encode official Erect and Nightmare XA routes
+        run: |
+          python3 scripts/build_remix_audio.py \
+            --root official-v084 \
+            --upstream upstream \
+            --psxavenc psxavenc/build/psxavenc \
+            --report build/remix_audio.json
+
+      - name: Encode instrumental Freeplay previews
+        run: |
+          python3 scripts/build_freeplay_music.py --root official-v084 --upstream upstream \
+            --psxavenc psxavenc/build/psxavenc --report build/freeplay_music.json
+
+      - name: Encode official default-song XA and Weekend 1 STR media
         run: |
           mkdir -p upstream/iso/music upstream/iso/movie
-          python3 scripts/build_weekend1_audio.py \
+          python3 scripts/build_base_audio.py \
             --root official-v084 \
-            --out upstream/iso/music \
+            --upstream upstream \
             --psxavenc psxavenc/build/psxavenc \
-            --report build/weekend1_audio.json
+            --report build/base_audio.json
           python3 scripts/build_weekend1_movies.py \
             --root official-v084 \
             --out upstream/iso/movie \
@@ -125,7 +163,7 @@ jobs:
         run: |
           rm -rf /tmp/psyq-extract upstream/mips/psyq
           mkdir -p /tmp/psyq-extract upstream/mips/psyq
-          curl -fL --retry 3 --retry-delay 2 http://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip -o /tmp/psyq.zip
+          curl -fL --retry 3 --retry-delay 2 https://psx.arthus.net/sdk/Psy-Q/psyq-4_7-converted-light.zip -o /tmp/psyq.zip
           unzip -q /tmp/psyq.zip -d /tmp/psyq-extract
           INC="$(find /tmp/psyq-extract -type d -name include -print -quit)"
           LIB="$(find /tmp/psyq-extract -type d -name lib -print -quit)"
@@ -146,21 +184,21 @@ jobs:
       - name: Compile PSXFunkin executable
         working-directory: upstream
         run: |
-          make clean || true
+          make clean
           make -j2
           test -s funkin.ps-exe
           sha256sum funkin.ps-exe
+          mipsel-linux-gnu-nm -n funkin.elf > ../build/memory_symbols.txt
+          python3 ../scripts/validate_ps1_memory.py funkin.ps-exe ../build/memory_symbols.txt --report ../build/memory.json
 
-      - name: Build DuckStation MODE2 BIN CUE
+      - name: Build single-CD MODE2 BIN CUE
         working-directory: upstream
         run: |
-          sed -i '/<license file="licensea.dat"\/>/d' funkin.xml
+          python3 ../scripts/prepare_homebrew_disc.py funkin.xml
           "$HOME/.local/bin/mkpsxiso" -y funkin.xml
           test -s funkin.bin
           test -s funkin.cue
-          sectors=$(( $(stat -c%s funkin.bin) / 2352 ))
-          echo "Raw disc sectors: $sectors"
-          test "$sectors" -le 360000
+          python3 ../scripts/validate_disc.py funkin.bin funkin.cue --report ../build/disc.json
 
       - name: Package Weekend 1 milestone
         run: |
@@ -172,7 +210,11 @@ jobs:
               INDEX 01 00:00:00
           EOF
           cp upstream/funkin.ps-exe build/release/funkin.ps-exe
-          cp build/v084_charts.json build/weekend1_charts.json build/weekend1_assets.json build/weekend1_audio.json build/weekend1_movies.json build/release/
+          cp build/disc.json build/menu_art.json build/memory.json build/remix_audio.json build/release/
+          cp build/menu_sound.json build/menu-preview.png build/title-animation.gif build/release/
+          cp build/freeplay_art.json build/freeplay-preview.png build/freeplay-preview.gif build/freeplay-preview-states.png build/release/
+          cp build/freeplay_music.json build/release/
+          cp build/v084_charts.json build/weekend1_charts.json build/weekend1_assets.json build/base_audio.json build/weekend1_movies.json build/release/
           (cd build/release && sha256sum PSXFunkin_v084_Weekend1.bin PSXFunkin_v084_Weekend1.cue funkin.ps-exe *.json > SHA256SUMS.txt)
 
       - name: Upload Weekend 1 BIN CUE
