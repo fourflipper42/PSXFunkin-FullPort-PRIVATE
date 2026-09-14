@@ -22,7 +22,7 @@ void FrameBank_Load(FrameBank *bank, const char *path, u16 x, u16 y, u16 clut_x,
     IO_FindFile(&file, path);
     bank->data = IO_ReadFile(&file);
     if (!FrameCodec_Open((u8*)bank->data, file.size, &bank->info)) Fail("invalid bank");
-    if ((x & 63) || (y & 255) || x + bank->info.width / 2 > 1024 ||
+    if ((x & 63) || (y & 255) + bank->info.height > 256 || x + bank->info.width / 2 > 1024 ||
         y + bank->info.height > 512 || (clut_x & 15) || clut_x + 256 > 1024 || clut_y >= 512)
         Fail("invalid VRAM placement");
     bank->x = x; bank->y = y; bank->clut_x = clut_x; bank->clut_y = clut_y;
@@ -63,7 +63,7 @@ void FrameBank_Upload(FrameBank *bank, u16 frame)
 }
 void FrameBank_Draw(FrameBank *bank, u16 frame, s16 x, s16 y)
 {
-    RECT src = {0, 0, bank->info.width, bank->info.height};
+    RECT src = {0, bank->y & 255, bank->info.width, bank->info.height};
     FrameBank_Upload(bank, frame);
     Gfx_BlitTex(&bank->texture, &src, x, y);
 }

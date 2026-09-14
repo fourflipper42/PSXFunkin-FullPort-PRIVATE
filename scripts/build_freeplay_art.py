@@ -8,6 +8,7 @@ from build_menu_art import sparrow,tile_banks
 from animateatlas_flatten import AnimateAtlas,render_leaves_fixed
 from framebank import encode_images
 from png_to_tim import encode_tim
+from build_freeplay_details import build_details
 
 def build(root,upstream,report_path):
     out=upstream/'iso/freeplay';out.mkdir(parents=True,exist_ok=True)
@@ -88,9 +89,15 @@ def build(root,upstream,report_path):
     draw.fontmode='1'
     for i in range(96):draw.text(((i%16)*8,(i//16)*14+11),chr(i+32),font=font,fill='white',anchor='ls')
     (out/'font.tim').write_bytes(encode_tim(font_image,4,896,256,0,500));files.append('font.tim')
+    details=build_details(root,out,bank,arrays,files)
     total=sum((out/name).stat().st_size for name in files)
-    # Leave room for CD-sector padding, allocator headers and resident SFX load.
-    if total>850000:raise ValueError(f'Freeplay bank uses {total} bytes; exceeds the page budget')
+    # Frame banks stay in RAM; each TIM is freed immediately after its GPU
+    # upload. Account for sector-rounded allocations and the largest temporary
+    # TIM, rather than treating all disc assets as simultaneously resident.
+    rounded=lambda name:((out/name).stat().st_size+2047)//2048*2048+32
+    resident=sum(rounded(name) for name in files if name.endswith('.fbk'))
+    peak=resident+max(rounded(name) for name in files if name.endswith('.tim'))
+    if peak>850000:raise ValueError(f'Freeplay peak allocation {peak} exceeds 850000-byte page budget')
     header='#ifndef FREEPLAY_ART_GENERATED_H\n#define FREEPLAY_ART_GENERATED_H\n'+'\n'.join(arrays)+'\n#endif\n'
     (upstream/'src/freeplay_art_generated.h').write_text(header)
     xml=ET.parse(upstream/'funkin.xml');parent=xml.find(".//dir[@name='menu']/..")
@@ -100,9 +107,11 @@ def build(root,upstream,report_path):
     for filename in files:
         if directory.find(f"file[@name='{filename}']") is None:ET.SubElement(directory,'file',name=filename,type='data',source=f'iso/freeplay/{filename}')
     xml.write(upstream/'funkin.xml',encoding='utf-8',xml_declaration=True)
-    report=dict(viewport=[320,240],banks=records,asset_bytes=total,asset_budget_bytes=850000,
+    report=dict(viewport=[320,240],banks=records,asset_bytes=total,peak_art_budget_bytes=850000,
                 icon_names=icon_names,icon_groups=icon_groups,icon_frames=len(icon_frames),
                 implemented_dj_animations=['Intro','Idle','Confirm'],remaining_dj_animations=[k for k in labels if k not in ('Intro','Idle','Confirm')])
+    report.update(details)
+    report.update(resident_bank_bytes=resident,peak_art_allocation_bytes=peak)
     report_path.parent.mkdir(parents=True,exist_ok=True);report_path.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(dict(asset_bytes=total,dj_frames=records[0]['frames'],banks=len(records))))
 

@@ -207,7 +207,7 @@ jobs:
           cp upstream/funkin.ps-exe build/release/funkin.ps-exe
           cp build/disc.json build/menu_art.json build/memory.json build/remix_audio.json build/release/
           cp build/menu_sound.json build/menu-preview.png build/title-animation.gif build/release/
-          cp build/freeplay_art.json build/freeplay-preview.png build/freeplay-preview.gif build/release/
+          cp build/freeplay_art.json build/freeplay-preview.png build/freeplay-preview.gif build/freeplay-preview-states.png build/release/
           cp build/v084_charts.json build/weekend1_charts.json build/weekend1_assets.json build/base_audio.json build/weekend1_movies.json build/release/
           (cd build/release && sha256sum PSXFunkin_v084_Weekend1.bin PSXFunkin_v084_Weekend1.cue funkin.ps-exe *.json > SHA256SUMS.txt)
 

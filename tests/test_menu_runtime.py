@@ -34,7 +34,7 @@ typedef enum { STAGES } StageId;
 typedef enum {StageDiff_Easy,StageDiff_Normal,StageDiff_Hard,StageDiff_Erect,StageDiff_Nightmare,StageDiff_Max} StageDiff;
 struct {int song_step; boolean expsync,kade,ghost,downscroll;} stage;
 struct {unsigned int press,held;} pad_state;
-enum {PAD_UP=1,PAD_DOWN=2,PAD_LEFT=4,PAD_RIGHT=8,PAD_CROSS=16,PAD_START=32,PAD_CIRCLE=64};
+enum {PAD_UP=1,PAD_DOWN=2,PAD_LEFT=4,PAD_RIGHT=8,PAD_CROSS=16,PAD_START=32,PAD_CIRCLE=64,PAD_L1=128,PAD_R1=256,PAD_SQUARE=512};
 enum {GameLoop_Stage=1,XA_GettinFreaky=1};
 int gameloop,pending,reads,freed,played,timer_dt=17;
 enum {MenuSound_Scroll,MenuSound_Confirm,MenuSound_Cancel};
@@ -54,6 +54,10 @@ void FreeplayArt_Free(void) {assert(art_owner==2);art_owner=0;}
 void FreeplayArt_Song(const char*n,int i,int s,fixed_t o,fixed_t t,fixed_t c) {assert(art_owner==2);}
 void FreeplayArt_Back(int d,fixed_t t,int c,fixed_t e) {assert(art_owner==2 && d>=0 && d<5);}
 void FreeplayArt_UI(int d,fixed_t t) {assert(art_owner==2 && d>=0 && d<5);}
+void FreeplayArt_State(int s,int f,unsigned int v,int d,fixed_t t) {}
+void FreeplayArt_Results(unsigned int s,unsigned int c) {}
+unsigned int FreeplayResults_Score(int s,int d) {return 0;}
+unsigned int FreeplayResults_Completion(int s,int d) {return 0;}
 void MenuArt_Text(const char *s,int x,int y,int c,int b) {
  if (!s) return;
  int left=c ? x-(int)strlen(s)*4:x;
@@ -116,10 +120,35 @@ int main(void) {
  for(int j=0;j<60;j++)tick(0,0);
  for(int j=0;j<100;j++)tick(PAD_DOWN|PAD_RIGHT,0);
  assert(freeplay_loads==loaded && art_owner==2);
+ reset(MenuPage_Freeplay);
+ for(int j=0;j<60;j++)tick(0,0);
+ tick(PAD_DOWN,PAD_DOWN);assert(menu.select==1);
+ for(int j=0;j<15;j++)tick(0,PAD_DOWN);
+ assert(menu.select==1);
+ for(int j=0;j<45;j++)tick(0,PAD_DOWN);
+ assert(menu.select>1);
+ int stopped=menu.select;
+ for(int j=0;j<60;j++)tick(0,0);
+ assert(menu.select==stopped);
+ reset(MenuPage_Freeplay);
+ for(int j=0;j<60;j++)tick(0,0);
+ tick(PAD_L1,0); // Empty favourites: Random must not launch another song.
+ int before_empty=played;
+ tick(PAD_START,0);for(int j=0;j<85;j++)tick(0,0);
+ assert(played==before_empty && menu.page==MenuPage_Freeplay);
+ tick(PAD_R1,0);tick(PAD_DOWN,0);tick(PAD_SQUARE,0);
+ tick(PAD_L1,0);assert(menu.select==1);
+ tick(PAD_START,0);for(int j=0;j<85;j++)tick(0,0);
+ assert(played==before_empty+1 && played_id==StageId_1_4);
+ reset(MenuPage_Freeplay);
+ for(int j=0;j<60;j++)tick(0,0);
+ tick(PAD_L1,0);tick(PAD_L1,0);tick(PAD_DOWN,0);tick(PAD_START,0);
+ for(int j=0;j<85;j++)tick(0,0);
+ assert(played_id==StageId_8_3); // Official name "2hot" belongs in #.
  reset(MenuPage_Freeplay);menu.difficulty=StageDiff_Nightmare;
  for(int j=0;j<60;j++)tick(0,0);
  tick(PAD_START,0);for(int j=0;j<85;j++)tick(0,0);
- assert(played==3 && played_id==StageId_1_1 && played_diff==StageDiff_Nightmare);
+ assert(played==5 && played_id==StageId_1_1 && played_diff==StageDiff_Nightmare);
  reset(MenuPage_Options);boolean before=stage.expsync;tick(PAD_RIGHT,0);assert(stage.expsync!=before);
  reset(MenuPage_Credits);for(int i=0;i<400;i++)tick(PAD_RIGHT,0);
  assert(menu.credits_scroll==FIXED_DEC((262-13)*12,1));

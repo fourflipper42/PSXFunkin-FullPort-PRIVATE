@@ -5,7 +5,7 @@ This verifies layout and frame selection, not GPU behavior or hardware timing.
 """
 import argparse,sys
 from pathlib import Path
-from PIL import Image
+from PIL import Image,ImageDraw
 from capture_freeplay import Capture
 sys.path.insert(0,str(Path(__file__).resolve().parent/'ps1asset'))
 from framebank import unpack_indices
@@ -19,9 +19,9 @@ def render(upstream,output):
         im=Image.new('RGBA',(w,h));im.putdata([((pal[i]&31)*255//31,((pal[i]>>5)&31)*255//31,((pal[i]>>10)&31)*255//31,255 if pal[i] else 0) for i in frames[index]])
         cache[name,index]=im;return im
     capture=Capture(upstream);dj_frames=set()
-    def screen(selection,time,confirm=-1):
+    def screen(selection,time,confirm=-1,**state):
         im=Image.new('RGBA',(320,240),(0,0,0,255))
-        for command in reversed(capture.commands(selection,time,confirm)):
+        for command in reversed(capture.commands(selection,time,confirm,**state)):
             kind,name,*values=command;v=list(map(int,values))
             if kind=='B':
                 frame,x,y=v
@@ -38,6 +38,13 @@ def render(upstream,output):
     try:
         output.parent.mkdir(parents=True,exist_ok=True)
         screen(2,1024).convert('RGB').save(output)
+        sheet=Image.new('RGB',(960,520),(20,20,20));draw=ImageDraw.Draw(sheet)
+        states=[('Easy',2,dict(diff=0)),('Normal',2,dict(diff=1)),('Hard + right press',2,dict(diff=2,direction=1)),
+                ('Erect / Vol. 3',2,dict(diff=3)),('Nightmare / example result',2,dict(diff=4,score=1234567,completion=97,favorites=2)),('Weekend 1',23,dict(diff=1))]
+        for i,(label,selection,state) in enumerate(states):
+            x=(i%3)*320;y=(i//3)*260;draw.text((x+8,y+3),label,fill='white')
+            sheet.paste(screen(selection,2048,**state).convert('RGB'),(x,y+20))
+        sheet.save(output.with_name(output.stem+'-states.png'))
         # Sample just after each 24 Hz boundary. Rounding down then truncating
         # again in C would repeat one frame and skip the next in this preview.
         tick=lambda i:(i*1024+23)//24

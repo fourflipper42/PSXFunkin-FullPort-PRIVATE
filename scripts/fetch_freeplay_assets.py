@@ -7,12 +7,26 @@ import urllib.request
 from fetch_menu_assets import BASE
 
 def fetch(root):
-    paths=['fonts/5by7.ttf','preload/data/players/bf.json','preload/data/ui/freeplay/styles/bf.json']
+    paths=['fonts/5by7.ttf','fonts/vcr.ttf','fonts/YoureGone-Regular.otf','preload/data/players/bf.json','preload/data/ui/freeplay/styles/bf.json']
+    song_ids=('tutorial','bopeebo','fresh','dadbattle','spookeez','south','monster','pico','philly-nice','blammed','satin-panties','high','milf','cocoa','eggnog','winter-horrorland','senpai','roses','thorns','ugh','guns','stress','darnell','lit-up','2hot','blazin')
+    for song in song_ids:
+        paths.append(f'preload/data/songs/{song}/{song}-metadata.json')
+    for song in ('blammed','bopeebo','cocoa','dadbattle','darnell','eggnog','fresh','high','philly-nice','pico','roses','satin-panties','senpai','south','spookeez','thorns','ugh'):
+        paths.append(f'preload/data/songs/{song}/{song}-metadata-erect.json')
+    for album in ('volume1','volume2','volume3','volume4','expansion1','expansion2'):
+        paths.append(f'preload/data/ui/freeplay/albums/{album}.json')
     images=['freeplay/pinkBack.png','freeplay/freeplayBGweek1-bf.png','freeplay/ref.png',
             'freeplay/freeplayeasy.png','freeplay/freeplaynormal.png','freeplay/freeplayhard.png',
             'freeplay/freeplayerect.png','freeplay/freeplaynightmare.png','freeplay/freeplaynightmare.xml']
     for name in ('freeplay-boyfriend',):
         images += [f'freeplay/{name}/{part}' for part in ('Animation.json','spritemap1.json','spritemap1.png')]
+    for name in ('albumRoll/freeplayAlbum','sortedLetters'):
+        images += [f'freeplay/{name}/{part}' for part in ('Animation.json','spritemap1.json','spritemap1.png')]
+    for album in ('volume1','volume2','volume3','volume4','expansion1','expansion2'):
+        images += [f'freeplay/albumRoll/{album}.png',f'freeplay/albumRoll/{album}-text.png',f'freeplay/albumRoll/{album}-text.xml']
+    for name in ('digital_numbers','freeplay/highscore','freeplay/favHeart','freeplay/freeplayCapsule/bignumbers','freeplay/freeplayCapsule/smallnumbers'):
+        images += [f'{name}.{ext}' for ext in ('png','xml')]
+    images += ['freeplay/clearBox.png','freeplay/miniArrow.png','freeplay/seperator.png','freeplay/freeplayCapsule/bpmtext.png','freeplay/freeplayCapsule/difficultytext.png']
     for name in ('freeplayCapsule/capsule/freeplayCapsule','freeplaySelector/freeplaySelector'):
         images += [f'freeplay/{name}.{ext}' for ext in ('png','xml')]
     for name in ('bf','dad','spooky','monster','pico','mom','parents-christmas','senpai','spirit','tankman','darnell','gf'):

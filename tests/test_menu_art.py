@@ -10,6 +10,14 @@ import build_menu_art
 from framebank import unpack_indices
 
 class SparrowMenu(unittest.TestCase):
+    def test_verbose_animate_export_preserves_matrix_and_timing(self):
+        import animateatlas_flatten as flatten
+        data={'ANIMATION':{'SYMBOL_name':'root','TIMELINE':{'LAYERS':[{'Layer_name':'art','Frames':[{'index':3,'duration':5,'elements':[{'ATLAS_SPRITE_instance':{'name':'sprite','Matrix3D':{'m00':1,'m11':1,'m22':1,'m33':1,'m30':12,'m31':-4}}}]}]}]}},'SYMBOL_DICTIONARY':{'Symbols':[]},'metadata':{'framerate':24}}
+        self.assertTrue(hasattr(flatten,'normalize_export'))
+        result=flatten.normalize_export(data)
+        frame=result['AN']['TL']['L'][0]['FR'][0]
+        self.assertEqual((frame['I'],frame['DU']),(3,5))
+        self.assertEqual(flatten.matrix_from_element(frame['E'][0]['ASI']),(1,0,0,1,12,-4))
     def test_tiled_animation_preserves_frames_and_seams(self):
         # A wide animation must keep its full width, including pixels across
         # tile seams, and retain repeated frames at their original positions.

@@ -21,6 +21,23 @@ from PIL import Image
 Matrix = tuple[float, float, float, float, float, float]
 IDENTITY: Matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
+def normalize_export(data):
+    """Adobe emits both verbose and compact JSON for the same timeline format."""
+    keys={'ANIMATION':'AN','SYMBOL_DICTIONARY':'SD','Symbols':'S','metadata':'MD',
+          'SYMBOL_name':'SN','TIMELINE':'TL','LAYERS':'L','Layer_name':'LN',
+          'Frames':'FR','index':'I','duration':'DU','elements':'E','name':'N',
+          'ATLAS_SPRITE_instance':'ASI','SYMBOL_Instance':'SI','firstFrame':'FF',
+          'loop':'LP','framerate':'FRT','Matrix3D':'M3D'}
+    if isinstance(data,list):return [normalize_export(v) for v in data]
+    if not isinstance(data,dict):return data
+    result={}
+    for k,v in data.items():
+        if k=='DecomposedMatrix':continue
+        if k=='Matrix3D':v=[v.get(f'm{i}{j}',0) for i in range(4) for j in range(4)]
+        if k=='loop':v={'loop':'LP','playonce':'PO','singleframe':'SF'}.get(v.lower(),v)
+        result[keys.get(k,k)]=normalize_export(v)
+    return result
+
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
@@ -82,6 +99,7 @@ class AnimateAtlas:
     def __init__(self, folder: Path):
         self.folder = folder
         self.anim = load_json(folder / "Animation.json")
+        if 'ANIMATION' in self.anim:self.anim=normalize_export(self.anim)
         self.map = load_json(folder / "spritemap1.json")
         image_name = self.map.get("meta", {}).get("image", "spritemap1.png")
         self.sheet = Image.open(folder / image_name).convert("RGBA")

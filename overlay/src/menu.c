@@ -2,6 +2,7 @@
 #include "menu_art.h"
 #include "menu_sound.h"
 #include "freeplay_art.h"
+#include "freeplay_results.h"
 #include "main.h"
 #include "timer.h"
 #include "io.h"
@@ -63,7 +64,7 @@ static const struct
 				{StageId_7_3, "STRESS"},
 				{StageId_8_1, "DARNELL"},
 				{StageId_8_2, "LIT UP"},
-				{StageId_8_3, "TWO HOT"},
+				{StageId_8_3, "2HOT"},
 				{StageId_8_4, "BLAZIN'"},
 			};
 static struct {
@@ -79,9 +80,36 @@ static struct {
     fixed_t title_elapsed, camera_y;
     boolean freeplay_art;
     fixed_t freeplay_scroll;
+    fixed_t repeat_time;
+    u16 repeat_direction;
+    u8 filter;
     u32 random_seed;
     Gfx_Tex tex_ng;
 } menu;
+/* Preserved across menu/gameplay returns. Memory-card persistence is separate. */
+static u32 freeplay_favorites;
+static int freeplay_visible[COUNT_OF(songs)+1];
+static int FreeplayList(void)
+{
+    static const char first[]="000ACEIMOSTU",last[]="9ZZBDHLNRSTZ";
+    int count=1;freeplay_visible[0]=-1;
+    for (int i=0;i<COUNT_OF(songs);i++) {
+        char c=songs[i].text[0];
+        if (menu.filter==1 && !(freeplay_favorites&(1u<<i))) continue;
+        if (menu.filter!=1 && menu.filter!=2 && (c<first[menu.filter] || c>last[menu.filter])) continue;
+        freeplay_visible[count++]=i;
+    }
+    if (menu.filter!=1 && menu.filter!=2) {
+        for(int i=2;i<count;i++) {
+            int value=freeplay_visible[i],j=i;
+            while(j>1 && strcmp(songs[freeplay_visible[j-1]].text,songs[value].text)>0) {
+                freeplay_visible[j]=freeplay_visible[j-1];j--;
+            }
+            freeplay_visible[j]=value;
+        }
+    }
+    return count;
+}
 
 static void Go(MenuPage page, int selection)
 {
@@ -103,6 +131,22 @@ static void Select(int count)
     if (pad_state.press & PAD_UP) menu.select = (menu.select + count - 1) % count;
     else if (pad_state.press & PAD_DOWN) menu.select = (menu.select + 1) % count;
     if (previous != menu.select) MenuSound_Play(MenuSound_Scroll);
+}
+static void FreeplayRepeat(void)
+{
+    u16 direction = pad_state.held & (PAD_UP | PAD_DOWN);
+    if (direction == (PAD_UP | PAD_DOWN)) direction = 0;
+    if (!direction) { menu.repeat_direction = 0; menu.repeat_time = 0; return; }
+    if (direction != menu.repeat_direction || (pad_state.press & direction)) {
+        menu.repeat_direction = direction;
+        menu.repeat_time = FIXED_DEC(4,10);
+    } else {
+        menu.repeat_time -= timer_dt;
+        if (menu.repeat_time <= 0) {
+            pad_state.press |= direction;
+            menu.repeat_time = FIXED_DEC(1,10);
+        }
+    }
 }
 static void Difficulty(StageId id, boolean extra)
 {
@@ -184,6 +228,7 @@ void Menu_Tick(void)
         menu.title_elapsed = 0;
         menu.camera_y = 0;
         menu.freeplay_scroll = menu.select * FIXED_UNIT;
+        menu.filter=2;menu.repeat_direction=0;menu.repeat_time=0;
         menu.credits_scroll = 0;
         if (menu.page == MenuPage_Story || menu.page == MenuPage_Freeplay)
             menu.difficulty = StageDiff_Normal;
@@ -317,32 +362,44 @@ void Menu_Tick(void)
         }
         case MenuPage_Freeplay:
         {
+            int count=FreeplayList();
+            if(menu.select>=count) menu.select=0;
             menu.title_elapsed += timer_dt;
             if (menu.title_elapsed >= FIXED_DEC(3600,1)) menu.title_elapsed = FIXED_DEC(1,1);
             if (InputReady() && menu.title_elapsed >= FIXED_DEC(17,24)) {
+                FreeplayRepeat();
+                int old_song=freeplay_visible[menu.select];
+                if (pad_state.press & PAD_SQUARE && old_song>=0) freeplay_favorites^=1u<<old_song;
+                if (pad_state.press & (PAD_L1|PAD_R1|PAD_SQUARE)) {
+                    if(pad_state.press & (PAD_L1|PAD_R1)) menu.filter=(menu.filter+12+((pad_state.press&PAD_R1)?1:-1))%12;
+                    count=FreeplayList();menu.select=0;
+                    for(int i=1;i<count;i++)if(freeplay_visible[i]==old_song)menu.select=i;
+                    if(old_song>=0 && menu.select==0 && count>1)menu.select=1;
+                    menu.freeplay_scroll=menu.select*FIXED_UNIT;
+                    MenuSound_Play(MenuSound_Scroll);
+                }
                 int previous = menu.select;
-                Select(COUNT_OF(songs) + 1);
+                Select(count);
                 /* A wrap crosses the ends, not the whole 26-song column. */
                 if (previous - menu.select > 1 || menu.select - previous > 1)
                     menu.freeplay_scroll = menu.select * FIXED_UNIT;
-                if (menu.select) Difficulty(songs[menu.select - 1].stage, true);
+                if (menu.select) Difficulty(songs[freeplay_visible[menu.select]].stage, true);
                 else if (pad_state.press & (PAD_LEFT | PAD_RIGHT))
                     menu.difficulty = (menu.difficulty + StageDiff_Max + ((pad_state.press & PAD_RIGHT) ? 1 : -1)) % StageDiff_Max;
                 if (pad_state.press & PAD_CIRCLE) Go(MenuPage_Main, 1);
                 else if (pad_state.press & (PAD_CROSS | PAD_START)) {
-                    int pick = menu.select ? menu.select - 1 : menu.random_seed % COUNT_OF(songs);
+                    int pick = freeplay_visible[menu.select];
                     if (!menu.select) {
                         int eligible = 0;
-                        for (int i = 0; i < COUNT_OF(songs); i++)
-                            if (Stage_SupportsDifficulty(songs[i].stage, menu.difficulty)) eligible++;
+                        for (int i = 1; i < count; i++)
+                            if (Stage_SupportsDifficulty(songs[freeplay_visible[i]].stage, menu.difficulty)) eligible++;
                         if (eligible) {
                             int choice = menu.random_seed % eligible;
-                            for (int i = 0; i < COUNT_OF(songs); i++)
-                                if (Stage_SupportsDifficulty(songs[i].stage, menu.difficulty) && choice-- == 0) {pick = i;break;}
-                        } else menu.difficulty = StageDiff_Normal;
+                            for (int i = 1; i < count; i++)
+                                if (Stage_SupportsDifficulty(songs[freeplay_visible[i]].stage, menu.difficulty) && choice-- == 0) {pick = freeplay_visible[i];break;}
+                        }
                     }
-                    menu.stage_id = songs[pick].stage;
-                    Confirm();
+                    if(pick>=0) {menu.stage_id = songs[pick].stage;Confirm();}
                 }
             } else if (menu.confirming && menu.next_page == menu.page) {
                 menu.confirm_elapsed += timer_dt;
@@ -351,9 +408,15 @@ void Menu_Tick(void)
             fixed_t step = timer_dt * 12;
             if (step > FIXED_UNIT) step = FIXED_UNIT;
             menu.freeplay_scroll += ((menu.select * FIXED_UNIT - menu.freeplay_scroll) * step) >> FIXED_SHIFT;
+            FreeplayArt_State(freeplay_visible[menu.select],menu.filter,freeplay_favorites,
+                InputReady() && (pad_state.press&(PAD_LEFT|PAD_RIGHT)) ? ((pad_state.press&PAD_RIGHT)?1:-1) : 0,menu.title_elapsed);
+            int selected_stage=menu.select ? songs[freeplay_visible[menu.select]].stage : -1;
+            FreeplayArt_Results(FreeplayResults_Score(selected_stage,menu.difficulty),FreeplayResults_Completion(selected_stage,menu.difficulty));
             FreeplayArt_UI(menu.difficulty, menu.title_elapsed);
-            for (int i = 0; i <= COUNT_OF(songs); i++)
-                FreeplayArt_Song(i ? songs[i-1].text : "Random", i-1, i == menu.select, i * FIXED_UNIT - menu.freeplay_scroll, menu.title_elapsed, menu.confirming ? menu.confirm_elapsed : -1);
+            for (int i = 0; i < count; i++) {
+                int song=freeplay_visible[i];
+                FreeplayArt_Song(song>=0 ? songs[song].text : "Random", song, i == menu.select, i * FIXED_UNIT - menu.freeplay_scroll, menu.title_elapsed, menu.confirming ? menu.confirm_elapsed : -1);
+            }
             FreeplayArt_Back(menu.difficulty, menu.title_elapsed, menu.confirming, menu.confirm_elapsed);
             break;
         }
