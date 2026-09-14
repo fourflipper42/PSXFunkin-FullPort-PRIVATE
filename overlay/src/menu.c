@@ -3,6 +3,7 @@
 #include "menu_sound.h"
 #include "freeplay_art.h"
 #include "freeplay_results.h"
+#include "freeplay_music.h"
 #include "main.h"
 #include "timer.h"
 #include "io.h"
@@ -180,7 +181,7 @@ void Menu_Load(MenuPage page)
     Gfx_LoadTex(&menu.tex_ng, Archive_Find(arc, "ng.tim"), 0);
     Mem_Free(arc);
     menu.freeplay_art = page == MenuPage_Freeplay;
-    if (menu.freeplay_art) FreeplayArt_Load(); else MenuArt_Load();
+    if (menu.freeplay_art) {FreeplayArt_Load();FreeplayMusic_Load();} else MenuArt_Load();
     MenuSound_Load();
     menu.select = menu.next_select = 0;
     menu.page = menu.next_page = page;
@@ -218,7 +219,7 @@ void Menu_Tick(void)
             Audio_StopXA();
             if (menu.freeplay_art) FreeplayArt_Free(); else MenuArt_Free();
             menu.freeplay_art = menu.page == MenuPage_Freeplay;
-            if (menu.freeplay_art) FreeplayArt_Load(); else MenuArt_Load();
+            if (menu.freeplay_art) {FreeplayArt_Load();FreeplayMusic_Load();} else MenuArt_Load();
             Audio_PlayXA_Track(XA_GettinFreaky, 0x40, 0, 1);
             Audio_WaitPlayXA();
         }
@@ -408,6 +409,8 @@ void Menu_Tick(void)
             fixed_t step = timer_dt * 12;
             if (step > FIXED_UNIT) step = FIXED_UNIT;
             menu.freeplay_scroll += ((menu.select * FIXED_UNIT - menu.freeplay_scroll) * step) >> FIXED_SHIFT;
+            if(menu.title_elapsed>=FIXED_DEC(17,24))
+                FreeplayMusic_Tick(freeplay_visible[menu.select],menu.difficulty,timer_dt,InputReady());
             FreeplayArt_State(freeplay_visible[menu.select],menu.filter,freeplay_favorites,
                 InputReady() && (pad_state.press&(PAD_LEFT|PAD_RIGHT)) ? ((pad_state.press&PAD_RIGHT)?1:-1) : 0,menu.title_elapsed);
             int selected_stage=menu.select ? songs[freeplay_visible[menu.select]].stage : -1;

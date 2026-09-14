@@ -44,6 +44,11 @@ Implemented:
   restart menu music. No disc reads, bank reloads or per-song allocation during
   scrolling or difficulty changes. Freeplay banks free before gameplay.
 - Hold-to-scroll has a 400ms initial delay and 100ms repeats, stopping on release.
+- Instrumental preview pipeline for the 26 default songs, 17 remixes and Random
+  music. It uses official fractional preview bounds (default: first 20% of the
+  instrumental), 37.8 kHz stereo XA, two-second fades, and four interleaved clips
+  per disc file. A 200ms selection delay limits seeks during fast scrolling.
+  File locations preload while XA is stopped; browsing does not read artwork.
 - Disc artwork totals 1,116,814 bytes. Sector-rounded resident banks plus
   allocator allowance total 774,400 bytes; adding the largest transient TIM
   gives an estimated 842,016-byte art peak, below the unchanged 850,000-byte
@@ -52,7 +57,7 @@ Implemented:
 
 Remaining:
 
-- Instrumental song preview audio and its seek/fade behaviour.
+- Console validation of instrumental preview seeking/fades and repeated returns.
 - Memory-card persistence, rank badges, difficulty stars/flames, favourite sound
   effects, score interpolation and remaining capsule entrance/highlight effects.
 - Character selection and Pico's matching presentation/playable variants.
@@ -97,4 +102,13 @@ uploads below the top of a texture page. The results patch applies against the
 preceding stage source and Makefile patches. The actual C renderer produces a
 PNG/GIF and a six-state contact sheet covering all difficulties, arrow feedback,
 an explicitly labelled example score and Weekend 1. Full CI for this follow-up
-must be checked separately. These previews do not emulate PS1 GPU/CD timing.
+passed in full CI 34803387165 at
+`24b3bede7005dd453a1e249f1cf53d815a3cd20c`. The disc is 506,129,232 bytes /
+215,191 sectors, leaving 117,809 sectors. Static memory ends at `0x801762b4`;
+564,300 bytes remain below the initial stack pointer, including the 524,288-byte
+reserve. These previews do not emulate PS1 GPU/CD timing.
+
+The subsequent instrumental-preview change passes 44 host tests. A synthetic
+integration fixture encodes 28 short preview routes and verifies all four XA
+channels through EOF. Full official-recording conversion and the new disc size
+need the subsequent CI result; the numbers above predate preview audio.

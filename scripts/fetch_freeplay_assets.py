@@ -8,6 +8,7 @@ from fetch_menu_assets import BASE
 
 def fetch(root):
     paths=['fonts/5by7.ttf','fonts/vcr.ttf','fonts/YoureGone-Regular.otf','preload/data/players/bf.json','preload/data/ui/freeplay/styles/bf.json']
+    paths.append('preload/music/freeplayRandom/freeplayRandom.ogg')
     song_ids=('tutorial','bopeebo','fresh','dadbattle','spookeez','south','monster','pico','philly-nice','blammed','satin-panties','high','milf','cocoa','eggnog','winter-horrorland','senpai','roses','thorns','ugh','guns','stress','darnell','lit-up','2hot','blazin')
     for song in song_ids:
         paths.append(f'preload/data/songs/{song}/{song}-metadata.json')

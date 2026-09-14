@@ -58,6 +58,8 @@ void FreeplayArt_State(int s,int f,unsigned int v,int d,fixed_t t) {}
 void FreeplayArt_Results(unsigned int s,unsigned int c) {}
 unsigned int FreeplayResults_Score(int s,int d) {return 0;}
 unsigned int FreeplayResults_Completion(int s,int d) {return 0;}
+void FreeplayMusic_Load(void) {assert(!xa_active);}
+void FreeplayMusic_Tick(int s,int d,fixed_t t,int e) {}
 void MenuArt_Text(const char *s,int x,int y,int c,int b) {
  if (!s) return;
  int left=c ? x-(int)strlen(s)*4:x;
