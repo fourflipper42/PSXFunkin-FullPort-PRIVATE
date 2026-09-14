@@ -96,6 +96,7 @@ static int FreeplayList(void)
     int count=1;freeplay_visible[0]=-1;
     for (int i=0;i<COUNT_OF(songs);i++) {
         char c=songs[i].text[0];
+        if (!Stage_SupportsDifficulty(songs[i].stage,menu.difficulty)) continue;
         if (menu.filter==1 && !(freeplay_favorites&(1u<<i))) continue;
         if (menu.filter!=1 && menu.filter!=2 && (c<first[menu.filter] || c>last[menu.filter])) continue;
         freeplay_visible[count++]=i;
@@ -110,6 +111,20 @@ static int FreeplayList(void)
         }
     }
     return count;
+}
+
+/* Preserve the current song across a difficulty change, or choose the nearest
+ * supported song in the original week order. Random remains Random. */
+static void FreeplayNearest(int song,int count)
+{
+    int best=COUNT_OF(songs)+1;
+    menu.select=0;
+    if(song>=0) for(int i=1;i<count;i++) {
+        int distance=freeplay_visible[i]-song;
+        if(distance<0)distance=-distance;
+        if(distance<best) {best=distance;menu.select=i;}
+    }
+    menu.freeplay_scroll=menu.select*FIXED_UNIT;
 }
 
 static void Go(MenuPage page, int selection)
@@ -384,9 +399,13 @@ void Menu_Tick(void)
                 /* A wrap crosses the ends, not the whole 26-song column. */
                 if (previous - menu.select > 1 || menu.select - previous > 1)
                     menu.freeplay_scroll = menu.select * FIXED_UNIT;
-                if (menu.select) Difficulty(songs[freeplay_visible[menu.select]].stage, true);
-                else if (pad_state.press & (PAD_LEFT | PAD_RIGHT))
+                if (pad_state.press & (PAD_LEFT | PAD_RIGHT)) {
+                    int selected_song=freeplay_visible[menu.select];
                     menu.difficulty = (menu.difficulty + StageDiff_Max + ((pad_state.press & PAD_RIGHT) ? 1 : -1)) % StageDiff_Max;
+                    count=FreeplayList();
+                    FreeplayNearest(selected_song,count);
+                    MenuSound_Play(MenuSound_Scroll);
+                }
                 if (pad_state.press & PAD_CIRCLE) Go(MenuPage_Main, 1);
                 else if (pad_state.press & (PAD_CROSS | PAD_START)) {
                     int pick = freeplay_visible[menu.select];

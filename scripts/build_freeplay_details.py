@@ -149,8 +149,9 @@ def build_details(root,out,bank,arrays,files):
         variations=[data]*3+[remix]*2;diffs=('easy','normal','hard','erect','nightmare')
         metadata.append(([round(v['timeChanges'][0]['bpm']) for v in variations],
                          [ALBUMS.index(v['playData']['album']) for v in variations],
-                         [v['playData'].get('ratings',{}).get(d,0) for v,d in zip(variations,diffs)]))
-    for i,(ctype,name) in enumerate((('u16','bpm'),('u8','album'),('u8','rating'))):
+                         [v['playData'].get('ratings',{}).get(d,0) for v,d in zip(variations,diffs)],
+                         [int(d in v['playData']['difficulties']) for v,d in zip(variations,diffs)]))
+    for i,(ctype,name) in enumerate((('u16','bpm'),('u8','album'),('u8','rating'),('u8','supports'))):
         arrays.append(f'static const {ctype} fp_song_{name}[][5] = {{'+','.join('{'+','.join(map(str,m[i]))+'}' for m in metadata)+'};')
     arrays.append('static const char *const fp_song_names[] = {'+','.join(json.dumps(json.loads((root/f'data/songs/{s}/{s}-metadata.json').read_text())['songName']) for s in SONGS)+'};')
     return dict(detail_timeline_frames=len(images),detail_unique_sprites=len(unique),album_frames=len(album_frames))

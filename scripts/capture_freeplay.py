@@ -58,13 +58,22 @@ int main(int argc,char **argv) {
  int diff=argc>4?atoi(argv[4]):1, direction=argc>5?atoi(argv[5]):0;
  int score=argc>6?atoi(argv[6]):0,completion=argc>7?atoi(argv[7]):0;
  int filter=argc>8?atoi(argv[8]):2,favorites=argc>9?atoi(argv[9]):0;
+ int visible[COUNT_OF(names)],count=1,selected_row=0;visible[0]=0;
+ for(int i=1;i<COUNT_OF(names);i++) if(fp_song_supports[i-1][diff]) {
+  if(i==selection)selected_row=count;
+  visible[count++]=i;
+ }
+ selection=visible[selected_row];
  FreeplayArt_Load();
  FreeplayArt_State(selection-1,filter,favorites,0,0);FreeplayArt_UI(diff,0);
  recording=1;
  FreeplayArt_State(selection-1,filter,favorites,direction,time);
  FreeplayArt_Results(score,completion);
  FreeplayArt_UI(diff,time);
- for(int i=0;i<COUNT_OF(names);i++)FreeplayArt_Song(names[i],i-1,i==selection,(i-selection)*1024,time,confirm);
+ for(int row=0;row<count;row++) {
+  int i=visible[row];
+  FreeplayArt_Song(names[i],i-1,row==selected_row,(row-selected_row)*1024,time,confirm);
+ }
  FreeplayArt_Back(diff,time,confirm>=0,confirm);FreeplayArt_Free();return 0;
 }
 ''')

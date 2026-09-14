@@ -112,3 +112,16 @@ The subsequent instrumental-preview change passes 44 host tests. A synthetic
 integration fixture encodes 28 short preview routes and verifies all four XA
 channels through EOF. Full official-recording conversion and the new disc size
 need the subsequent CI result; the numbers above predate preview audio.
+
+
+Difficulty-list follow-up:
+- Freeplay now filters capsules by the selected difficulty. The difficulty
+  controls cycle through the full available set; when the selected song has no
+  chart, selection moves to the closest supported song in week order. Random
+  remains selected across difficulty changes.
+- The renderer contact sheet now uses metadata availability to omit unsupported
+  rows. The host menu regression checks Tutorial -> Erect selects Bopeebo and
+  that only supported songs remain in the fixture.
+- Instrumental-preview commit b07fa4c8b397b065d88cca2965ae258c92bd56a4 passed full
+  CI 34803835359, including the official recordings and single-CD packaging.
+  The difficulty-list follow-up requires its own CI result.

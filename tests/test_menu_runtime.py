@@ -111,13 +111,21 @@ int main(void) {
  }
  reset(MenuPage_Story);tick(PAD_UP,0);assert(menu.select==8);tick(PAD_START,0);tick(0,0);
  assert(played==1 && freed>=1 && played_id==StageId_8_1 && played_story);
- reset(MenuPage_Freeplay);menu.select=2;menu.difficulty=StageDiff_Nightmare;
+ reset(MenuPage_Freeplay);menu.select=2;menu.difficulty=StageDiff_Normal;
  for(int j=0;j<60;j++)tick(0,0);
  tick(PAD_UP|PAD_START,0);
  for(int j=0;j<45;j++)tick(PAD_DOWN|PAD_START,0);
  assert(played==1 && menu.select==1);
  for(int j=0;j<40;j++)tick(0,0);
  assert(played==2 && played_id==StageId_1_4 && played_diff==StageDiff_Normal && !played_story);
+ reset(MenuPage_Freeplay);
+ for(int j=0;j<60;j++)tick(0,0);
+ tick(PAD_DOWN,0);assert(menu.select==1);
+ tick(PAD_RIGHT,0);tick(PAD_RIGHT,0);
+ assert(menu.difficulty==StageDiff_Erect && menu.select==1 && freeplay_visible[1]==1);
+ tick(PAD_DOWN,0);assert(menu.select==0);
+ tick(PAD_LEFT,0);
+ assert(menu.difficulty==StageDiff_Hard && menu.select==0);
  reset(MenuPage_Freeplay);int loaded=freeplay_loads;
  for(int j=0;j<60;j++)tick(0,0);
  for(int j=0;j<100;j++)tick(PAD_DOWN|PAD_RIGHT,0);
